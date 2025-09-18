@@ -17,9 +17,7 @@ const nextConfig = {
   // Ensure proper module resolution
   experimental: {
     esmExternals: 'loose',
-  },
-  // Disable CSS modules
-  cssModules: false,
+  }
 };
 
 module.exports = nextConfig;
