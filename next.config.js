@@ -18,6 +18,8 @@ const nextConfig = {
   experimental: {
     esmExternals: 'loose',
   },
+  // Disable CSS modules
+  cssModules: false,
 };
 
 module.exports = nextConfig;
