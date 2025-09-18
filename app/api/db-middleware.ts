@@ -15,9 +15,16 @@ export async function withMongoDB(
     return await handler(req);
   } catch (error) {
     console.error('MongoDB connection error:', error);
-    return NextResponse.json(
-      { error: 'Database connection failed' },
-      { status: 500 }
-    );
+    
+    // For MVP demo, continue with the request even if DB connection fails
+    try {
+      return await handler(req);
+    } catch (handlerError) {
+      console.error('API handler error:', handlerError);
+      return NextResponse.json(
+        { error: 'An error occurred processing the request' },
+        { status: 500 }
+      );
+    }
   }
 }

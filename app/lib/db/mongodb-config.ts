@@ -4,12 +4,6 @@ import mongoose from 'mongoose';
 
 const MONGODB_URI = process.env.MONGODB_URI || '';
 
-if (!MONGODB_URI) {
-  throw new Error(
-    'Please define the MONGODB_URI environment variable inside .env.local or in your Vercel project settings'
-  );
-}
-
 // Define the cached connection interface
 interface CachedConnection {
   conn: typeof mongoose | null;
@@ -30,6 +24,12 @@ if (!global.mongoose) {
 }
 
 async function dbConnect() {
+  // For MVP demo, allow running without a real MongoDB connection
+  if (!MONGODB_URI || MONGODB_URI.includes('placeholder')) {
+    console.warn('No valid MongoDB URI provided. Running in demo mode without database connection.');
+    return mongoose;
+  }
+
   if (cached.conn) {
     return cached.conn;
   }
@@ -48,10 +48,10 @@ async function dbConnect() {
     cached.conn = await cached.promise;
   } catch (e) {
     cached.promise = null;
-    throw e;
+    console.error('MongoDB connection error:', e);
   }
   
-  return cached.conn;
+  return cached.conn || mongoose;
 }
 
 export default dbConnect;
