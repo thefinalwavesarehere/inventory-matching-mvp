@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { processExcelFile } from '@/app/lib/utils/fileProcessing';
+import { processExcelFile } from '../../lib/utils/fileProcessing';
 
 export async function POST(request: NextRequest) {
   try {

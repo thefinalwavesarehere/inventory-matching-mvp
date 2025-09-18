@@ -14,6 +14,10 @@ const nextConfig = {
     
     return config;
   },
+  // Ensure proper module resolution
+  experimental: {
+    esmExternals: 'loose',
+  },
 };
 
 module.exports = nextConfig;

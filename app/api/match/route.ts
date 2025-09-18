@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findMatches } from '@/app/lib/ml/matching';
-import { generateSampleData } from '@/app/lib/utils/fileProcessing';
-import { IInventoryItem, ISupplierItem } from '@/app/lib/db/models';
+import { findMatches } from '../../lib/ml/matching';
+import { generateSampleData } from '../../lib/utils/fileProcessing';
+import { IInventoryItem, ISupplierItem } from '../../lib/db/models';
 
 export async function POST(request: NextRequest) {
   try {
