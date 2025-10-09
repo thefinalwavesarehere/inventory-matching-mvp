@@ -1,6 +1,6 @@
 /**
- * Inventory Matching Algorithm
- * Simple, clean implementation for MVP demonstration
+ * Enhanced Inventory Matching Algorithm
+ * Includes unit normalization and cost calculations per MVP requirements
  */
 
 import { InventoryItem, SupplierItem, Match } from './types';
@@ -215,6 +215,51 @@ function calculateJaccardSimilarity<T>(set1: Set<T>, set2: Set<T>): number {
 }
 
 /**
+ * Calculate unit conversion information
+ */
+function calculateUnitConversion(
+  arnoldItem: InventoryItem,
+  supplierItem: SupplierItem
+): {
+  needsConversion: boolean;
+  conversionRatio?: number;
+  normalizedSupplierPrice?: number;
+  priceDifference?: number;
+  priceMatchPercentage?: number;
+} {
+  // Check if unit conversion is needed
+  if (arnoldItem.unitOfIssue === 'BOX' && supplierItem.unitOfIssue === 'EACH') {
+    if (arnoldItem.piecesPerBox) {
+      const normalizedSupplierPrice = supplierItem.unitPrice * arnoldItem.piecesPerBox;
+      const priceDiff = Math.abs(arnoldItem.unitPrice - normalizedSupplierPrice);
+      const priceMatchPct = (1 - (priceDiff / Math.max(arnoldItem.unitPrice, normalizedSupplierPrice))) * 100;
+      
+      return {
+        needsConversion: true,
+        conversionRatio: arnoldItem.piecesPerBox,
+        normalizedSupplierPrice,
+        priceDifference: priceDiff,
+        priceMatchPercentage: priceMatchPct
+      };
+    }
+  }
+  
+  // Same unit - direct price comparison
+  if (arnoldItem.unitOfIssue === supplierItem.unitOfIssue) {
+    const priceDiff = Math.abs(arnoldItem.unitPrice - supplierItem.unitPrice);
+    const priceMatchPct = (1 - (priceDiff / Math.max(arnoldItem.unitPrice, supplierItem.unitPrice))) * 100;
+    
+    return {
+      needsConversion: false,
+      priceDifference: priceDiff,
+      priceMatchPercentage: priceMatchPct
+    };
+  }
+  
+  return { needsConversion: false };
+}
+
+/**
  * Generate human-readable reasons for the match
  */
 function getMatchReasons(
@@ -231,10 +276,10 @@ function getMatchReasons(
   
   if (lineCodeScore === 1.0) {
     if (arnoldItem.lineCode === supplierItem.supplierLineCode) {
-      reasons.push(`Exact line code match: ${arnoldItem.lineCode}`);
+      reasons.push(`✓ Exact line code match: ${arnoldItem.lineCode}`);
     } else {
       reasons.push(
-        `Line code mapping: ${supplierItem.supplierLineCode} → ${arnoldItem.lineCode}`
+        `✓ Line code mapping: ${supplierItem.supplierLineCode} → ${arnoldItem.lineCode}`
       );
     }
   }
@@ -247,7 +292,7 @@ function getMatchReasons(
   
   if (partNumberScore >= 0.8) {
     reasons.push(
-      `Part number similarity: ${(partNumberScore * 100).toFixed(0)}%`
+      `✓ Part number similarity: ${(partNumberScore * 100).toFixed(0)}%`
     );
   }
 
@@ -259,25 +304,42 @@ function getMatchReasons(
   
   if (descriptionScore >= 0.5) {
     reasons.push(
-      `Description similarity: ${(descriptionScore * 100).toFixed(0)}%`
+      `✓ Description similarity: ${(descriptionScore * 100).toFixed(0)}%`
     );
   }
 
-  // Unit conversion note
-  if (arnoldItem.unitOfIssue === 'BOX' && supplierItem.unitOfIssue === 'EACH') {
-    if (arnoldItem.piecesPerBox) {
+  // Unit conversion and pricing
+  const conversion = calculateUnitConversion(arnoldItem, supplierItem);
+  
+  if (conversion.needsConversion && conversion.conversionRatio) {
+    reasons.push(
+      `✓ Unit conversion: BOX (${conversion.conversionRatio} pieces) → EACH`
+    );
+    
+    if (conversion.normalizedSupplierPrice) {
       reasons.push(
-        `Unit conversion: ${arnoldItem.piecesPerBox} pieces per box`
+        `✓ Normalized price: $${arnoldItem.unitPrice.toFixed(2)} vs $${conversion.normalizedSupplierPrice.toFixed(2)}/box`
+      );
+    }
+    
+    if (conversion.priceMatchPercentage && conversion.priceMatchPercentage >= 90) {
+      reasons.push(
+        `✓ Price match: ${conversion.priceMatchPercentage.toFixed(1)}% agreement`
+      );
+    }
+  } else if (!conversion.needsConversion && conversion.priceMatchPercentage) {
+    if (conversion.priceMatchPercentage >= 95) {
+      reasons.push(
+        `✓ Price match: ${conversion.priceMatchPercentage.toFixed(1)}% agreement`
       );
     }
   }
 
-  // Price comparison
-  const priceDiff = Math.abs(arnoldItem.unitPrice - supplierItem.unitPrice);
-  const pricePercent = (priceDiff / arnoldItem.unitPrice) * 100;
-  
-  if (pricePercent < 5) {
-    reasons.push('Price match within 5%');
+  // Quantity information
+  if (arnoldItem.quantity > 0) {
+    reasons.push(
+      `ℹ Arnold stock: ${arnoldItem.quantity} ${arnoldItem.unitOfIssue}`
+    );
   }
 
   return reasons;
