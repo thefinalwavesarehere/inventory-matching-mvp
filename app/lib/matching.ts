@@ -35,11 +35,14 @@ export function findMatches(
       
       if (score >= threshold) {
         const reasons = getMatchReasons(arnoldItem, supplierItem);
+        const conversion = calculateUnitConversion(arnoldItem, supplierItem);
         matches.push({
           arnoldItem,
           supplierItem,
           confidenceScore: score,
-          matchReasons: reasons
+          matchReasons: reasons,
+          unitConversion: conversion,
+          status: 'pending'
         });
       }
     }
