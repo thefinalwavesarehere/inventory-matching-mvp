@@ -11,9 +11,7 @@ interface CachedConnection {
 }
 
 // Define the global mongoose object
-declare global {
-  var mongoose: CachedConnection | undefined;
-}
+
 
 // Initialize the cached connection
 let cached: CachedConnection = global.mongoose || { conn: null, promise: null };
@@ -55,3 +53,4 @@ async function dbConnect() {
 }
 
 export default dbConnect;
+
