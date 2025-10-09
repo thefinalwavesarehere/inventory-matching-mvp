@@ -1,62 +1,24 @@
+/**
+ * Match API Route
+ * Handles matching requests between Arnold inventory and supplier catalogs
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
-import { findMatches } from '../../lib/ml/matching';
-import { generateSampleData } from '../../lib/utils/fileProcessing';
-import { IInventoryItem, ISupplierItem } from '../../lib/db/models';
+import { findMatches } from '../../lib/matching';
+import { getSampleData } from '../../lib/sampleData';
 
-export async function POST(request: NextRequest) {
-  try {
-    // Parse the request body
-    const body = await request.json();
-    
-    // Extract Arnold and supplier items
-    const arnoldItems = body.arnoldItems as IInventoryItem[];
-    const supplierItems = body.supplierItems as ISupplierItem[];
-    const threshold = body.threshold as number || 0.7;
-    
-    if (!arnoldItems || !Array.isArray(arnoldItems) || arnoldItems.length === 0) {
-      return NextResponse.json(
-        { error: 'No Arnold inventory items provided' },
-        { status: 400 }
-      );
-    }
-    
-    if (!supplierItems || !Array.isArray(supplierItems) || supplierItems.length === 0) {
-      return NextResponse.json(
-        { error: 'No supplier items provided' },
-        { status: 400 }
-      );
-    }
-    
-    // Find matches
-    const matches = findMatches(arnoldItems, supplierItems, threshold);
-    
-    // Return the matches
-    return NextResponse.json({
-      success: true,
-      count: matches.length,
-      matches,
-      message: `Found ${matches.length} potential matches`
-    });
-    
-  } catch (error) {
-    console.error('Error finding matches:', error);
-    return NextResponse.json(
-      { error: 'Failed to find matches' },
-      { status: 500 }
-    );
-  }
-}
-
-// For demo purposes, we'll also support GET to retrieve sample matches
+/**
+ * GET /api/match
+ * Returns matches using sample data for demo purposes
+ */
 export async function GET() {
   try {
-    // Generate sample data
-    const { arnoldItems, supplierItems } = generateSampleData();
+    // Get sample data
+    const { arnoldInventory, supplierCatalog } = getSampleData();
     
-    // Find matches using the sample data
-    const matches = findMatches(arnoldItems, supplierItems);
+    // Find matches with default threshold (0.7)
+    const matches = findMatches(arnoldInventory, supplierCatalog);
     
-    // Return the matches
     return NextResponse.json({
       success: true,
       count: matches.length,
@@ -67,8 +29,71 @@ export async function GET() {
   } catch (error) {
     console.error('Error generating sample matches:', error);
     return NextResponse.json(
-      { error: 'Failed to generate sample matches' },
+      { 
+        success: false,
+        error: 'Failed to generate sample matches',
+        matches: []
+      },
       { status: 500 }
     );
   }
 }
+
+/**
+ * POST /api/match
+ * Accepts custom inventory and supplier data for matching
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    
+    const arnoldItems = body.arnoldItems || [];
+    const supplierItems = body.supplierItems || [];
+    const threshold = body.threshold || 0.7;
+    
+    // Validate input
+    if (!Array.isArray(arnoldItems) || arnoldItems.length === 0) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'No Arnold inventory items provided',
+          matches: []
+        },
+        { status: 400 }
+      );
+    }
+    
+    if (!Array.isArray(supplierItems) || supplierItems.length === 0) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'No supplier items provided',
+          matches: []
+        },
+        { status: 400 }
+      );
+    }
+    
+    // Find matches
+    const matches = findMatches(arnoldItems, supplierItems, threshold);
+    
+    return NextResponse.json({
+      success: true,
+      count: matches.length,
+      matches,
+      message: `Found ${matches.length} potential matches`
+    });
+    
+  } catch (error) {
+    console.error('Error finding matches:', error);
+    return NextResponse.json(
+      { 
+        success: false,
+        error: 'Failed to process matching request',
+        matches: []
+      },
+      { status: 500 }
+    );
+  }
+}
+
