@@ -269,7 +269,7 @@ async function findMatchesFromWebSearch(
     const normalizedPart = potentialMatch.partNumber.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
     // Find in supplier catalog
-    const found = supplierItems.filter(item => {
+    const found = supplierItems.filter((item: any) => {
       const normalizedSupplier = item.partFull.toUpperCase().replace(/[^A-Z0-9]/g, '');
       const normalizedSupplierPart = item.partNumber.toUpperCase().replace(/[^A-Z0-9]/g, '');
 

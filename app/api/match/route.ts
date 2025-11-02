@@ -95,16 +95,16 @@ export async function POST(request: NextRequest) {
     // Calculate statistics
     const stats = {
       total: matches.length,
-      matched: matches.filter(m => m.matchStage !== 'no_match').length,
+      matched: matches.filter((m: any) => m.matchStage !== 'no_match').length,
       unmatched: unmatchedItems.length,
       byStage: {
-        part_number: matches.filter(m => m.matchStage === 'part_number').length,
-        part_name: matches.filter(m => m.matchStage === 'part_name').length,
-        description: matches.filter(m => m.matchStage === 'description').length,
+        part_number: matches.filter((m: any) => m.matchStage === 'part_number').length,
+        part_name: matches.filter((m: any) => m.matchStage === 'part_name').length,
+        description: matches.filter((m: any) => m.matchStage === 'description').length,
         no_match: unmatchedItems.length,
       },
       averageConfidence: matches
-        .filter(m => m.matchStage !== 'no_match')
+        .filter((m: any) => m.matchStage !== 'no_match')
         .reduce((sum, m) => sum + m.confidenceScore, 0) / 
         (matches.length - unmatchedItems.length || 1),
     };
@@ -180,17 +180,17 @@ export async function GET(request: NextRequest) {
     const stats = {
       total: matches.length,
       byStatus: {
-        pending: matches.filter(m => m.status === 'pending').length,
-        confirmed: matches.filter(m => m.status === 'confirmed').length,
-        rejected: matches.filter(m => m.status === 'rejected').length,
+        pending: matches.filter((m: any) => m.status === 'pending').length,
+        confirmed: matches.filter((m: any) => m.status === 'confirmed').length,
+        rejected: matches.filter((m: any) => m.status === 'rejected').length,
       },
       byStage: {
-        part_number: matches.filter(m => m.matchStage === 'part_number').length,
-        part_name: matches.filter(m => m.matchStage === 'part_name').length,
-        description: matches.filter(m => m.matchStage === 'description').length,
-        web_search: matches.filter(m => m.matchStage === 'web_search').length,
-        manual: matches.filter(m => m.matchStage === 'manual').length,
-        no_match: matches.filter(m => m.matchStage === 'no_match').length,
+        part_number: matches.filter((m: any) => m.matchStage === 'part_number').length,
+        part_name: matches.filter((m: any) => m.matchStage === 'part_name').length,
+        description: matches.filter((m: any) => m.matchStage === 'description').length,
+        web_search: matches.filter((m: any) => m.matchStage === 'web_search').length,
+        manual: matches.filter((m: any) => m.matchStage === 'manual').length,
+        no_match: matches.filter((m: any) => m.matchStage === 'no_match').length,
       },
     };
 

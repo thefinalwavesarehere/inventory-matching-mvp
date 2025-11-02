@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
 
     // Combine and format the data
     const reportData = [
-      ...unmatchedParts.map(unmatched => ({
+      ...unmatchedParts.map((unmatched: any) => ({
         partNumber: unmatched.arnoldItem.partNumber,
         usageLast12: unmatched.arnoldItem.usageLast12,
         cost: unmatched.arnoldItem.cost,
@@ -77,13 +77,13 @@ export async function GET(request: NextRequest) {
         notes: unmatched.notes || '',
         status: 'Unmatched',
         topAttemptedMatches: unmatched.arnoldItem.matchResults
-          .map(m => ({
+          .map((m: any) => ({
             supplierPart: m.supplierItem?.partFull || 'N/A',
             confidence: (m.confidenceScore * 100).toFixed(1) + '%',
             stage: m.matchStage,
           })),
       })),
-      ...rejectedMatches.map(rejected => ({
+      ...rejectedMatches.map((rejected: any) => ({
         partNumber: rejected.arnoldItem.partNumber,
         usageLast12: rejected.arnoldItem.usageLast12,
         cost: rejected.arnoldItem.cost,
@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Format data for export
-    const exportData = confirmedMatches.map(match => {
+    const exportData = confirmedMatches.map((match: any) => {
       const baseData: any = {
         'Arnold Part Number': match.arnoldItem.partNumber,
         'Arnold Usage (Last 12)': match.arnoldItem.usageLast12 || 0,
