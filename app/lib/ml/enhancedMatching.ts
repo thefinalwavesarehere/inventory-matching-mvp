@@ -262,23 +262,44 @@ function matchByPartNumber(
   }
 
   // 3. Try suffix matching (O(1) lookup + small comparison)
-  if (normalizedArnold.length >= 4) {
-    const suffix = normalizedArnold.slice(-4);
-    const suffixMatches = indexes.byPartSuffix.get(suffix);
+  // STRICTER: Require at least 6 characters match AND line code compatibility
+  if (normalizedArnold.length >= 6) {
+    const suffix = normalizedArnold.slice(-6);  // Use last 6 chars instead of 4
+    const suffixMatches = indexes.byPartSuffix.get(suffix.slice(-4));  // Still index by last 4
     
     if (suffixMatches) {
       for (const supplierItem of suffixMatches) {
         const normalizedSupplierPart = normalizePartNumber(supplierItem.partNumber);
         
-        // Check if Arnold part ends with supplier part number
-        if (normalizedArnold.endsWith(normalizedSupplierPart) && normalizedSupplierPart.length >= 4) {
-          const score = 0.9;
-          if (score > (bestMatch?.score || 0)) {
-            bestMatch = {
-              item: supplierItem,
-              score,
-              reasons: ['Arnold part contains supplier part number'],
-            };
+        // STRICTER: Require at least 6 characters to match (not just 4)
+        if (normalizedArnold.endsWith(normalizedSupplierPart) && normalizedSupplierPart.length >= 6) {
+          // STRICTER: Also check line code compatibility
+          const supplierLineCode = extractLineCode(supplierItem.partFull) || supplierItem.lineCode;
+          const lineCodeCompatible = arnoldLineCode && supplierLineCode && 
+                                     checkLineCodeCompatibility(arnoldLineCode, supplierLineCode);
+          
+          if (lineCodeCompatible) {
+            const score = 0.92;  // Slightly higher score for line code match
+            if (score > (bestMatch?.score || 0)) {
+              bestMatch = {
+                item: supplierItem,
+                score,
+                reasons: [
+                  'Arnold part contains supplier part number',
+                  `Line codes compatible: ${arnoldLineCode} ↔ ${supplierLineCode}`
+                ],
+              };
+            }
+          } else {
+            // Without line code match, lower confidence
+            const score = 0.85;
+            if (score > (bestMatch?.score || 0)) {
+              bestMatch = {
+                item: supplierItem,
+                score,
+                reasons: ['Arnold part contains supplier part number (no line code validation)'],
+              };
+            }
           }
         }
       }

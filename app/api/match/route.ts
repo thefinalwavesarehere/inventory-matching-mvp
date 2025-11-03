@@ -14,8 +14,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get Arnold inventory items
-    const arnoldItems = await prisma.arnoldInventory.findMany({
+    // Get Arnold inventory items with filtering
+    console.log('📋 Fetching Arnold inventory items...');
+    const allArnoldItems = await prisma.arnoldInventory.findMany({
       where: arnoldSessionId 
         ? { sessionId: arnoldSessionId }
         : {
@@ -25,15 +26,73 @@ export async function POST(request: NextRequest) {
             },
           },
       orderBy: { createdAt: 'desc' },
-      // No limit - process all items
     });
+
+    // Filter out invalid/empty Arnold items
+    const arnoldItems = allArnoldItems.filter(item => {
+      // Skip items with null or empty part numbers
+      if (!item.partNumber || item.partNumber.trim() === '') {
+        return false;
+      }
+      
+      // Skip items with N/A or zero usage (optional - uncomment to enable)
+      // if (!item.usageLast12 || item.usageLast12 === 0) {
+      //   return false;
+      // }
+      
+      return true;
+    });
+
+    console.log(`✅ Loaded ${allArnoldItems.length} Arnold items, ${arnoldItems.length} valid after filtering (${allArnoldItems.length - arnoldItems.length} filtered out)`);
 
     if (arnoldItems.length === 0) {
       return NextResponse.json(
-        { error: 'No Arnold inventory items found for this project' },
+        { error: 'No valid Arnold inventory items found for this project' },
         { status: 404 }
       );
     }
+
+    // Enrich Arnold items with descriptions from Inventory Report
+    console.log('📚 Enriching Arnold items with descriptions from Inventory Report...');
+    const inventoryReportItems = await prisma.supplierCatalog.findMany({
+      where: {
+        session: {
+          projectId,
+        },
+        supplierName: 'Arnold Inventory Report',
+      },
+    });
+
+    // Create lookup map for fast enrichment
+    const inventoryMap = new Map();
+    for (const item of inventoryReportItems) {
+      // Index by both full part number and part number without line code
+      if (item.partFull) {
+        inventoryMap.set(item.partFull.toLowerCase(), item);
+      }
+      if (item.partNumber) {
+        inventoryMap.set(item.partNumber.toLowerCase(), item);
+      }
+    }
+
+    // Enrich Arnold items
+    let enrichedCount = 0;
+    for (const arnoldItem of arnoldItems) {
+      const normalizedPart = arnoldItem.partNumber.toLowerCase();
+      const partWithoutLineCode = arnoldItem.partNumber.replace(/^[A-Z]+/, '').toLowerCase();
+      
+      const inventoryItem = inventoryMap.get(normalizedPart) || inventoryMap.get(partWithoutLineCode);
+      
+      if (inventoryItem && inventoryItem.description) {
+        // Add description and other data to Arnold item (in memory only)
+        (arnoldItem as any).description = inventoryItem.description;
+        (arnoldItem as any).lineCode = inventoryItem.lineCode;
+        (arnoldItem as any).qtyAvail = inventoryItem.qtyAvail;
+        enrichedCount++;
+      }
+    }
+
+    console.log(`✅ Enriched ${enrichedCount}/${arnoldItems.length} Arnold items with descriptions`);
 
     // Get supplier catalog items
     const supplierItems = await prisma.supplierCatalog.findMany({
@@ -57,8 +116,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Run matching algorithm
-    const matches = await findMatchesMultiStage(arnoldItems, supplierItems, options);
+    // Run matching algorithm with stricter thresholds
+    const matchOptions = {
+      ...options,
+      partNumberThreshold: options.partNumberThreshold || 0.95,  // Increased from 0.9
+      nameThreshold: options.nameThreshold || 0.80,              // Increased from 0.7
+      descriptionThreshold: options.descriptionThreshold || 0.70, // Increased from 0.6
+    };
+    
+    console.log('🔍 Running matching with thresholds:', matchOptions);
+    const matches = await findMatchesMultiStage(arnoldItems, supplierItems, matchOptions);
 
     // Save match results to database using batch processing
     console.log(`💾 Saving ${matches.length} match results to database...`);
