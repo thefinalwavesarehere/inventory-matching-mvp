@@ -54,42 +54,64 @@ export async function POST(request: NextRequest) {
 
     // Enrich Arnold items with descriptions from Inventory Report
     console.log('📚 Enriching Arnold items with descriptions from Inventory Report...');
-    const inventoryReportItems = await prisma.supplierCatalog.findMany({
-      where: {
-        session: {
-          projectId,
-        },
-        supplierName: 'Arnold Inventory Report',
-      },
-    });
-
-    // Create lookup map for fast enrichment
-    const inventoryMap = new Map();
-    for (const item of inventoryReportItems) {
-      // Index by both full part number and part number without line code
-      if (item.partFull) {
-        inventoryMap.set(item.partFull.toLowerCase(), item);
-      }
-      if (item.partNumber) {
-        inventoryMap.set(item.partNumber.toLowerCase(), item);
-      }
-    }
-
-    // Enrich Arnold items
     let enrichedCount = 0;
-    for (const arnoldItem of arnoldItems) {
-      const normalizedPart = arnoldItem.partNumber.toLowerCase();
-      const partWithoutLineCode = arnoldItem.partNumber.replace(/^[A-Z]+/, '').toLowerCase();
-      
-      const inventoryItem = inventoryMap.get(normalizedPart) || inventoryMap.get(partWithoutLineCode);
-      
-      if (inventoryItem && inventoryItem.description) {
-        // Add description and other data to Arnold item (in memory only)
-        (arnoldItem as any).description = inventoryItem.description;
-        (arnoldItem as any).lineCode = inventoryItem.lineCode;
-        (arnoldItem as any).qtyAvail = inventoryItem.qtyAvail;
-        enrichedCount++;
+    
+    try {
+      const inventoryReportItems = await prisma.supplierCatalog.findMany({
+        where: {
+          session: {
+            projectId,
+          },
+          supplierName: 'Arnold Inventory Report',
+        },
+      });
+
+      if (inventoryReportItems.length > 0) {
+        // Create lookup map for fast enrichment
+        const inventoryMap = new Map();
+        for (const item of inventoryReportItems) {
+          try {
+            // Index by both full part number and part number without line code
+            if (item.partFull && typeof item.partFull === 'string') {
+              inventoryMap.set(item.partFull.toLowerCase().trim(), item);
+            }
+            if (item.partNumber && typeof item.partNumber === 'string') {
+              inventoryMap.set(item.partNumber.toLowerCase().trim(), item);
+            }
+          } catch (err) {
+            // Skip items that cause errors
+            console.warn('Error indexing inventory item:', err);
+          }
+        }
+
+        // Enrich Arnold items
+        for (const arnoldItem of arnoldItems) {
+          try {
+            if (!arnoldItem.partNumber || typeof arnoldItem.partNumber !== 'string') {
+              continue;
+            }
+            
+            const normalizedPart = arnoldItem.partNumber.toLowerCase().trim();
+            const partWithoutLineCode = arnoldItem.partNumber.replace(/^[A-Z]+/, '').toLowerCase().trim();
+            
+            const inventoryItem = inventoryMap.get(normalizedPart) || inventoryMap.get(partWithoutLineCode);
+            
+            if (inventoryItem && inventoryItem.description) {
+              // Add description and other data to Arnold item (in memory only)
+              (arnoldItem as any).description = inventoryItem.description;
+              (arnoldItem as any).lineCode = inventoryItem.lineCode || '';
+              (arnoldItem as any).qtyAvail = inventoryItem.qtyAvail || null;
+              enrichedCount++;
+            }
+          } catch (err) {
+            // Skip items that cause errors
+            console.warn(`Error enriching Arnold item ${arnoldItem.id}:`, err);
+          }
+        }
       }
+    } catch (err) {
+      console.error('Error during enrichment:', err);
+      // Continue without enrichment if there's an error
     }
 
     console.log(`✅ Enriched ${enrichedCount}/${arnoldItems.length} Arnold items with descriptions`);
@@ -117,8 +139,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Run matching algorithm with stricter thresholds
+    // DISABLE interchange file matching due to bad data
     const matchOptions = {
       ...options,
+      useKnownInterchanges: false,  // DISABLED - interchange file has bad data
       partNumberThreshold: options.partNumberThreshold || 0.95,  // Increased from 0.9
       nameThreshold: options.nameThreshold || 0.80,              // Increased from 0.7
       descriptionThreshold: options.descriptionThreshold || 0.70, // Increased from 0.6
