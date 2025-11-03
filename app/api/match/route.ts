@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
             },
           },
       orderBy: { createdAt: 'desc' },
-      take: arnoldSessionId ? undefined : 1000, // Limit if not specified
+      // No limit - process all items
     });
 
     if (arnoldItems.length === 0) {
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
             supplierName: 'CarQuest', // Only match against CarQuest, not inventory report
           },
       orderBy: { createdAt: 'desc' },
-      take: supplierSessionId ? undefined : 10000, // Limit if not specified
+      // No limit - process all items
     });
 
     if (supplierItems.length === 0) {

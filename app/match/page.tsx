@@ -114,13 +114,19 @@ export default function MatchPage() {
     }
   };
 
-  const handleWebSearch = async (arnoldItemId: string) => {
+  const handleWebSearch = async (arnoldItemId: string, partNumber: string, partName?: string, description?: string) => {
     try {
       setIsProcessing(true);
-      const response = await fetch('/api/web-search', {
+      const response = await fetch('/api/ai-search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ arnoldItemId }),
+        body: JSON.stringify({ 
+          action: 'search',
+          arnoldItemId,
+          partNumber,
+          partName,
+          description
+        }),
       });
 
       const data = await response.json();
@@ -129,7 +135,11 @@ export default function MatchPage() {
         throw new Error(data.error || 'Failed to perform web search');
       }
 
-      alert('Web search completed! Check the results.');
+      if (data.data.found && data.data.suggestedMatches.length > 0) {
+        alert(`Found ${data.data.suggestedMatches.length} potential match(es)! Refreshing results...`);
+      } else {
+        alert('No matches found via web search. This part may need manual matching.');
+      }
       await fetchMatches();
     } catch (err: any) {
       alert(err.message || 'Failed to perform web search');
@@ -414,11 +424,16 @@ export default function MatchPage() {
                         </button>
                         {selectedMatch.matchStage === 'no_match' && (
                           <button
-                            onClick={() => handleWebSearch(selectedMatch.arnoldItem.id)}
+                            onClick={() => handleWebSearch(
+                              selectedMatch.arnoldItem.id,
+                              selectedMatch.arnoldItem.partNumber,
+                              selectedMatch.arnoldItem.rawData?.Description,
+                              selectedMatch.arnoldItem.rawData?.Description
+                            )}
                             disabled={isProcessing}
                             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
                           >
-                            Try Web Search
+                            🤖 Try AI Web Search
                           </button>
                         )}
                       </>

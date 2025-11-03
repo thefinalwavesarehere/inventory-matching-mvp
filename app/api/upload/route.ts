@@ -10,6 +10,7 @@ export async function POST(request: NextRequest) {
     const fileType = formData.get('fileType') as string | null;
     const projectId = formData.get('projectId') as string | null;
     const projectName = formData.get('projectName') as string | null;
+    const customFileName = formData.get('customFileName') as string | null;
 
     if (!file) {
       return NextResponse.json(
@@ -88,10 +89,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Create upload session
+    const displayName = customFileName || file.name;
     const uploadSession = await prisma.uploadSession.create({
       data: {
         projectId: project.id,
-        fileName: file.name,
+        fileName: displayName,
         fileType: detectedFileType,
         rowCount: items.length,
         status: 'processing',
