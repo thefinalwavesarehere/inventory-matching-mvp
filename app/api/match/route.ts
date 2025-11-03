@@ -60,37 +60,62 @@ export async function POST(request: NextRequest) {
     // Run matching algorithm
     const matches = await findMatchesMultiStage(arnoldItems, supplierItems, options);
 
-    // Save match results to database
-    const savedMatches = [];
-    for (const match of matches) {
-      const saved = await prisma.matchResult.create({
-        data: {
+    // Save match results to database using batch processing
+    console.log(`💾 Saving ${matches.length} match results to database...`);
+    const saveStartTime = Date.now();
+    
+    // Use createMany for batch insert (much faster than individual creates)
+    const BATCH_SIZE = 1000;
+    for (let i = 0; i < matches.length; i += BATCH_SIZE) {
+      const batch = matches.slice(i, i + BATCH_SIZE);
+      await prisma.matchResult.createMany({
+        data: batch.map(match => ({
           arnoldItemId: match.arnoldItem.id,
           supplierItemId: match.supplierItem?.id || null,
           matchStage: match.matchStage,
           confidenceScore: match.confidenceScore,
           matchReasons: match.matchReasons,
           status: match.matchStage === 'no_match' ? 'pending' : 'pending',
-        },
-        include: {
-          arnoldItem: true,
-          supplierItem: true,
-        },
+        })),
       });
-      savedMatches.push(saved);
+      console.log(`💾 Saved batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(matches.length / BATCH_SIZE)}`);
     }
+    
+    console.log(`✅ All match results saved in ${Date.now() - saveStartTime}ms`);
 
-    // Track unmatched parts
+    // Track unmatched parts using batch insert
     const unmatchedItems = matches.filter(m => m.matchStage === 'no_match');
-    for (const unmatched of unmatchedItems) {
-      await prisma.unmatchedPart.create({
-        data: {
+    if (unmatchedItems.length > 0) {
+      console.log(`💾 Saving ${unmatchedItems.length} unmatched parts...`);
+      await prisma.unmatchedPart.createMany({
+        data: unmatchedItems.map(unmatched => ({
           arnoldItemId: unmatched.arnoldItem.id,
           attemptedMethods: ['part_number', 'part_name', 'description'],
           requiresManual: true,
-        },
+        })),
+        skipDuplicates: true,
       });
+      console.log(`✅ Unmatched parts saved`);
     }
+    
+    // Fetch saved matches for response (limit to avoid timeout)
+    const savedMatches = await prisma.matchResult.findMany({
+      where: {
+        arnoldItem: {
+          session: {
+            projectId,
+          },
+        },
+      },
+      include: {
+        arnoldItem: true,
+        supplierItem: true,
+      },
+      orderBy: {
+        confidenceScore: 'desc',
+      },
+      take: 100, // Only return top 100 matches in response
+    });
 
     // Calculate statistics
     const stats = {

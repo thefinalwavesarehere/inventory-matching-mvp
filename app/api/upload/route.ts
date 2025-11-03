@@ -56,7 +56,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Process the file
+    console.log(`📄 Processing ${detectedFileType} file: ${file.name} (${Math.round(buffer.length / 1024)}KB)`);
+    const processStart = Date.now();
     const items = processExcelFile(buffer, detectedFileType as any);
+    console.log(`✅ File processed in ${Date.now() - processStart}ms: ${items.length} items found`);
 
     if (items.length === 0) {
       return NextResponse.json(
@@ -102,6 +105,8 @@ export async function POST(request: NextRequest) {
 
     // Save items to database based on file type
     // Use batch processing to avoid timeouts on large files
+    console.log(`💾 Saving ${items.length} items to database in batches...`);
+    const dbStartTime = Date.now();
     const BATCH_SIZE = 1000;
     try {
       switch (detectedFileType) {
@@ -118,6 +123,7 @@ export async function POST(request: NextRequest) {
                 rawData: item.rawData,
               })),
             });
+            console.log(`💾 Arnold: Saved batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(items.length / BATCH_SIZE)}`);
           }
           break;
 
@@ -139,6 +145,7 @@ export async function POST(request: NextRequest) {
                 rawData: item.rawData,
               })),
             });
+            console.log(`💾 Supplier: Saved batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(items.length / BATCH_SIZE)}`);
           }
           break;
 
@@ -174,10 +181,13 @@ export async function POST(request: NextRequest) {
                 rawData: item.rawData,
               })),
             });
+            console.log(`💾 Inventory Report: Saved batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(items.length / BATCH_SIZE)}`);
           }
           break;
       }
 
+      console.log(`✅ All items saved to database in ${Date.now() - dbStartTime}ms`);
+      
       // Update upload session status
       await prisma.uploadSession.update({
         where: { id: uploadSession.id },
