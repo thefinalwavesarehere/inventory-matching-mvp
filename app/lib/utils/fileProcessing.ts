@@ -244,10 +244,28 @@ export function extractLineCode(partNumber: string): string | null {
  * Normalize part number for comparison
  */
 export function normalizePartNumber(partNumber: string): string {
-  return partNumber
+  let normalized = partNumber
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '')
     .trim();
+  
+  // Remove common supplier prefixes to improve matching
+  // These prefixes are often added by suppliers to Arnold part numbers
+  const commonPrefixes = ['XBO', 'RDS', 'LUB', 'AXL', 'AUV', 'RDSNC', 'RDSNCV'];
+  
+  for (const prefix of commonPrefixes) {
+    if (normalized.startsWith(prefix) && normalized.length > prefix.length + 4) {
+      // Check if removing prefix leaves a valid-looking part number
+      const withoutPrefix = normalized.substring(prefix.length);
+      // Valid part numbers typically have 2-4 letters followed by 4+ digits
+      if (withoutPrefix.match(/^[A-Z]{2,5}[0-9]{3,}/)) {
+        normalized = withoutPrefix;
+        break;  // Only remove one prefix
+      }
+    }
+  }
+  
+  return normalized;
 }
 
 /**
