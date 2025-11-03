@@ -179,7 +179,7 @@ export default function MatchPage() {
     }
   };
 
-  const handleBulkSemanticMatch = async () {
+  const handleBulkSemanticMatch = async () => {
     try {
       setBulkProcessing(true);
       const pendingMatches = matches.filter((m: any) => m.status === 'pending' && m.matchStage === 'no_match');
