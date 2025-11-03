@@ -84,14 +84,21 @@ export default function Upload() {
         body: formData,
       });
 
+      // Clone the response so we can read it twice if needed
+      const responseClone = response.clone();
       let result;
       try {
         result = await response.json();
       } catch (jsonError) {
-        // If JSON parsing fails, try to get the text response
-        const textResponse = await response.text();
-        console.error('Failed to parse JSON response:', textResponse);
-        throw new Error(`Server returned invalid response. Status: ${response.status}`);
+        // If JSON parsing fails, try to get the text response from the clone
+        try {
+          const textResponse = await responseClone.text();
+          console.error('Failed to parse JSON response:', textResponse);
+          throw new Error(`Server returned invalid response. Status: ${response.status}`);
+        } catch (textError) {
+          console.error('Failed to read response:', textError);
+          throw new Error(`Server returned unreadable response. Status: ${response.status}`);
+        }
       }
 
       if (!response.ok) {

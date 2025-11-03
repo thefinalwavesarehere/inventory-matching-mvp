@@ -101,35 +101,45 @@ export async function POST(request: NextRequest) {
     });
 
     // Save items to database based on file type
+    // Use batch processing to avoid timeouts on large files
+    const BATCH_SIZE = 1000;
     try {
       switch (detectedFileType) {
         case 'arnold':
-          await prisma.arnoldInventory.createMany({
-            data: items.map((item: any) => ({
-              sessionId: uploadSession.id,
-              partNumber: item.partNumber,
-              usageLast12: item.usageLast12,
-              cost: item.cost,
-              rawData: item.rawData,
-            })),
-          });
+          // Process in batches
+          for (let i = 0; i < items.length; i += BATCH_SIZE) {
+            const batch = items.slice(i, i + BATCH_SIZE);
+            await prisma.arnoldInventory.createMany({
+              data: batch.map((item: any) => ({
+                sessionId: uploadSession.id,
+                partNumber: item.partNumber,
+                usageLast12: item.usageLast12,
+                cost: item.cost,
+                rawData: item.rawData,
+              })),
+            });
+          }
           break;
 
         case 'supplier':
-          await prisma.supplierCatalog.createMany({
-            data: items.map((item: any) => ({
-              sessionId: uploadSession.id,
-              supplierName: 'CarQuest',
-              partFull: item.partFull,
-              lineCode: item.lineCode,
-              partNumber: item.partNumber,
-              description: item.description,
-              qtyAvail: item.qtyAvail,
-              cost: item.cost,
-              ytdHist: item.ytdHist,
-              rawData: item.rawData,
-            })),
-          });
+          // Process in batches
+          for (let i = 0; i < items.length; i += BATCH_SIZE) {
+            const batch = items.slice(i, i + BATCH_SIZE);
+            await prisma.supplierCatalog.createMany({
+              data: batch.map((item: any) => ({
+                sessionId: uploadSession.id,
+                supplierName: 'CarQuest',
+                partFull: item.partFull,
+                lineCode: item.lineCode,
+                partNumber: item.partNumber,
+                description: item.description,
+                qtyAvail: item.qtyAvail,
+                cost: item.cost,
+                ytdHist: item.ytdHist,
+                rawData: item.rawData,
+              })),
+            });
+          }
           break;
 
         case 'interchange':
@@ -146,21 +156,25 @@ export async function POST(request: NextRequest) {
         case 'inventory_report':
           // For now, we'll store inventory report data as supplier catalog
           // since it has similar structure and can be used for enrichment
-          await prisma.supplierCatalog.createMany({
-            data: items.map((item: any) => ({
-              sessionId: uploadSession.id,
-              supplierName: 'Arnold Inventory Report',
-              partFull: item.lineCode && item.partNumber 
-                ? `${item.lineCode}${item.partNumber}` 
-                : item.partNumber || '',
-              lineCode: item.lineCode || '',
-              partNumber: item.partNumber || '',
-              description: item.description,
-              qtyAvail: item.qtyAvail,
-              cost: item.cost,
-              rawData: item.rawData,
-            })),
-          });
+          // Process in batches to avoid timeout
+          for (let i = 0; i < items.length; i += BATCH_SIZE) {
+            const batch = items.slice(i, i + BATCH_SIZE);
+            await prisma.supplierCatalog.createMany({
+              data: batch.map((item: any) => ({
+                sessionId: uploadSession.id,
+                supplierName: 'Arnold Inventory Report',
+                partFull: item.lineCode && item.partNumber 
+                  ? `${item.lineCode}${item.partNumber}` 
+                  : item.partNumber || '',
+                lineCode: item.lineCode || '',
+                partNumber: item.partNumber || '',
+                description: item.description,
+                qtyAvail: item.qtyAvail,
+                cost: item.cost,
+                rawData: item.rawData,
+              })),
+            });
+          }
           break;
       }
 
