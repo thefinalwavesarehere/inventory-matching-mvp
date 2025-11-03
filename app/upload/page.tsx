@@ -18,6 +18,8 @@ export default function Upload() {
   const [uploadResult, setUploadResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunningMatch, setIsRunningMatch] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
 
   useEffect(() => {
     fetchProjects();
@@ -82,11 +84,29 @@ export default function Upload() {
         body: formData,
       });
 
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        // If JSON parsing fails, try to get the text response
+        const textResponse = await response.text();
+        console.error('Failed to parse JSON response:', textResponse);
+        throw new Error(`Server returned invalid response. Status: ${response.status}`);
+      }
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to upload file');
+        // Retry logic for failed uploads
+        if (retryCount < maxRetries && response.status >= 500) {
+          setRetryCount(retryCount + 1);
+          setError(`Upload failed. Retrying... (Attempt ${retryCount + 1}/${maxRetries})`);
+          setTimeout(() => handleSubmit(e), 2000); // Retry after 2 seconds
+          return;
+        }
+        throw new Error(result.error || result.message || 'Failed to upload file');
       }
+      
+      // Reset retry count on success
+      setRetryCount(0);
 
       setUploadResult(result.data);
       setFile(null);
@@ -150,9 +170,16 @@ export default function Upload() {
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
-          <Link href="/" className="text-blue-600 hover:text-blue-800 mb-4 inline-block">
-            ← Back to Home
-          </Link>
+          <div className="flex gap-4 mb-4">
+            <Link href="/" className="text-blue-600 hover:text-blue-800 inline-block">
+              ← Back to Home
+            </Link>
+            {projectId && (
+              <Link href={`/projects`} className="text-blue-600 hover:text-blue-800 inline-block">
+                ← Back to Project
+              </Link>
+            )}
+          </div>
           <h1 className="text-3xl font-bold text-gray-900">Upload Files</h1>
           <p className="text-gray-600 mt-2">
             Upload Arnold inventory, supplier catalogs, or interchange files for matching

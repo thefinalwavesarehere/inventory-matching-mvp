@@ -201,10 +201,17 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error processing file:', error);
+    
+    // Ensure we always return valid JSON
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorDetails = error instanceof Error ? error.stack : String(error);
+    
     return NextResponse.json(
       { 
+        success: false,
         error: 'Failed to process file',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        message: errorMessage,
+        details: errorDetails
       },
       { status: 500 }
     );
@@ -247,6 +254,9 @@ export async function GET(request: NextRequest) {
         include: {
           uploadSessions: {
             orderBy: { uploadedAt: 'desc' },
+          },
+          _count: {
+            select: { uploadSessions: true },
           },
         },
         orderBy: { createdAt: 'desc' },

@@ -30,6 +30,7 @@ export default function MatchPage() {
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
   const [selectedMatches, setSelectedMatches] = useState<Set<string>>(new Set());
+  const [isRunningTraditionalMatch, setIsRunningTraditionalMatch] = useState(false);
 
   useEffect(() => {
     if (projectId) {
@@ -151,7 +152,34 @@ export default function MatchPage() {
     }
   };
 
-  const handleBulkSemanticMatch = async () => {
+  const handleRunTraditionalMatching = async () => {
+    try {
+      setIsRunningTraditionalMatch(true);
+      setError(null);
+
+      const response = await fetch('/api/match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to run matching');
+      }
+
+      alert(`Traditional matching complete! Found ${data.matchCount} matches.`);
+      await fetchMatches();
+    } catch (err: any) {
+      setError(err.message || 'Failed to run traditional matching');
+      alert(err.message || 'Failed to run traditional matching');
+    } finally {
+      setIsRunningTraditionalMatch(false);
+    }
+  };
+
+  const handleBulkSemanticMatch = async () {
     try {
       setBulkProcessing(true);
       const pendingMatches = matches.filter((m: any) => m.status === 'pending' && m.matchStage === 'no_match');
@@ -332,9 +360,24 @@ export default function MatchPage() {
           </div>
         </div>
 
-        {/* Bulk Operations */}
+        {/* Traditional Matching */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md mb-8">
-          <h2 className="text-xl font-semibold mb-4">Bulk AI Operations</h2>
+          <h2 className="text-xl font-semibold mb-4">🔍 Traditional Matching</h2>
+          <button
+            onClick={handleRunTraditionalMatching}
+            disabled={isRunningTraditionalMatch || isLoading}
+            className="px-6 py-3 bg-black text-white rounded-md hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          >
+            {isRunningTraditionalMatch ? 'Running Matching...' : 'Run Traditional Matching'}
+          </button>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
+            Runs algorithmic matching based on part numbers, names, and descriptions (no AI, no cost).
+          </p>
+        </div>
+
+        {/* Bulk AI Operations */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md mb-8">
+          <h2 className="text-xl font-semibold mb-4">🤖 Bulk AI Operations</h2>
           <div className="flex gap-4 items-center">
             <button
               onClick={handleBulkSemanticMatch}
