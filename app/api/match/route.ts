@@ -146,9 +146,9 @@ export async function POST(request: NextRequest) {
     // DISABLE interchange file matching due to bad data
     const matchOptions = {
       useKnownInterchanges: false,  // DISABLED - interchange file has bad data
-      partNumberThreshold: options?.partNumberThreshold || 0.95,  // Increased from 0.9
-      nameThreshold: options?.nameThreshold || 0.80,              // Increased from 0.7
-      descriptionThreshold: options?.descriptionThreshold || 0.70, // Increased from 0.6
+      partNumberThreshold: options?.partNumberThreshold || 0.85,  // Lowered to handle supplier prefixes
+      nameThreshold: options?.nameThreshold || 0.70,              // Lowered for better match rate
+      descriptionThreshold: options?.descriptionThreshold || 0.60, // Lowered for better match rate
     };
     
     console.log('🔍 Running matching with thresholds:', matchOptions);
