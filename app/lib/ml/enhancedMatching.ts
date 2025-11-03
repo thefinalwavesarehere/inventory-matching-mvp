@@ -26,6 +26,9 @@ export interface MatchResult {
   matchReasons: string[];
 }
 
+// Type for best match tracking
+type BestMatch = { item: SupplierItem; score: number; reasons: string[] };
+
 /**
  * Supplier item indexes for O(1) lookups
  */
@@ -235,7 +238,7 @@ function matchByPartNumber(
   const normalizedArnold = normalizePartNumber(arnoldItem.partNumber);
   const arnoldLineCode = extractLineCode(arnoldItem.partNumber);
 
-  let bestMatch: { item: SupplierItem; score: number; reasons: string[] } | null = null;
+  let bestMatch: BestMatch | null = null;
 
   // 1. Try exact match on full part number (O(1) lookup)
   const exactMatch = indexes.byPartFull.get(normalizedArnold);
@@ -261,7 +264,95 @@ function matchByPartNumber(
     };
   }
 
-  // 3. Try suffix matching (O(1) lookup + small comparison)
+  // 3. Try fuzzy substring matching (handles prefixes and variations)
+  // Check if Arnold part is substring of supplier part OR vice versa
+  // This handles cases like: AXLCH8365 found in XBOAXLCH8365
+  const substringMatches: { item: SupplierItem; score: number; reasons: string[] }[] = [];
+  
+  // OPTIMIZATION: Only check line code compatible items to reduce search space
+  let candidateItems: SupplierItem[] = [];
+  if (arnoldLineCode) {
+    const compatibleLineCodes = getCompatibleLineCodes(arnoldLineCode);
+    for (const lineCode of compatibleLineCodes) {
+      const lineCodeMatches = indexes.byLineCode.get(lineCode);
+      if (lineCodeMatches) {
+        candidateItems.push(...lineCodeMatches);
+      }
+    }
+  }
+  
+  // If no line code or no candidates, limit to first 2000 items (performance)
+  if (candidateItems.length === 0) {
+    let count = 0;
+    for (const [_, supplierItem] of indexes.byPartFull) {
+      candidateItems.push(supplierItem);
+      if (++count >= 2000) break;  // Limit search to prevent timeout
+    }
+  }
+  
+  // Search through candidate items for substring matches
+  for (const supplierItem of candidateItems) {
+    const normalizedSupplierFull = normalizePartNumber(supplierItem.partFull);
+    const normalizedSupplierPart = normalizePartNumber(supplierItem.partNumber);
+    
+    // Check if Arnold part is substring of supplier part (common with prefixes)
+    if (normalizedSupplierFull.includes(normalizedArnold) && normalizedArnold.length >= 6) {
+      const score = 0.90;  // High confidence for substring match
+      substringMatches.push({
+        item: supplierItem,
+        score,
+        reasons: [
+          'Arnold part number found in supplier part',
+          `${arnoldItem.partNumber} found in ${supplierItem.partFull}`
+        ],
+      });
+    }
+    // Check if supplier part is substring of Arnold part (less common)
+    else if (normalizedArnold.includes(normalizedSupplierPart) && normalizedSupplierPart.length >= 6) {
+      const score = 0.88;  // Slightly lower confidence
+      substringMatches.push({
+        item: supplierItem,
+        score,
+        reasons: [
+          'Supplier part number found in Arnold part',
+          `${supplierItem.partNumber} found in ${arnoldItem.partNumber}`
+        ],
+      });
+    }
+    // Check for partial matches (at least 70% of Arnold part found)
+    else if (normalizedArnold.length >= 8) {
+      const minLength = Math.floor(normalizedArnold.length * 0.7);
+      for (let i = 0; i <= normalizedArnold.length - minLength; i++) {
+        const substring = normalizedArnold.substring(i, i + minLength);
+        if (normalizedSupplierFull.includes(substring)) {
+          const score = 0.85;  // Moderate confidence
+          substringMatches.push({
+            item: supplierItem,
+            score,
+            reasons: [
+              'Partial part number match',
+              `${substring} (${minLength} chars) found in supplier part`
+            ],
+          });
+          break;  // Only count once per supplier item
+        }
+      }
+    }
+  }
+  
+  // Pick best substring match if found
+  if (substringMatches.length > 0) {
+    // Sort by score descending
+    substringMatches.sort((a, b) => b.score - a.score);
+    const best: BestMatch = substringMatches[0];
+    
+    const currentBestScore = bestMatch !== null ? (bestMatch as BestMatch).score : 0;
+    if (best && best.score > currentBestScore) {
+      bestMatch = best;
+    }
+  }
+
+  // 4. Try suffix matching (O(1) lookup + small comparison)
   // STRICTER: Require at least 6 characters match AND line code compatibility
   if (normalizedArnold.length >= 6) {
     const suffix = normalizedArnold.slice(-6);  // Use last 6 chars instead of 4
@@ -385,7 +476,7 @@ function matchByPartName(
   const normalizedArnold = normalizePartNumber(arnoldItem.partNumber);
   const arnoldLineCode = extractLineCode(arnoldItem.partNumber);
 
-  let bestMatch: { item: SupplierItem; score: number; reasons: string[] } | null = null;
+  let bestMatch: BestMatch | null = null;
 
   // Only search within compatible line codes to reduce search space
   let candidateItems: SupplierItem[] = [];
