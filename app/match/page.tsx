@@ -27,6 +27,9 @@ export default function MatchPage() {
   const [filter, setFilter] = useState<string>('all');
   const [enrichmentForm, setEnrichmentForm] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
+  const [selectedMatches, setSelectedMatches] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (projectId) {
@@ -148,6 +151,132 @@ export default function MatchPage() {
     }
   };
 
+  const handleBulkSemanticMatch = async () => {
+    try {
+      setBulkProcessing(true);
+      const pendingMatches = matches.filter((m: any) => m.status === 'pending' && m.matchStage === 'no_match');
+      
+      if (pendingMatches.length === 0) {
+        alert('No pending unmatched parts to process');
+        return;
+      }
+
+      setBulkProgress({ current: 0, total: pendingMatches.length });
+
+      const batchItems = pendingMatches.map((m: any) => ({
+        arnoldItemId: m.arnoldItem.id,
+        supplierItemId: m.supplierItem?.id || null,
+      })).filter((item: any) => item.supplierItemId);
+
+      const response = await fetch('/api/semantic-match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'batch', batchItems }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to perform bulk semantic matching');
+      }
+
+      alert(`Processed ${data.processed} parts with AI semantic matching!`);
+      await fetchMatches();
+    } catch (err: any) {
+      alert(err.message || 'Failed to perform bulk semantic matching');
+    } finally {
+      setBulkProcessing(false);
+      setBulkProgress({ current: 0, total: 0 });
+    }
+  };
+
+  const handleBulkEnrichment = async () => {
+    try {
+      setBulkProcessing(true);
+      const confirmedMatches = matches.filter((m: any) => m.status === 'confirmed');
+      
+      if (confirmedMatches.length === 0) {
+        alert('No confirmed matches to enrich');
+        return;
+      }
+
+      setBulkProgress({ current: 0, total: confirmedMatches.length });
+
+      const response = await fetch('/api/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'batch', projectId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to perform bulk enrichment');
+      }
+
+      alert(`Enriched ${data.enriched} out of ${data.processed} parts with missing data!`);
+      await fetchMatches();
+    } catch (err: any) {
+      alert(err.message || 'Failed to perform bulk enrichment');
+    } finally {
+      setBulkProcessing(false);
+      setBulkProgress({ current: 0, total: 0 });
+    }
+  };
+
+  const handleBulkWebSearch = async () => {
+    try {
+      setBulkProcessing(true);
+      const unmatchedParts = matches.filter((m: any) => m.status === 'pending' && m.matchStage === 'no_match');
+      
+      if (unmatchedParts.length === 0) {
+        alert('No unmatched parts to search for');
+        return;
+      }
+
+      setBulkProgress({ current: 0, total: unmatchedParts.length });
+
+      // Process in smaller batches to avoid rate limits
+      const batchSize = 5;
+      let processed = 0;
+
+      for (let i = 0; i < unmatchedParts.length; i += batchSize) {
+        const batch = unmatchedParts.slice(i, i + batchSize);
+        
+        for (const match of batch) {
+          try {
+            await fetch('/api/ai-search', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'search',
+                arnoldItemId: match.arnoldItem.id,
+                partNumber: match.arnoldItem.partNumber,
+                partName: match.arnoldItem.rawData?.Description,
+                description: match.arnoldItem.rawData?.Description,
+              }),
+            });
+            processed++;
+            setBulkProgress({ current: processed, total: unmatchedParts.length });
+            
+            // Rate limiting: wait 200ms between requests
+            await new Promise(resolve => setTimeout(resolve, 200));
+          } catch (err) {
+            console.error(`Failed to search for ${match.arnoldItem.partNumber}:`, err);
+          }
+        }
+      }
+
+      alert(`Completed web search for ${processed} parts!`);
+      await fetchMatches();
+    } catch (err: any) {
+      alert(err.message || 'Failed to perform bulk web search');
+    } finally {
+      setBulkProcessing(false);
+      setBulkProgress({ current: 0, total: 0 });
+    }
+  };
+
   const getConfidenceClass = (score: number) => {
     if (score >= 0.9) return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
     if (score >= 0.7) return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
@@ -201,6 +330,47 @@ export default function MatchPage() {
               Back to Home
             </Link>
           </div>
+        </div>
+
+        {/* Bulk Operations */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md mb-8">
+          <h2 className="text-xl font-semibold mb-4">Bulk AI Operations</h2>
+          <div className="flex gap-4 items-center">
+            <button
+              onClick={handleBulkSemanticMatch}
+              disabled={bulkProcessing || isLoading}
+              className="px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              🧠 Bulk AI Semantic Match
+            </button>
+            <button
+              onClick={handleBulkWebSearch}
+              disabled={bulkProcessing || isLoading}
+              className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              🤖 Bulk AI Web Search
+            </button>
+            <button
+              onClick={handleBulkEnrichment}
+              disabled={bulkProcessing || isLoading}
+              className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              ✨ Bulk Data Enrichment
+            </button>
+            {bulkProcessing && (
+              <div className="flex items-center gap-2">
+                <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-600"></div>
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Processing: {bulkProgress.current} / {bulkProgress.total}
+                </span>
+              </div>
+            )}
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
+            <strong>Semantic Match:</strong> AI analyzes part numbers and descriptions without web search (faster, cheaper). Use this first.<br/>
+            <strong>Web Search:</strong> AI searches the web for unmatched parts (slower, more expensive). Use after semantic matching.<br/>
+            <strong>Data Enrichment:</strong> AI finds missing data (price, box size, qty) for confirmed matches using web search.
+          </p>
         </div>
 
         {/* Statistics */}
