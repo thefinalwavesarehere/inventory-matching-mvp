@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { findMatchesMultiStage } from '../../lib/ml/enhancedMatching';
 import prisma from '../../lib/db/prisma';
 
+// Increase timeout for long-running matching operations
+export const maxDuration = 300; // 5 minutes
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { projectId, arnoldSessionId, supplierSessionId, options } = body;
+    const { projectId, arnoldSessionId, supplierSessionId, options = {} } = body;
 
     if (!projectId) {
       return NextResponse.json(
@@ -141,11 +145,10 @@ export async function POST(request: NextRequest) {
     // Run matching algorithm with stricter thresholds
     // DISABLE interchange file matching due to bad data
     const matchOptions = {
-      ...options,
       useKnownInterchanges: false,  // DISABLED - interchange file has bad data
-      partNumberThreshold: options.partNumberThreshold || 0.95,  // Increased from 0.9
-      nameThreshold: options.nameThreshold || 0.80,              // Increased from 0.7
-      descriptionThreshold: options.descriptionThreshold || 0.70, // Increased from 0.6
+      partNumberThreshold: options?.partNumberThreshold || 0.95,  // Increased from 0.9
+      nameThreshold: options?.nameThreshold || 0.80,              // Increased from 0.7
+      descriptionThreshold: options?.descriptionThreshold || 0.70, // Increased from 0.6
     };
     
     console.log('🔍 Running matching with thresholds:', matchOptions);

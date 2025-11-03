@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { processExcelFile, validateFileStructure, detectFileType } from '../../lib/utils/fileProcessing';
 import prisma from '../../lib/db/prisma';
 
+// Increase body size limit and timeout for large file uploads
+export const maxDuration = 300; // 5 minutes
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Get FormData from request
