@@ -16,22 +16,22 @@ export default withAuth(
     callbacks: {
       authorized: ({ token }) => !!token,
     },
-    pages: {
-      signIn: '/login',
-    },
+    // Use NextAuth default signin page at /api/auth/signin
+    // pages: {
+    //   signIn: '/login',
+    // },
   }
 );
 
-// Protect all routes except login and API auth
+// Protect all routes except API auth and static files
 export const config = {
   matcher: [
     /*
      * Match all request paths except:
-     * - /login (login page)
-     * - /api/auth (NextAuth API routes)
+     * - /api/auth (NextAuth API routes - includes signin page)
      * - /_next (Next.js internals)
      * - /favicon.ico, /robots.txt (static files)
      */
-    '/((?!login|api/auth|_next|favicon.ico|robots.txt).*)',
+    '/((?!api/auth|_next|favicon.ico|robots.txt).*)',
   ],
 };
