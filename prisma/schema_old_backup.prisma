@@ -1,0 +1,177 @@
+// Prisma schema for Inventory Matching System
+// Database: Supabase PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Project grouping for file uploads
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  uploadSessions UploadSession[]
+  
+  @@map("projects")
+}
+
+// Track file uploads
+model UploadSession {
+  id          String   @id @default(cuid())
+  projectId   String
+  fileName    String
+  fileType    String   // 'arnold' | 'supplier' | 'interchange' | 'inventory_report'
+  uploadedAt  DateTime @default(now())
+  rowCount    Int      @default(0)
+  status      String   @default("completed") // 'processing' | 'completed' | 'failed'
+  
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  arnoldItems ArnoldInventory[]
+  supplierItems SupplierCatalog[]
+  
+  @@map("upload_sessions")
+  @@index([projectId])
+}
+
+// Arnold inventory items
+model ArnoldInventory {
+  id              String   @id @default(cuid())
+  sessionId       String
+  partNumber      String
+  usageLast12     Int?
+  cost            Float?
+  rawData         Json?    // Store original row data
+  createdAt       DateTime @default(now())
+  
+  session         UploadSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  matchResults    MatchResult[]
+  unmatchedParts  UnmatchedPart[]
+  
+  @@map("arnold_inventory")
+  @@index([sessionId])
+  @@index([partNumber])
+}
+
+// Supplier catalog items
+model SupplierCatalog {
+  id              String   @id @default(cuid())
+  sessionId       String
+  supplierName    String   @default("CarQuest")
+  partFull        String   // Full part identifier (e.g., ABC10026A)
+  lineCode        String   // Line code (e.g., ABC, AUV)
+  partNumber      String   // Part number without line code
+  description     String?
+  qtyAvail        Int?
+  cost            Float?
+  ytdHist         Int?
+  rawData         Json?    // Store original row data
+  createdAt       DateTime @default(now())
+  
+  session         UploadSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  matchResults    MatchResult[]
+  
+  @@map("supplier_catalog")
+  @@index([sessionId])
+  @@index([partFull])
+  @@index([lineCode])
+  @@index([partNumber])
+}
+
+// Known interchange mappings (from Interchange.xlsx and learned mappings)
+model KnownInterchange {
+  id            String   @id @default(cuid())
+  supplierSku   String
+  arnoldSku     String
+  source        String   // 'file' | 'manual' | 'ai_confirmed'
+  confidence    Float    @default(1.0)
+  createdAt     DateTime @default(now())
+  createdBy     String?
+  
+  @@map("known_interchanges")
+  @@unique([supplierSku, arnoldSku])
+  @@index([supplierSku])
+  @@index([arnoldSku])
+}
+
+// Match results between Arnold and Supplier items
+model MatchResult {
+  id                String   @id @default(cuid())
+  arnoldItemId      String
+  supplierItemId    String?  // Null if no match found
+  matchStage        String   // 'part_number' | 'part_name' | 'description' | 'web_search' | 'manual'
+  confidenceScore   Float
+  matchReasons      Json     // Array of reasons for the match
+  status            String   @default("pending") // 'pending' | 'confirmed' | 'rejected'
+  confirmedBy       String?
+  confirmedAt       DateTime?
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  arnoldItem        ArnoldInventory @relation(fields: [arnoldItemId], references: [id], onDelete: Cascade)
+  supplierItem      SupplierCatalog? @relation(fields: [supplierItemId], references: [id], onDelete: SetNull)
+  enrichmentData    EnrichmentData[]
+  
+  @@map("match_results")
+  @@index([arnoldItemId])
+  @@index([supplierItemId])
+  @@index([status])
+  @@index([matchStage])
+}
+
+// Data enrichment for matched parts
+model EnrichmentData {
+  id          String   @id @default(cuid())
+  matchId     String
+  fieldName   String   // 'description' | 'price' | 'box_size' | 'qty_per_box' | etc.
+  fieldValue  String
+  source      String   // 'supplier' | 'web_search' | 'manual' | 'ai'
+  confidence  Float    @default(1.0)
+  createdAt   DateTime @default(now())
+  
+  match       MatchResult @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  
+  @@map("enrichment_data")
+  @@index([matchId])
+}
+
+// Track unmatched parts for reporting
+model UnmatchedPart {
+  id                String   @id @default(cuid())
+  arnoldItemId      String
+  attemptedMethods  String[] // Array of methods tried
+  lastAttemptAt     DateTime @default(now())
+  notes             String?
+  requiresManual    Boolean  @default(true)
+  
+  arnoldItem        ArnoldInventory @relation(fields: [arnoldItemId], references: [id], onDelete: Cascade)
+  
+  @@map("unmatched_parts")
+  @@index([arnoldItemId])
+  @@index([requiresManual])
+}
+
+// Line code mappings (for learning and reference)
+model LineCodeMapping {
+  id              String   @id @default(cuid())
+  supplierLine    String
+  arnoldLine      String
+  confidence      Float    @default(1.0)
+  source          String   // 'known' | 'learned' | 'manual'
+  exampleCount    Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@map("line_code_mappings")
+  @@unique([supplierLine, arnoldLine])
+  @@index([supplierLine])
+  @@index([arnoldLine])
+}
