@@ -5,6 +5,7 @@
  */
 
 import { NextAuthOptions } from 'next-auth';
+import { getServerSession } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -180,5 +181,4 @@ export function requireRole(requiredRole: Role) {
   };
 }
 
-// Re-export getServerSession for convenience
-export { getServerSession } from 'next-auth';
+
