@@ -4,16 +4,24 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-// Only create client if credentials are available (runtime check)
-let supabase: any = null;
-if (supabaseUrl && supabaseAnonKey && typeof window !== 'undefined') {
-  supabase = createClient(supabaseUrl, supabaseAnonKey);
-}
-
 const BUCKET_NAME = 'inventory-files';
+
+// Lazy initialization - only create client when actually needed
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return null;
+  }
+  
+  try {
+    return createClient(supabaseUrl, supabaseAnonKey);
+  } catch (error) {
+    console.error('Failed to create Supabase client:', error);
+    return null;
+  }
+}
 
 interface Project {
   id: string;
@@ -60,9 +68,11 @@ export default function UploadPage() {
   };
 
   const uploadFile = async (file: File, fileType: string, projectId: string) => {
-    // Check if Supabase is configured
+    // Get Supabase client
+    const supabase = getSupabaseClient();
+    
     if (!supabase) {
-      throw new Error('Supabase not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables.');
+      throw new Error('Supabase Storage not configured. Please add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables in Vercel.');
     }
 
     // Step 1: Upload to Supabase Storage (bypasses Vercel 4.5MB limit)
