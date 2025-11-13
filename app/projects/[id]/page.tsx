@@ -18,6 +18,14 @@ interface Project {
   };
 }
 
+interface UploadedFile {
+  name: string;
+  size: number;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+}
+
 export default function ProjectDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -29,9 +37,12 @@ export default function ProjectDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
 
   useEffect(() => {
     loadProject();
+    loadFiles();
   }, [projectId]);
 
   const loadProject = async () => {
@@ -47,6 +58,56 @@ export default function ProjectDetailPage() {
       setError(err.message);
       setLoading(false);
     }
+  };
+
+  const loadFiles = async () => {
+    try {
+      setLoadingFiles(true);
+      const res = await fetch(`/api/projects/${projectId}/files`);
+      if (res.ok) {
+        const data = await res.json();
+        setFiles(data.files || []);
+      }
+    } catch (err) {
+      console.error('Failed to load files:', err);
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  const handleDeleteFile = async (fileName: string) => {
+    if (!confirm(`Are you sure you want to delete ${fileName}?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/files?fileName=${encodeURIComponent(fileName)}`,
+        { method: 'DELETE' }
+      );
+
+      if (!res.ok) throw new Error('Failed to delete file');
+
+      await loadFiles();
+      await loadProject(); // Refresh counts
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const getFileType = (fileName: string) => {
+    if (fileName.includes('store')) return 'Store Inventory';
+    if (fileName.includes('supplier')) return 'Supplier Catalog';
+    if (fileName.includes('interchange')) return 'Interchange';
+    return 'Unknown';
   };
 
   const handleUpdate = async () => {
@@ -213,24 +274,76 @@ export default function ProjectDetailPage() {
           </div>
         </div>
 
+        {/* Uploaded Files Section */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 className="text-xl font-bold mb-4">Uploaded Files</h2>
+          {loadingFiles ? (
+            <div className="text-gray-500">Loading files...</div>
+          ) : files.length === 0 ? (
+            <div className="text-gray-500">No files uploaded yet</div>
+          ) : (
+            <div className="space-y-2">
+              {files.map((file) => (
+                <div
+                  key={file.name}
+                  className="flex items-center justify-between p-4 border rounded hover:bg-gray-50"
+                >
+                  <div className="flex-1">
+                    <div className="font-semibold">{getFileType(file.name)}</div>
+                    <div className="text-sm text-gray-600">
+                      {file.name} • {formatFileSize(file.size)} • Uploaded{' '}
+                      {new Date(file.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <a
+                      href={file.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 text-blue-600 hover:bg-blue-50 rounded"
+                    >
+                      Download
+                    </a>
+                    <button
+                      onClick={() => handleDeleteFile(file.name)}
+                      className="px-4 py-2 text-red-600 hover:bg-red-50 rounded"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* File Upload Section */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">Upload Files</h2>
+          <h2 className="text-xl font-bold mb-4">Upload New Files</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <FileUploader
               projectId={projectId}
               fileType="store"
-              onUploadComplete={loadProject}
+              onUploadComplete={() => {
+                loadProject();
+                loadFiles();
+              }}
             />
             <FileUploader
               projectId={projectId}
               fileType="supplier"
-              onUploadComplete={loadProject}
+              onUploadComplete={() => {
+                loadProject();
+                loadFiles();
+              }}
             />
             <FileUploader
               projectId={projectId}
               fileType="interchange"
-              onUploadComplete={loadProject}
+              onUploadComplete={() => {
+                loadProject();
+                loadFiles();
+              }}
             />
           </div>
         </div>
