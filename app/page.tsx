@@ -130,7 +130,8 @@ export default function Home() {
               {projects.map((project) => (
                 <div
                   key={project.id}
-                  className="border border-gray-200 rounded-lg p-5 hover:shadow-lg transition-shadow"
+                  className="border border-gray-200 rounded-lg p-5 hover:shadow-lg transition-shadow cursor-pointer"
+                  onClick={() => router.push(`/projects/${project.id}`)}
                 >
                   <h3 className="font-bold text-lg text-gray-900 mb-2">
                     {project.name}

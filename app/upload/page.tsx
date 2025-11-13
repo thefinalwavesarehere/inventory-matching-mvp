@@ -2,6 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+// Only create client if credentials are available (runtime check)
+let supabase: any = null;
+if (supabaseUrl && supabaseAnonKey && typeof window !== 'undefined') {
+  supabase = createClient(supabaseUrl, supabaseAnonKey);
+}
+
+const BUCKET_NAME = 'inventory-files';
 
 interface Project {
   id: string;
@@ -48,19 +60,46 @@ export default function UploadPage() {
   };
 
   const uploadFile = async (file: File, fileType: string, projectId: string) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('fileType', fileType);
-    formData.append('projectId', projectId);
+    // Check if Supabase is configured
+    if (!supabase) {
+      throw new Error('Supabase not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables.');
+    }
 
-    const res = await fetch('/api/upload', {
+    // Step 1: Upload to Supabase Storage (bypasses Vercel 4.5MB limit)
+    const timestamp = Date.now();
+    const fileName = `${projectId}/${fileType}-${timestamp}.xlsx`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from(BUCKET_NAME)
+      .upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(`Upload failed: ${uploadError.message}`);
+    }
+
+    // Step 2: Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from(BUCKET_NAME)
+      .getPublicUrl(fileName);
+
+    // Step 3: Notify backend to process the file
+    const res = await fetch('/api/upload/process', {
       method: 'POST',
-      body: formData,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectId,
+        fileUrl: publicUrl,
+        fileType,
+        fileName: file.name,
+      }),
     });
 
     if (!res.ok) {
       const data = await res.json();
-      throw new Error(data.error || 'Upload failed');
+      throw new Error(data.error || 'Processing failed');
     }
 
     return await res.json();

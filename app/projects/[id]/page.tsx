@@ -1,0 +1,269 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter, useParams } from 'next/navigation';
+import FileUploader from '@/app/components/FileUploader';
+
+interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+  _count: {
+    storeItems: number;
+    supplierItems: number;
+    interchanges: number;
+    matchCandidates: number;
+  };
+}
+
+export default function ProjectDetailPage() {
+  const router = useRouter();
+  const params = useParams();
+  const projectId = params.id as string;
+
+  const [project, setProject] = useState<Project | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+
+  useEffect(() => {
+    loadProject();
+  }, [projectId]);
+
+  const loadProject = async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`);
+      if (!res.ok) throw new Error('Failed to load project');
+      const data = await res.json();
+      setProject(data.project);
+      setEditName(data.project.name);
+      setEditDescription(data.project.description || '');
+      setLoading(false);
+    } catch (err: any) {
+      setError(err.message);
+      setLoading(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editName,
+          description: editDescription,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to update project');
+      
+      await loadProject();
+      setEditing(false);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to delete this project? This will delete all associated data.')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) throw new Error('Failed to delete project');
+      
+      router.push('/');
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleRunMatch = async () => {
+    try {
+      const res = await fetch('/api/match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId }),
+      });
+
+      if (!res.ok) throw new Error('Failed to run matching');
+      
+      const data = await res.json();
+      alert(`Matching complete! Found ${data.matchCount} matches`);
+      await loadProject();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error || !project) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-red-600">{error || 'Project not found'}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-6xl mx-auto px-4">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <div className="flex justify-between items-start mb-4">
+            <div className="flex-1">
+              {editing ? (
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full px-4 py-2 border rounded text-2xl font-bold"
+                  />
+                  <textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    className="w-full px-4 py-2 border rounded"
+                    rows={2}
+                    placeholder="Description"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleUpdate}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditing(false)}
+                      className="px-4 py-2 border rounded hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h1 className="text-2xl font-bold mb-2">{project.name}</h1>
+                  {project.description && (
+                    <p className="text-gray-600">{project.description}</p>
+                  )}
+                </>
+              )}
+            </div>
+            
+            {!editing && (
+              <div className="flex gap-2 ml-4">
+                <button
+                  onClick={() => setEditing(true)}
+                  className="px-4 py-2 border rounded hover:bg-gray-50"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={handleDelete}
+                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={() => router.push('/')}
+                  className="px-4 py-2 border rounded hover:bg-gray-50"
+                >
+                  Back
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-4 gap-4 mt-6 pt-6 border-t">
+            <div>
+              <div className="text-sm text-gray-600">Store Items</div>
+              <div className="text-2xl font-bold">{project._count.storeItems}</div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600">Supplier Items</div>
+              <div className="text-2xl font-bold">{project._count.supplierItems}</div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600">Interchanges</div>
+              <div className="text-2xl font-bold">{project._count.interchanges}</div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600">Matches Found</div>
+              <div className="text-2xl font-bold">{project._count.matchCandidates}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* File Upload Section */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 className="text-xl font-bold mb-4">Upload Files</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <FileUploader
+              projectId={projectId}
+              fileType="store"
+              onUploadComplete={loadProject}
+            />
+            <FileUploader
+              projectId={projectId}
+              fileType="supplier"
+              onUploadComplete={loadProject}
+            />
+            <FileUploader
+              projectId={projectId}
+              fileType="interchange"
+              onUploadComplete={loadProject}
+            />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-xl font-bold mb-4">Actions</h2>
+          <div className="flex gap-4">
+            <button
+              onClick={handleRunMatch}
+              disabled={project._count.storeItems === 0 || project._count.supplierItems === 0}
+              className={`px-6 py-3 rounded font-semibold ${
+                project._count.storeItems === 0 || project._count.supplierItems === 0
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
+            >
+              Run Matching Algorithm
+            </button>
+            <button
+              onClick={() => router.push(`/match?projectId=${projectId}`)}
+              disabled={project._count.matchCandidates === 0}
+              className={`px-6 py-3 rounded font-semibold ${
+                project._count.matchCandidates === 0
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              Review Matches ({project._count.matchCandidates})
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
