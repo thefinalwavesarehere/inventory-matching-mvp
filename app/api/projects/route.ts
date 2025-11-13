@@ -42,9 +42,11 @@ export async function GET(req: NextRequest) {
         description: p.description,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
-        storeItemsCount: p._count.storeItems,
-        supplierItemsCount: p._count.supplierItems,
-        matchCandidatesCount: p._count.matchCandidates,
+        _count: {
+          storeItems: p._count.storeItems,
+          supplierItems: p._count.supplierItems,
+          matchCandidates: p._count.matchCandidates,
+        },
       })),
     });
   } catch (error) {
