@@ -8,8 +8,9 @@ const BUCKET_NAME = 'inventory-files';
 
 // Lazy initialization - only create client when actually needed
 function getSupabaseClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  // Support both naming conventions (with and without lowercase supabase_)
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_supabase_SUPABASE_URL || '';
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_supabase_SUPABASE_ANON_KEY || '';
   
   if (!supabaseUrl || !supabaseAnonKey) {
     return null;
