@@ -39,6 +39,8 @@ export default function ProjectDetailPage() {
   const [editDescription, setEditDescription] = useState('');
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
+  const [runningMatch, setRunningMatch] = useState(false);
+  const [matchError, setMatchError] = useState('');
 
   useEffect(() => {
     loadProject();
@@ -150,19 +152,35 @@ export default function ProjectDetailPage() {
 
   const handleRunMatch = async () => {
     try {
+      setRunningMatch(true);
+      setMatchError('');
+      
+      console.log('Starting match for project:', projectId);
+      
       const res = await fetch('/api/match', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId }),
       });
 
-      if (!res.ok) throw new Error('Failed to run matching');
+      console.log('Match response status:', res.status);
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to run matching');
+      }
       
       const data = await res.json();
+      console.log('Match result:', data);
+      
       alert(`Matching complete! Found ${data.matchCount} matches`);
       await loadProject();
     } catch (err: any) {
-      setError(err.message);
+      console.error('Match error:', err);
+      setMatchError(err.message);
+      alert(`Error: ${err.message}`);
+    } finally {
+      setRunningMatch(false);
     }
   };
 
@@ -354,15 +372,20 @@ export default function ProjectDetailPage() {
           <div className="flex gap-4">
             <button
               onClick={handleRunMatch}
-              disabled={project._count.storeItems === 0 || project._count.supplierItems === 0}
+              disabled={runningMatch || project._count.storeItems === 0 || project._count.supplierItems === 0}
               className={`px-6 py-3 rounded font-semibold ${
-                project._count.storeItems === 0 || project._count.supplierItems === 0
+                runningMatch || project._count.storeItems === 0 || project._count.supplierItems === 0
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-green-600 text-white hover:bg-green-700'
               }`}
             >
-              Run Matching Algorithm
+              {runningMatch ? 'Running...' : 'Run Matching Algorithm'}
             </button>
+            {matchError && (
+              <div className="text-red-600 text-sm mt-2">
+                Error: {matchError}
+              </div>
+            )}
             <button
               onClick={() => router.push(`/match?projectId=${projectId}`)}
               disabled={project._count.matchCandidates === 0}

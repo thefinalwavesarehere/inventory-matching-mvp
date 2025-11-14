@@ -72,6 +72,9 @@ export async function POST(req: NextRequest) {
     // Import data based on file type
     let importedCount = 0;
     
+    // Process in batches to avoid timeout
+    const BATCH_SIZE = 1000;
+    
     if (fileType === 'store') {
       // Import store inventory items
       const items = data.map((row: any) => {
@@ -90,10 +93,14 @@ export async function POST(req: NextRequest) {
         };
       });
 
-      await prisma.storeItem.createMany({
-        data: items,
-        skipDuplicates: true,
-      });
+      // Process in batches
+      for (let i = 0; i < items.length; i += BATCH_SIZE) {
+        const batch = items.slice(i, i + BATCH_SIZE);
+        await prisma.storeItem.createMany({
+          data: batch,
+          skipDuplicates: true,
+        });
+      }
       importedCount = items.length;
     } else if (fileType === 'supplier') {
       // Import supplier catalog items
@@ -114,10 +121,14 @@ export async function POST(req: NextRequest) {
         };
       });
 
-      await prisma.supplierItem.createMany({
-        data: items,
-        skipDuplicates: true,
-      });
+      // Process in batches
+      for (let i = 0; i < items.length; i += BATCH_SIZE) {
+        const batch = items.slice(i, i + BATCH_SIZE);
+        await prisma.supplierItem.createMany({
+          data: batch,
+          skipDuplicates: true,
+        });
+      }
       importedCount = items.length;
     } else if (fileType === 'interchange') {
       // Import known interchanges
@@ -129,10 +140,14 @@ export async function POST(req: NextRequest) {
         confidence: 1.0,
       }));
 
-      await prisma.interchange.createMany({
-        data: items,
-        skipDuplicates: true,
-      });
+      // Process in batches
+      for (let i = 0; i < items.length; i += BATCH_SIZE) {
+        const batch = items.slice(i, i + BATCH_SIZE);
+        await prisma.interchange.createMany({
+          data: batch,
+          skipDuplicates: true,
+        });
+      }
       importedCount = items.length;
     }
 

@@ -80,6 +80,11 @@ export default function FileUploader({
         .getPublicUrl(fileName);
 
       // Step 3: Notify backend to process the file
+      setMessage('Processing file... This may take a few minutes for large files.');
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+      
       const response = await fetch('/api/upload/process', {
         method: 'POST',
         headers: {
@@ -91,7 +96,22 @@ export default function FileUploader({
           fileType,
           fileName: file.name,
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = 'Processing failed';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
+      }
 
       const result = await response.json();
 
@@ -114,10 +134,16 @@ export default function FileUploader({
       }, 2000);
     } catch (error: any) {
       console.error('Upload error:', error);
-      setMessage(`Error: ${error.message}`);
+      
+      let errorMessage = error.message;
+      if (error.name === 'AbortError') {
+        errorMessage = 'File processing timed out. The file may be too large. Please try a smaller file or contact support.';
+      }
+      
+      setMessage(`Error: ${errorMessage}`);
       
       if (onUploadError) {
-        onUploadError(error.message);
+        onUploadError(errorMessage);
       }
 
       setTimeout(() => {
