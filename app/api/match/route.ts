@@ -139,18 +139,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log(`[MATCH] Starting matching for project: ${projectId}`);
+    
     // Get all store and supplier items
     const storeItems = await prisma.storeItem.findMany({
       where: { projectId },
     });
+    console.log(`[MATCH] Found ${storeItems.length} store items`);
+    if (storeItems.length > 0) {
+      console.log(`[MATCH] Sample store item:`, {
+        partNumber: storeItems[0].partNumber,
+        partNumberNorm: storeItems[0].partNumberNorm,
+        description: storeItems[0].description,
+        lineCode: storeItems[0].lineCode,
+      });
+    }
 
     const supplierItems = await prisma.supplierItem.findMany({
       where: { projectId },
     });
+    console.log(`[MATCH] Found ${supplierItems.length} supplier items`);
+    if (supplierItems.length > 0) {
+      console.log(`[MATCH] Sample supplier item:`, {
+        partNumber: supplierItems[0].partNumber,
+        partNumberNorm: supplierItems[0].partNumberNorm,
+        description: supplierItems[0].description,
+        lineCode: supplierItems[0].lineCode,
+      });
+    }
 
     const interchanges = await prisma.interchange.findMany({
       where: { projectId },
     });
+    console.log(`[MATCH] Found ${interchanges.length} interchanges`);
 
     // Clear existing match candidates
     await prisma.matchCandidate.deleteMany({
@@ -158,7 +179,12 @@ export async function POST(req: NextRequest) {
     });
 
     const matches: any[] = [];
+    let interchangeMatches = 0;
+    let exactMatches = 0;
+    let lineMatches = 0;
+    let fuzzyMatches = 0;
 
+    console.log(`[MATCH] Starting Stage 1: Interchange Matching`);
     // Stage 1: Known Interchange Matching
     for (const storeItem of storeItems) {
       const interchange = interchanges.find(
@@ -171,6 +197,7 @@ export async function POST(req: NextRequest) {
         );
         
         if (supplierItem) {
+          interchangeMatches++;
           matches.push({
             projectId,
             storeItemId: storeItem.id,
@@ -184,6 +211,8 @@ export async function POST(req: NextRequest) {
           continue;
         }
       }
+      console.log(`[MATCH] Stage 1 complete: ${interchangeMatches} interchange matches`);
+      console.log(`[MATCH] Starting Stage 2: Exact Normalized Matching`);
 
       // Stage 2: Exact Normalized Part Number Match
       const exactMatch = supplierItems.find(
@@ -191,6 +220,13 @@ export async function POST(req: NextRequest) {
       );
       
       if (exactMatch) {
+        exactMatches++;
+        if (exactMatches <= 5) {
+          console.log(`[MATCH] Exact match found:`, {
+            store: storeItem.partNumberNorm,
+            supplier: exactMatch.partNumberNorm,
+          });
+        }
         matches.push({
           projectId,
           storeItemId: storeItem.id,
@@ -211,6 +247,7 @@ export async function POST(req: NextRequest) {
         );
         
         if (lineMatch) {
+          lineMatches++;
           matches.push({
             projectId,
             storeItemId: storeItem.id,
@@ -225,10 +262,14 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+    console.log(`[MATCH] Stage 2 complete: ${exactMatches} exact matches`);
+    console.log(`[MATCH] Stage 3 complete: ${lineMatches} line code matches`);
 
     // Stage 4: Fuzzy Matching (for remaining unmatched items)
+    console.log(`[MATCH] Starting Stage 4: Fuzzy Matching`);
     const matchedStoreIds = new Set(matches.map((m) => m.storeItemId));
     const unmatchedStoreItems = storeItems.filter((s) => !matchedStoreIds.has(s.id));
+    console.log(`[MATCH] ${unmatchedStoreItems.length} unmatched store items remaining`);
 
     for (const storeItem of unmatchedStoreItems) {
       let bestMatch: any = null;
@@ -254,6 +295,14 @@ export async function POST(req: NextRequest) {
       }
 
       if (bestMatch) {
+        fuzzyMatches++;
+        if (fuzzyMatches <= 5) {
+          console.log(`[MATCH] Fuzzy match found:`, {
+            store: storeItem.partNumberNorm,
+            supplier: bestMatch.partNumberNorm,
+            score: bestScore,
+          });
+        }
         let method = 'FUZZY_SUBSTRING';
         if (bestScore >= 0.85) method = 'DESC_SIM';
 
@@ -274,18 +323,38 @@ export async function POST(req: NextRequest) {
         });
       }
     }
+    console.log(`[MATCH] Stage 4 complete: ${fuzzyMatches} fuzzy matches`);
 
     // Save all matches
+    console.log(`[MATCH] Total matches found: ${matches.length}`);
+    console.log(`[MATCH] Breakdown: Interchange=${interchangeMatches}, Exact=${exactMatches}, Line=${lineMatches}, Fuzzy=${fuzzyMatches}`);
+    
     if (matches.length > 0) {
       await prisma.matchCandidate.createMany({
         data: matches,
       });
+      console.log(`[MATCH] Successfully saved ${matches.length} match candidates to database`);
+    } else {
+      console.log(`[MATCH] WARNING: No matches found! Checking data...`);
+      console.log(`[MATCH] Store items: ${storeItems.length}, Supplier items: ${supplierItems.length}`);
+      if (storeItems.length > 0 && supplierItems.length > 0) {
+        console.log(`[MATCH] Sample comparison:`);
+        console.log(`[MATCH]   Store PN: "${storeItems[0].partNumberNorm}"`);
+        console.log(`[MATCH]   Supplier PN: "${supplierItems[0].partNumberNorm}"`);
+        console.log(`[MATCH]   Similarity: ${similarity(storeItems[0].partNumberNorm, supplierItems[0].partNumberNorm)}`);
+      }
     }
 
     return NextResponse.json({
       success: true,
       message: `Created ${matches.length} match candidates`,
       matchCount: matches.length,
+      breakdown: {
+        interchange: interchangeMatches,
+        exact: exactMatches,
+        lineCode: lineMatches,
+        fuzzy: fuzzyMatches,
+      },
     });
   } catch (error) {
     console.error('Error running matching:', error);
