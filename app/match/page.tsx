@@ -39,6 +39,7 @@ export default function MatchPage() {
   const [methodFilter, setMethodFilter] = useState<string>('all');
   const [selectedMatches, setSelectedMatches] = useState<Set<string>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [enriching, setEnriching] = useState(false);
 
   useEffect(() => {
     if (projectId) {
@@ -137,6 +138,36 @@ export default function MatchPage() {
     }
   };
 
+  const handleEnrichMatches = async () => {
+    if (selectedMatches.size === 0) {
+      alert('Please select at least one match to enrich');
+      return;
+    }
+
+    if (!confirm(`Enhance ${selectedMatches.size} matches with web search?\n\nThis will search the web for part details, pricing, and specifications using Perplexity AI.\n\nEstimated cost: ~$${(selectedMatches.size * 0.01).toFixed(2)}`)) {
+      return;
+    }
+
+    try {
+      setEnriching(true);
+      const res = await fetch('/api/match/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          matchIds: Array.from(selectedMatches)
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to enrich matches');
+      const data = await res.json();
+      alert(`Successfully enriched ${data.enrichedCount} matches with web data!\n\nCheck the match details to see the enriched information.`);
+      loadMatches();
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setEnriching(false);
+    }
+  };
+
   // Filter matches by method
   const filteredMatches = matches.filter(m => {
     if (methodFilter === 'all') return true;
@@ -227,6 +258,14 @@ export default function MatchPage() {
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-gray-300"
               >
                 {bulkProcessing ? 'Processing...' : 'Reject Selected'}
+              </button>
+              <button
+                onClick={handleEnrichMatches}
+                disabled={enriching || bulkProcessing}
+                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-300"
+                title="Search the web for part details, pricing, and specifications"
+              >
+                {enriching ? 'Searching Web...' : '🔍 Enhance with Web Search'}
               </button>
               <button
                 onClick={() => setSelectedMatches(new Set())}

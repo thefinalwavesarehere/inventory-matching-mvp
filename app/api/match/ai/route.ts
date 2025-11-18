@@ -110,8 +110,11 @@ Respond with ONLY a JSON object in this exact format:
             max_tokens: 200,
           });
 
-          const responseText = completion.choices[0]?.message?.content?.trim();
+          let responseText = completion.choices[0]?.message?.content?.trim();
           if (!responseText) continue;
+
+          // Remove markdown code blocks if present
+          responseText = responseText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
 
           // Parse AI response
           const aiResponse = JSON.parse(responseText);
