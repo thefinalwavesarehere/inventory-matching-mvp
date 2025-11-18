@@ -1,7 +1,9 @@
 /**
- * Process Upload API
+ * Process Upload API - Enhanced with Sprint 1 Normalization
  * Downloads file from Supabase Storage and imports to database
  * This bypasses Vercel's 4.5MB body size limit
+ * 
+ * NEW: Applies line code extraction and punctuation normalization
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -9,10 +11,158 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/lib/auth';
 import prisma from '@/app/lib/db/prisma';
 import * as XLSX from 'xlsx';
+import { normalizePartNumber, extractLineCode, excelLeft, excelMid } from '@/app/lib/normalization';
 
-// Normalize part number
-function normalizePartNumber(partNumber: string): string {
+// Legacy normalization (kept for backward compatibility)
+function legacyNormalizePartNumber(partNumber: string): string {
   return partNumber.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+/**
+ * Handle Excel formulas in cells
+ * If a cell contains a formula like =LEFT(A2,3), we need to evaluate it
+ * For now, we'll try to extract the actual value from the cell
+ */
+function getCellValue(cell: any, row: any, columnName: string): string {
+  const value = row[columnName];
+  
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  // If it's a formula (starts with =), return empty string
+  // The actual value should be in the cell's computed value
+  if (typeof value === 'string' && value.startsWith('=')) {
+    return '';
+  }
+
+  return String(value).trim();
+}
+
+/**
+ * Process store inventory file with enhanced normalization
+ */
+function processStoreFile(data: any[], projectId: string) {
+  return data.map((row: any) => {
+    // Get PART column (may be formula or actual value)
+    let partFull = getCellValue(row, row, 'PART') || getCellValue(row, row, 'Part');
+    
+    // Get LINE and PART NUMBER columns
+    let lineCode = getCellValue(row, row, 'LINE') || getCellValue(row, row, 'Line');
+    let partNumber = getCellValue(row, row, 'PART NUMBER') || getCellValue(row, row, 'Part Number');
+
+    // If PART is empty or formula, concatenate LINE + PART NUMBER
+    if (!partFull) {
+      partFull = lineCode + partNumber;
+    }
+
+    // Apply normalization
+    const normalized = normalizePartNumber(partFull, { extractLineCode: true });
+
+    // If line code wasn't extracted, use the one from the file
+    const finalLineCode = normalized.lineCode || lineCode || null;
+    const finalMfrPartNumber = normalized.mfrPartNumber || partNumber || null;
+
+    return {
+      projectId,
+      partNumber: partFull,
+      partFull,
+      partNumberNorm: normalized.normalized,
+      lineCode: finalLineCode,
+      mfrPartNumber: finalMfrPartNumber,
+      canonicalPartNumber: normalized.canonical,
+      description: getCellValue(row, row, 'DESCRIPTION') || getCellValue(row, row, 'Description') || null,
+      currentCost: parseFloat(row['CURR COST $'] || row['COST $'] || row['Cost'] || 0) || null,
+      quantity: parseInt(row['QTY AVL'] || row['QTY AVAIL'] || row['Qty Available'] || 0) || null,
+      rollingUsage: parseInt(row['ROLLING 12'] || row['Usage'] || 0) || null,
+      rawData: row,
+    };
+  });
+}
+
+/**
+ * Process supplier catalog file with enhanced normalization
+ */
+function processSupplierFile(data: any[], projectId: string) {
+  return data.map((row: any) => {
+    // Get PART column (may be formula or actual value)
+    let partFull = getCellValue(row, row, 'PART') || getCellValue(row, row, 'Part');
+    
+    // Get LINE and PART NUMBER columns
+    let lineCode = getCellValue(row, row, 'LINE') || getCellValue(row, row, 'Line');
+    let partNumber = getCellValue(row, row, 'PART NUMBER') || getCellValue(row, row, 'Part Number');
+
+    // If PART is empty or formula, concatenate LINE + PART NUMBER
+    if (!partFull) {
+      partFull = lineCode + partNumber;
+    }
+
+    // Apply normalization
+    const normalized = normalizePartNumber(partFull, { extractLineCode: true });
+
+    // If line code wasn't extracted, use the one from the file
+    const finalLineCode = normalized.lineCode || lineCode || null;
+    const finalMfrPartNumber = normalized.mfrPartNumber || partNumber || null;
+
+    return {
+      projectId,
+      supplier: 'CarQuest', // Default supplier name
+      partNumber: partFull,
+      partFull,
+      partNumberNorm: normalized.normalized,
+      lineCode: finalLineCode,
+      mfrPartNumber: finalMfrPartNumber,
+      canonicalPartNumber: normalized.canonical,
+      description: getCellValue(row, row, 'DESCRIPTION') || getCellValue(row, row, 'Description') || null,
+      currentCost: parseFloat(row['COST $'] || row[' COST $'] || row['Cost'] || 0) || null,
+      quantity: parseInt(row['QTY AVAIL'] || row['Qty Available'] || 0) || null,
+      ytdHist: parseInt(row['YTD HIST'] || 0) || null,
+      rawData: row,
+    };
+  });
+}
+
+/**
+ * Process interchange file with enhanced normalization
+ */
+function processInterchangeFile(data: any[], projectId: string) {
+  const interchanges: any[] = [];
+  const interchangeMappings: any[] = [];
+
+  for (const row of any) {
+    const supplierSku = String(row['Supplier SKU'] || row['Their SKU'] || row['Competitor SKU'] || '').trim();
+    const storeSku = String(row['Store SKU'] || row['Our SKU'] || row['Arnold SKU'] || '').trim();
+
+    if (!supplierSku || !storeSku) {
+      continue; // Skip invalid rows
+    }
+
+    // Add to legacy interchange table
+    interchanges.push({
+      projectId,
+      oursPartNumber: storeSku,
+      theirsPartNumber: supplierSku,
+      source: 'file',
+      confidence: 1.0,
+    });
+
+    // Add to new InterchangeMapping table with normalization
+    const supplierNorm = normalizePartNumber(supplierSku, { extractLineCode: true });
+    const storeNorm = normalizePartNumber(storeSku, { extractLineCode: true });
+
+    interchangeMappings.push({
+      competitorFullSku: supplierSku,
+      competitorLineCode: supplierNorm.lineCode,
+      competitorPartNumber: supplierNorm.mfrPartNumber,
+      arnoldFullSku: storeSku,
+      arnoldLineCode: storeNorm.lineCode,
+      arnoldPartNumber: storeNorm.mfrPartNumber,
+      source: 'file_import',
+      confidence: 1.0,
+    });
+  }
+
+  return { interchanges, interchangeMappings };
 }
 
 export async function POST(req: NextRequest) {
@@ -48,6 +198,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log(`[UPLOAD] Processing ${fileType} file: ${fileName}`);
+
     // Download file from Supabase Storage
     const response = await fetch(fileUrl);
     if (!response.ok) {
@@ -56,8 +208,13 @@ export async function POST(req: NextRequest) {
 
     const buffer = await response.arrayBuffer();
     
-    // Parse Excel file
-    const workbook = XLSX.read(buffer, { type: 'array' });
+    // Parse Excel file with formula evaluation
+    const workbook = XLSX.read(buffer, { 
+      type: 'array',
+      cellFormula: false, // Don't preserve formulas
+      cellText: false,    // Use calculated values
+    });
+    
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(worksheet);
@@ -69,6 +226,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log(`[UPLOAD] Parsed ${data.length} rows from ${sheetName}`);
+
     // Import data based on file type
     let importedCount = 0;
     
@@ -76,32 +235,10 @@ export async function POST(req: NextRequest) {
     const BATCH_SIZE = 1000;
     
     if (fileType === 'store') {
-      // Import store inventory items
-      const items = data.map((row: any) => {
-        // Try to get PART column first (with prefix), fallback to PART NUMBER
-        let partNumber = String(row['PART'] || row['Part'] || '').trim();
-        
-        // If PART is empty or is a formula, concatenate LINE + PART NUMBER
-        if (!partNumber || partNumber.startsWith('=')) {
-          const lineCode = String(row['LINE'] || row['Line'] || '').trim();
-          const partNum = String(row['PART NUMBER'] || row['Part Number'] || '').trim();
-          partNumber = lineCode + partNum;
-        }
-        
-        return {
-          projectId: project.id,
-          partNumber,
-          partNumberNorm: normalizePartNumber(partNumber),
-          partFull: String(row['PART FULL'] || '').trim() || null,
-          description: String(row['DESCRIPTION'] || row['Description'] || '').trim() || null,
-          lineCode: String(row['LINE'] || row['Line'] || '').trim() || null,
-          currentCost: parseFloat(row['CURR COST $'] || row['Cost'] || 0) || null,
-          quantity: parseInt(row['QTY AVL'] || row['Qty Available'] || 0) || null,
-          rollingUsage: parseInt(row['ROLLING 12'] || row['Usage'] || 0) || null,
-          rawData: row,
-        };
-      });
-
+      const items = processStoreFile(data, project.id);
+      
+      console.log(`[UPLOAD] Processing ${items.length} store items in batches of ${BATCH_SIZE}`);
+      
       // Process in batches
       for (let i = 0; i < items.length; i += BATCH_SIZE) {
         const batch = items.slice(i, i + BATCH_SIZE);
@@ -109,27 +246,15 @@ export async function POST(req: NextRequest) {
           data: batch,
           skipDuplicates: true,
         });
+        console.log(`[UPLOAD] Imported batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} items`);
       }
       importedCount = items.length;
+      
     } else if (fileType === 'supplier') {
-      // Import supplier catalog items
-      const items = data.map((row: any) => {
-        const partNumber = String(row['PART NUMBER'] || row['Part Number'] || row['Part'] || '').trim();
-        return {
-          projectId: project.id,
-          supplier: 'CarQuest', // Default supplier name
-          partNumber,
-          partNumberNorm: normalizePartNumber(partNumber),
-          partFull: String(row['PART FULL'] || '').trim() || null,
-          description: String(row['DESCRIPTION'] || row['Description'] || '').trim() || null,
-          lineCode: String(row['LINE'] || row['Line'] || '').trim() || null,
-          currentCost: parseFloat(row[' COST $'] || row['Cost'] || 0) || null,
-          quantity: parseInt(row['QTY AVAIL'] || row['Qty Available'] || 0) || null,
-          ytdHist: parseInt(row['YTD HIST'] || 0) || null,
-          rawData: row,
-        };
-      });
-
+      const items = processSupplierFile(data, project.id);
+      
+      console.log(`[UPLOAD] Processing ${items.length} supplier items in batches of ${BATCH_SIZE}`);
+      
       // Process in batches
       for (let i = 0; i < items.length; i += BATCH_SIZE) {
         const batch = items.slice(i, i + BATCH_SIZE);
@@ -137,27 +262,34 @@ export async function POST(req: NextRequest) {
           data: batch,
           skipDuplicates: true,
         });
+        console.log(`[UPLOAD] Imported batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} items`);
       }
       importedCount = items.length;
+      
     } else if (fileType === 'interchange') {
-      // Import known interchanges
-      const items = data.map((row: any) => ({
-        projectId: project.id,
-        oursPartNumber: String(row['Our SKU'] || row['Store Part'] || '').trim(),
-        theirsPartNumber: String(row['Their SKU'] || row['Supplier Part'] || '').trim(),
-        source: 'file',
-        confidence: 1.0,
-      }));
-
-      // Process in batches
-      for (let i = 0; i < items.length; i += BATCH_SIZE) {
-        const batch = items.slice(i, i + BATCH_SIZE);
+      const { interchanges, interchangeMappings } = processInterchangeFile(data, project.id);
+      
+      console.log(`[UPLOAD] Processing ${interchanges.length} interchanges`);
+      
+      // Import legacy interchanges
+      for (let i = 0; i < interchanges.length; i += BATCH_SIZE) {
+        const batch = interchanges.slice(i, i + BATCH_SIZE);
         await prisma.interchange.createMany({
           data: batch,
           skipDuplicates: true,
         });
       }
-      importedCount = items.length;
+
+      // Import enhanced interchange mappings
+      for (let i = 0; i < interchangeMappings.length; i += BATCH_SIZE) {
+        const batch = interchangeMappings.slice(i, i + BATCH_SIZE);
+        await prisma.interchangeMapping.createMany({
+          data: batch,
+          skipDuplicates: true,
+        });
+      }
+      
+      importedCount = interchanges.length;
     }
 
     // Update project timestamp
@@ -166,16 +298,18 @@ export async function POST(req: NextRequest) {
       data: { updatedAt: new Date() },
     });
 
+    console.log(`[UPLOAD] Successfully imported ${importedCount} rows`);
+
     return NextResponse.json({
       success: true,
-      message: `Imported ${importedCount} rows`,
+      message: `Imported ${importedCount} rows with enhanced normalization`,
       projectId: project.id,
       projectName: project.name,
       rowCount: importedCount,
       fileType,
     });
   } catch (error: any) {
-    console.error('Error processing file:', error);
+    console.error('[UPLOAD] Error processing file:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to process file' },
       { status: 500 }
