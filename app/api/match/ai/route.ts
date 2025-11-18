@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { projectId, batchOffset = 0, batchSize = 1000 } = body;
+    const { projectId, batchOffset = 0, batchSize = 500 } = body;
 
     if (!projectId) {
       return NextResponse.json(
@@ -113,8 +113,20 @@ Respond with ONLY a JSON object in this exact format:
           let responseText = completion.choices[0]?.message?.content?.trim();
           if (!responseText) continue;
 
-          // Remove markdown code blocks if present
-          responseText = responseText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+          // Remove markdown code blocks and backticks more aggressively
+          responseText = responseText
+            .replace(/^```json/gm, '')
+            .replace(/^```/gm, '')
+            .replace(/```$/gm, '')
+            .replace(/^`+/gm, '')
+            .replace(/`+$/gm, '')
+            .trim();
+
+          // Extract JSON if there's text before/after
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            responseText = jsonMatch[0];
+          }
 
           // Parse AI response
           const aiResponse = JSON.parse(responseText);

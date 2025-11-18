@@ -236,7 +236,7 @@ export default function ProjectDetailPage() {
         body: JSON.stringify({ 
           projectId,
           batchOffset: offset,
-          batchSize: 1000,
+          batchSize: 500,
         }),
       });
 
@@ -500,7 +500,7 @@ export default function ProjectDetailPage() {
                 ? 'AI Matching...' 
                 : aiBatchProgress?.hasMore 
                 ? `Continue AI Matching (${aiBatchProgress.processed}/${aiBatchProgress.total} done, ~$${aiBatchProgress.estimatedCost})`
-                : 'Run AI Matching (1000 items/batch)'
+                : 'Run AI Matching (500 items/batch)'
               }
             </button>
             {aiBatchProgress && aiBatchProgress.hasMore && (
