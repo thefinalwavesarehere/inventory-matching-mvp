@@ -78,11 +78,12 @@ export async function POST(req: NextRequest) {
           });
 
           // Update match with enriched data
+          const existingFeatures = match.features as any || {};
           await prisma.matchCandidate.update({
             where: { id: match.id },
             data: {
               features: {
-                ...match.features,
+                ...existingFeatures,
                 webEnriched: true,
                 webData: searchResults,
                 enrichedAt: new Date().toISOString(),
