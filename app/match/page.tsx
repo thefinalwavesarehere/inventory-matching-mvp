@@ -9,12 +9,22 @@ interface MatchCandidate {
     partNumber: string;
     lineCode?: string;
     description?: string;
+    price?: number;
+    cost?: number;
+  };
+  targetItem?: {
+    partNumber: string;
+    description?: string;
+    price?: number;
+    cost?: number;
+    listPrice?: number;
   };
   targetId: string;
   targetType: string;
   confidence: number;
   method: string;
   status: string;
+  features?: any;
 }
 
 export default function MatchPage() {
@@ -138,54 +148,141 @@ export default function MatchPage() {
           <div className="space-y-4">
             {matches.map((match) => (
               <div key={match.id} className="bg-white rounded-lg shadow p-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <h3 className="font-semibold text-sm text-gray-500 mb-2">Store Item</h3>
-                    <p className="font-mono text-sm">{match.storeItem.partNumber}</p>
-                    {match.storeItem.lineCode && (
-                      <p className="text-sm text-gray-600">Line: {match.storeItem.lineCode}</p>
-                    )}
-                    {match.storeItem.description && (
-                      <p className="text-sm text-gray-600 mt-1">{match.storeItem.description}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <h3 className="font-semibold text-sm text-gray-500 mb-2">Match Details</h3>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">Confidence:</span>
-                        <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                          match.confidence >= 95 ? 'bg-green-100 text-green-800' :
-                          match.confidence >= 85 ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-orange-100 text-orange-800'
-                        }`}>
-                          {match.confidence}%
-                        </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Store Item Column */}
+                  <div className="border-r pr-6">
+                    <h3 className="font-semibold text-lg text-gray-700 mb-3 flex items-center gap-2">
+                      <span className="text-blue-600">🏪</span> Store Item
+                    </h3>
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-xs text-gray-500 uppercase">Part Number</span>
+                        <p className="font-mono text-base font-semibold">{match.storeItem.partNumber}</p>
                       </div>
-                      <p className="text-sm text-gray-600">Method: {match.method}</p>
-                      <p className="text-sm text-gray-600">Target: {match.targetType}</p>
+                      {match.storeItem.lineCode && (
+                        <div>
+                          <span className="text-xs text-gray-500 uppercase">Line</span>
+                          <p className="text-sm">{match.storeItem.lineCode}</p>
+                        </div>
+                      )}
+                      {match.storeItem.description && (
+                        <div>
+                          <span className="text-xs text-gray-500 uppercase">Description</span>
+                          <p className="text-sm">{match.storeItem.description}</p>
+                        </div>
+                      )}
+                      {(match.storeItem.price || match.storeItem.cost) && (
+                        <div className="flex gap-4 pt-2">
+                          {match.storeItem.price && (
+                            <div>
+                              <span className="text-xs text-gray-500 uppercase">Price</span>
+                              <p className="text-sm font-semibold text-green-600">${match.storeItem.price.toFixed(2)}</p>
+                            </div>
+                          )}
+                          {match.storeItem.cost && (
+                            <div>
+                              <span className="text-xs text-gray-500 uppercase">Cost</span>
+                              <p className="text-sm font-semibold text-gray-600">${match.storeItem.cost.toFixed(2)}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2">
+                  {/* Supplier Item Column */}
+                  <div>
+                    <h3 className="font-semibold text-lg text-gray-700 mb-3 flex items-center gap-2">
+                      <span className="text-purple-600">📦</span> Supplier Item
+                    </h3>
+                    {match.targetItem ? (
+                      <div className="space-y-2">
+                        <div>
+                          <span className="text-xs text-gray-500 uppercase">Part Number</span>
+                          <p className="font-mono text-base font-semibold">{match.targetItem.partNumber}</p>
+                        </div>
+                        {match.targetItem.description && (
+                          <div>
+                            <span className="text-xs text-gray-500 uppercase">Description</span>
+                            <p className="text-sm">{match.targetItem.description}</p>
+                          </div>
+                        )}
+                        {(match.targetItem.price || match.targetItem.cost || match.targetItem.listPrice) && (
+                          <div className="flex gap-4 pt-2">
+                            {match.targetItem.listPrice && (
+                              <div>
+                                <span className="text-xs text-gray-500 uppercase">List Price</span>
+                                <p className="text-sm font-semibold text-green-600">${match.targetItem.listPrice.toFixed(2)}</p>
+                              </div>
+                            )}
+                            {match.targetItem.price && (
+                              <div>
+                                <span className="text-xs text-gray-500 uppercase">Price</span>
+                                <p className="text-sm font-semibold text-green-600">${match.targetItem.price.toFixed(2)}</p>
+                              </div>
+                            )}
+                            {match.targetItem.cost && (
+                              <div>
+                                <span className="text-xs text-gray-500 uppercase">Cost</span>
+                                <p className="text-sm font-semibold text-gray-600">${match.targetItem.cost.toFixed(2)}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-400 italic">No supplier item data available</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Match Details & Actions Row */}
+                <div className="mt-6 pt-6 border-t flex items-center justify-between">
+                  <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600">Confidence:</span>
+                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                        match.confidence >= 0.95 ? 'bg-green-100 text-green-800' :
+                        match.confidence >= 0.85 ? 'bg-yellow-100 text-yellow-800' :
+                        match.confidence >= 0.60 ? 'bg-orange-100 text-orange-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {(match.confidence * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      <span className="font-semibold">Method:</span> {match.method}
+                    </div>
+                    {match.features && (
+                      <div className="text-xs text-gray-500">
+                        {match.features.partSimilarity && (
+                          <span>Part: {(match.features.partSimilarity * 100).toFixed(0)}%</span>
+                        )}
+                        {match.features.descSimilarity > 0 && (
+                          <span className="ml-2">Desc: {(match.features.descSimilarity * 100).toFixed(0)}%</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
                     {match.status === 'PENDING' ? (
                       <>
                         <button
                           onClick={() => handleConfirm(match.id)}
-                          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                          className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold"
                         >
                           Confirm
                         </button>
                         <button
                           onClick={() => handleReject(match.id)}
-                          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                          className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
                         >
                           Reject
                         </button>
                       </>
                     ) : (
-                      <span className={`px-4 py-2 rounded font-semibold ${
+                      <span className={`px-6 py-2 rounded-lg font-semibold ${
                         match.status === 'CONFIRMED' 
                           ? 'bg-green-100 text-green-800'
                           : 'bg-red-100 text-red-800'
