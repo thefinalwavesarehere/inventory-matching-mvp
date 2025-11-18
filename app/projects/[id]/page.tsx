@@ -40,6 +40,7 @@ export default function ProjectDetailPage() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [runningMatch, setRunningMatch] = useState(false);
+  const [runningAiMatch, setRunningAiMatch] = useState(false);
   const [matchError, setMatchError] = useState('');
 
   useEffect(() => {
@@ -181,6 +182,40 @@ export default function ProjectDetailPage() {
       alert(`Error: ${err.message}`);
     } finally {
       setRunningMatch(false);
+    }
+  };
+
+  const handleRunAiMatch = async () => {
+    try {
+      setRunningAiMatch(true);
+      setMatchError('');
+      
+      console.log('Starting AI match for project:', projectId);
+      
+      const res = await fetch('/api/match/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, limit: 50 }),
+      });
+
+      console.log('AI match response status:', res.status);
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to run AI matching');
+      }
+      
+      const data = await res.json();
+      console.log('AI match result:', data);
+      
+      alert(`AI Matching complete! Found ${data.matchCount} additional matches from ${data.processed} items`);
+      await loadProject();
+    } catch (err: any) {
+      console.error('AI match error:', err);
+      setMatchError(err.message);
+      alert(`Error: ${err.message}`);
+    } finally {
+      setRunningAiMatch(false);
     }
   };
 
@@ -380,6 +415,18 @@ export default function ProjectDetailPage() {
               }`}
             >
               {runningMatch ? 'Running...' : 'Run Matching Algorithm'}
+            </button>
+            <button
+              onClick={handleRunAiMatch}
+              disabled={runningAiMatch || project._count.storeItems === 0 || project._count.supplierItems === 0}
+              className={`px-6 py-3 rounded font-semibold ${
+                runningAiMatch || project._count.storeItems === 0 || project._count.supplierItems === 0
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+              title="Uses AI to find matches for items that the standard algorithm couldn't match"
+            >
+              {runningAiMatch ? 'AI Matching...' : 'Run AI Matching'}
             </button>
             {matchError && (
               <div className="text-red-600 text-sm mt-2">
