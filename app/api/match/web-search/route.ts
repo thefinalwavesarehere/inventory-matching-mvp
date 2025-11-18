@@ -137,7 +137,7 @@ Respond with ONLY a JSON object in this exact format:
             storeItemId: storeItem.id,
             targetType: 'SUPPLIER', // Using SUPPLIER type but it's actually a web result
             targetId: 'WEB_' + storeItem.id, // Special ID to indicate web-found match
-            method: 'WEB_SEARCH',
+            method: 'AI', // Temporarily using AI until WEB_SEARCH is added to database enum
             confidence: webResponse.confidence,
             features: {
               webSearch: true,

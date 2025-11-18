@@ -312,6 +312,36 @@ model AuditLog {
   @@index([createdAt])
 }
 
+/// Matching progress tracking
+model MatchingProgress {
+  id                    String   @id @default(cuid())
+  projectId             String   @unique
+  // Standard matching (exact + fuzzy)
+  standardCompleted     Boolean  @default(false)
+  standardBatchOffset   Int      @default(0)
+  standardTotalItems    Int      @default(0)
+  standardProcessed     Int      @default(0)
+  standardLastRun       DateTime?
+  // AI matching
+  aiCompleted           Boolean  @default(false)
+  aiBatchOffset         Int      @default(0)
+  aiTotalItems          Int      @default(0)
+  aiProcessed           Int      @default(0)
+  aiLastRun             DateTime?
+  // Web search matching
+  webSearchCompleted    Boolean  @default(false)
+  webSearchBatchOffset  Int      @default(0)
+  webSearchTotalItems   Int      @default(0)
+  webSearchProcessed    Int      @default(0)
+  webSearchLastRun      DateTime?
+  // Overall status
+  currentStage          String   @default("UPLOAD") // UPLOAD, STANDARD, AI, WEB_SEARCH, REVIEW, COMPLETE
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("matching_progress")
+}
+
 /// Project settings (thresholds, AI toggle, etc.)
 model ProjectSettings {
   id                String   @id @default(cuid())

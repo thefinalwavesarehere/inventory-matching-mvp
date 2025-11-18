@@ -37,6 +37,8 @@ export default function MatchPage() {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'confirmed' | 'rejected'>('pending');
   const [methodFilter, setMethodFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'confidence' | 'method' | 'date'>('confidence');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedMatches, setSelectedMatches] = useState<Set<string>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [enriching, setEnriching] = useState(false);
@@ -168,11 +170,26 @@ export default function MatchPage() {
     }
   };
 
-  // Filter matches by method
-  const filteredMatches = matches.filter(m => {
-    if (methodFilter === 'all') return true;
-    return m.method === methodFilter;
-  });
+  // Filter and sort matches
+  const filteredMatches = matches
+    .filter(m => {
+      if (methodFilter === 'all') return true;
+      return m.method === methodFilter;
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+      
+      if (sortBy === 'confidence') {
+        comparison = a.confidence - b.confidence;
+      } else if (sortBy === 'method') {
+        comparison = a.method.localeCompare(b.method);
+      } else if (sortBy === 'date') {
+        // Assuming matches have a createdAt field, otherwise use confidence as proxy
+        comparison = 0; // Will implement when createdAt is available
+      }
+      
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
 
   if (!projectId) {
     return (
@@ -204,20 +221,45 @@ export default function MatchPage() {
         </div>
 
         {/* Status Filter */}
-        <div className="mb-4 flex gap-2">
-          {['all', 'pending', 'confirmed', 'rejected'].map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f as any)}
-              className={`px-4 py-2 rounded ${
-                filter === f
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white border hover:bg-gray-50'
-              }`}
+        <div className="mb-4 flex justify-between items-center">
+          <div className="flex gap-2">
+            {['all', 'pending', 'confirmed', 'rejected'].map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f as any)}
+                className={`px-4 py-2 rounded ${
+                  filter === f
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white border hover:bg-gray-50'
+                }`}
+              >
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <a
+              href={`/api/match/export?projectId=${projectId}&status=confirmed`}
+              download
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 inline-flex items-center gap-2"
             >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
-          ))}
+              📥 Export Confirmed
+            </a>
+            <a
+              href={`/api/match/export?projectId=${projectId}&status=pending`}
+              download
+              className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 inline-flex items-center gap-2"
+            >
+              📥 Export Pending
+            </a>
+            <a
+              href={`/api/match/export?projectId=${projectId}&status=all`}
+              download
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 inline-flex items-center gap-2"
+            >
+              📥 Export All
+            </a>
+          </div>
         </div>
 
         {/* Method Filter & Bulk Actions */}
@@ -236,6 +278,23 @@ export default function MatchPage() {
               <option value="AI">AI Match</option>
               <option value="WEB_SEARCH">Web Search</option>
             </select>
+            <label className="text-sm font-medium text-gray-700 ml-6">Sort by:</label>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'confidence' | 'method' | 'date')}
+              className="px-3 py-2 border rounded"
+            >
+              <option value="confidence">Confidence Score</option>
+              <option value="method">Match Method</option>
+              <option value="date">Date Created</option>
+            </select>
+            <button
+              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+              className="px-3 py-2 border rounded hover:bg-gray-50"
+              title={`Sort ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
+            >
+              {sortOrder === 'asc' ? '↑ Asc' : '↓ Desc'}
+            </button>
             <span className="text-sm text-gray-500">
               Showing {filteredMatches.length} of {matches.length} matches
             </span>

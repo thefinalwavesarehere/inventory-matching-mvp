@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import FileUploader from '@/app/components/FileUploader';
+import WorkflowStatus from '@/app/components/WorkflowStatus';
 
 interface Project {
   id: string;
@@ -444,6 +445,9 @@ export default function ProjectDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Workflow Status Dashboard */}
+        <WorkflowStatus projectId={projectId} />
 
         {/* Uploaded Files Section */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
