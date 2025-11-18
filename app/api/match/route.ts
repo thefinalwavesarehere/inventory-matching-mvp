@@ -317,7 +317,7 @@ export async function POST(req: NextRequest) {
           storeItemId: storeItem.id,
           targetType: 'SUPPLIER',
           targetId: bestMatch.id,
-          method: 'FUZZY',
+          method: 'FUZZY_SUBSTRING',
           confidence: bestScore,
           features: { 
             partSimilarity: similarity(storeItem.partNumberNorm, bestMatch.partNumberNorm),
