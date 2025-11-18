@@ -36,6 +36,9 @@ export default function MatchPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'confirmed' | 'rejected'>('pending');
+  const [methodFilter, setMethodFilter] = useState<string>('all');
+  const [selectedMatches, setSelectedMatches] = useState<Set<string>>(new Set());
+  const [bulkProcessing, setBulkProcessing] = useState(false);
 
   useEffect(() => {
     if (projectId) {
@@ -85,6 +88,61 @@ export default function MatchPage() {
     }
   };
 
+  const toggleSelectAll = () => {
+    if (selectedMatches.size === filteredMatches.length) {
+      setSelectedMatches(new Set());
+    } else {
+      setSelectedMatches(new Set(filteredMatches.map(m => m.id)));
+    }
+  };
+
+  const toggleSelect = (matchId: string) => {
+    const newSelected = new Set(selectedMatches);
+    if (newSelected.has(matchId)) {
+      newSelected.delete(matchId);
+    } else {
+      newSelected.add(matchId);
+    }
+    setSelectedMatches(newSelected);
+  };
+
+  const handleBulkAction = async (action: 'confirm' | 'reject') => {
+    if (selectedMatches.size === 0) {
+      alert('Please select at least one match');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to ${action} ${selectedMatches.size} matches?`)) {
+      return;
+    }
+
+    try {
+      setBulkProcessing(true);
+      const res = await fetch('/api/confirm/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          matchIds: Array.from(selectedMatches), 
+          action 
+        }),
+      });
+      if (!res.ok) throw new Error(`Failed to ${action} matches`);
+      setSelectedMatches(new Set());
+      loadMatches();
+      alert(`Successfully ${action}ed ${selectedMatches.size} matches`);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  // Filter matches by method
+  const filteredMatches = matches.filter(m => {
+    if (methodFilter === 'all') return true;
+    return m.method === methodFilter;
+  });
+
   if (!projectId) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -114,7 +172,8 @@ export default function MatchPage() {
           </button>
         </div>
 
-        <div className="mb-6 flex gap-2">
+        {/* Status Filter */}
+        <div className="mb-4 flex gap-2">
           {['all', 'pending', 'confirmed', 'rejected'].map((f) => (
             <button
               key={f}
@@ -128,6 +187,55 @@ export default function MatchPage() {
               {f.charAt(0).toUpperCase() + f.slice(1)}
             </button>
           ))}
+        </div>
+
+        {/* Method Filter & Bulk Actions */}
+        <div className="mb-6 flex justify-between items-center">
+          <div className="flex gap-4 items-center">
+            <label className="text-sm font-medium text-gray-700">Filter by Method:</label>
+            <select
+              value={methodFilter}
+              onChange={(e) => setMethodFilter(e.target.value)}
+              className="px-4 py-2 border rounded bg-white hover:bg-gray-50"
+            >
+              <option value="all">All Methods</option>
+              <option value="INTERCHANGE">Interchange</option>
+              <option value="EXACT_NORM">Exact Match</option>
+              <option value="FUZZY_SUBSTRING">Fuzzy Match</option>
+              <option value="AI">AI Match</option>
+            </select>
+            <span className="text-sm text-gray-500">
+              Showing {filteredMatches.length} of {matches.length} matches
+            </span>
+          </div>
+          
+          {selectedMatches.size > 0 && (
+            <div className="flex gap-2">
+              <span className="px-3 py-2 bg-blue-50 text-blue-700 rounded font-medium">
+                {selectedMatches.size} selected
+              </span>
+              <button
+                onClick={() => handleBulkAction('confirm')}
+                disabled={bulkProcessing}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300"
+              >
+                {bulkProcessing ? 'Processing...' : 'Confirm Selected'}
+              </button>
+              <button
+                onClick={() => handleBulkAction('reject')}
+                disabled={bulkProcessing}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-gray-300"
+              >
+                {bulkProcessing ? 'Processing...' : 'Reject Selected'}
+              </button>
+              <button
+                onClick={() => setSelectedMatches(new Set())}
+                className="px-4 py-2 border rounded hover:bg-gray-50"
+              >
+                Clear Selection
+              </button>
+            </div>
+          )}
         </div>
 
         {error && (
@@ -145,9 +253,38 @@ export default function MatchPage() {
             <p className="text-gray-500">No matches found</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {matches.map((match) => (
-              <div key={match.id} className="bg-white rounded-lg shadow p-6">
+          <>
+            {/* Select All Checkbox */}
+            {filteredMatches.length > 0 && (
+              <div className="bg-white rounded-lg shadow p-4 mb-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedMatches.size === filteredMatches.length && filteredMatches.length > 0}
+                    onChange={toggleSelectAll}
+                    className="w-5 h-5 rounded border-gray-300"
+                  />
+                  <span className="font-medium text-gray-700">
+                    Select All ({filteredMatches.length} matches)
+                  </span>
+                </label>
+              </div>
+            )}
+            
+            <div className="space-y-4">
+              {filteredMatches.map((match) => (
+                <div key={match.id} className="bg-white rounded-lg shadow p-6">
+                  {/* Checkbox */}
+                  <div className="mb-4 flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedMatches.has(match.id)}
+                      onChange={() => toggleSelect(match.id)}
+                      className="w-5 h-5 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-600">Select this match</span>
+                  </div>
+                  
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Store Item Column */}
                   <div className="border-r pr-6">
@@ -293,8 +430,9 @@ export default function MatchPage() {
                   </div>
                 </div>
               </div>
-            ))}
+             )}
           </div>
+          </>
         )}
       </div>
     </div>
