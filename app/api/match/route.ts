@@ -229,86 +229,82 @@ export async function POST(req: NextRequest) {
     const unmatchedStoreItems = storeItems.filter((s) => !matchedStoreIds.has(s.id));
     console.log(`[MATCH] ${unmatchedStoreItems.length} unmatched items remaining`);
 
-    // OPTIMIZATION: Skip fuzzy matching if supplier catalog is too large (>50K items)
-    // Fuzzy matching is O(n*m) and will timeout with large datasets
-    if (supplierItems.length > 50000) {
-      console.log(`[MATCH] Skipping fuzzy matching - supplier catalog too large (${supplierItems.length} items)`);
-      console.log(`[MATCH] Use AI matching instead for unmatched items`);
-    } else {
-      // Only run fuzzy matching on first 500 items to avoid timeout
-      const itemsToMatch = unmatchedStoreItems.slice(0, 500);
-      console.log(`[MATCH] Running fuzzy matching on ${itemsToMatch.length} items`);
+    // OPTIMIZATION: Use prefix filtering and early termination for large datasets
+    // With 800s timeout and 2 vCPUs, we can process more items
+    // Limit to first 2000 store items to ensure completion
+    const itemsToMatch = unmatchedStoreItems.slice(0, 2000);
+    console.log(`[MATCH] Running optimized fuzzy matching on ${itemsToMatch.length} items`);
+    console.log(`[MATCH] Supplier catalog size: ${supplierItems.length} items`);
+    
+    for (const storeItem of itemsToMatch) {
+      let bestMatch: any = null;
+      let bestScore = 0;
+
+      // OPTIMIZATION: Filter supplier items by first 3 characters for faster matching
+      const prefix = storeItem.partNumberNorm.substring(0, 3);
+      const candidateSuppliers = supplierItems.filter(s => 
+        s.partNumberNorm.startsWith(prefix) || 
+        s.partNumberNorm.includes(prefix.substring(0, 2))
+      );
       
-      for (const storeItem of itemsToMatch) {
-        let bestMatch: any = null;
-        let bestScore = 0;
+      // If no candidates with prefix match, sample random 1000 items
+      const suppliersToCheck = candidateSuppliers.length > 0 
+        ? candidateSuppliers.slice(0, 1000)
+        : supplierItems.slice(0, 1000);
 
-        // OPTIMIZATION: Filter supplier items by first 3 characters for faster matching
-        const prefix = storeItem.partNumberNorm.substring(0, 3);
-        const candidateSuppliers = supplierItems.filter(s => 
-          s.partNumberNorm.startsWith(prefix) || 
-          s.partNumberNorm.includes(prefix.substring(0, 2))
-        );
+      for (const supplierItem of suppliersToCheck) {
+        // Quick length check - if lengths differ by >50%, skip
+        const lengthDiff = Math.abs(storeItem.partNumberNorm.length - supplierItem.partNumberNorm.length);
+        if (lengthDiff > Math.max(storeItem.partNumberNorm.length, supplierItem.partNumberNorm.length) * 0.5) {
+          continue;
+        }
         
-        // If no candidates with prefix match, sample random 1000 items
-        const suppliersToCheck = candidateSuppliers.length > 0 
-          ? candidateSuppliers.slice(0, 1000)
-          : supplierItems.slice(0, 1000);
-
-        for (const supplierItem of suppliersToCheck) {
-          // Quick length check - if lengths differ by >50%, skip
-          const lengthDiff = Math.abs(storeItem.partNumberNorm.length - supplierItem.partNumberNorm.length);
-          if (lengthDiff > Math.max(storeItem.partNumberNorm.length, supplierItem.partNumberNorm.length) * 0.5) {
-            continue;
-          }
-          
-          // Compare normalized part numbers
-          const partScore = similarity(storeItem.partNumberNorm, supplierItem.partNumberNorm);
-          
-          // Early termination if score is too low
-          if (partScore < 0.50) continue;
-          
-          // Compare descriptions if available
-          let descScore = 0;
-          if (storeItem.description && supplierItem.description) {
-            descScore = similarity(
-              storeItem.description.toLowerCase(), 
-              supplierItem.description.toLowerCase()
-            );
-          }
-          
-          // Weighted score (prioritize part number since no descriptions in Arnold File)
-          const score = descScore > 0 ? (partScore * 0.7 + descScore * 0.3) : partScore;
-          
-          // Lower threshold to 0.60 to catch more potential matches
-          if (score > bestScore && score >= 0.60) {
-            bestScore = score;
-            bestMatch = supplierItem;
-            
-            // Early termination if we found a great match
-            if (bestScore >= 0.95) break;
-          }
+        // Compare normalized part numbers
+        const partScore = similarity(storeItem.partNumberNorm, supplierItem.partNumberNorm);
+        
+        // Early termination if score is too low
+        if (partScore < 0.50) continue;
+        
+        // Compare descriptions if available
+        let descScore = 0;
+        if (storeItem.description && supplierItem.description) {
+          descScore = similarity(
+            storeItem.description.toLowerCase(), 
+            supplierItem.description.toLowerCase()
+          );
         }
-
-        if (bestMatch) {
-          fuzzyMatches++;
-          matches.push({
-            projectId,
-            storeItemId: storeItem.id,
-            targetType: 'SUPPLIER',
-            targetId: bestMatch.id,
-            method: 'FUZZY',
-            confidence: bestScore,
-            features: { 
-              partSimilarity: similarity(storeItem.partNumberNorm, bestMatch.partNumberNorm),
-              descSimilarity: storeItem.description && bestMatch.description 
-                ? similarity(storeItem.description.toLowerCase(), bestMatch.description.toLowerCase())
-                : 0,
-              candidatesChecked: suppliersToCheck.length
-            },
-            status: 'PENDING',
-          });
+        
+        // Weighted score (prioritize part number since no descriptions in Arnold File)
+        const score = descScore > 0 ? (partScore * 0.7 + descScore * 0.3) : partScore;
+        
+        // Lower threshold to 0.60 to catch more potential matches
+        if (score > bestScore && score >= 0.60) {
+          bestScore = score;
+          bestMatch = supplierItem;
+          
+          // Early termination if we found a great match
+          if (bestScore >= 0.95) break;
         }
+      }
+
+      if (bestMatch) {
+        fuzzyMatches++;
+        matches.push({
+          projectId,
+          storeItemId: storeItem.id,
+          targetType: 'SUPPLIER',
+          targetId: bestMatch.id,
+          method: 'FUZZY',
+          confidence: bestScore,
+          features: { 
+            partSimilarity: similarity(storeItem.partNumberNorm, bestMatch.partNumberNorm),
+            descSimilarity: storeItem.description && bestMatch.description 
+              ? similarity(storeItem.description.toLowerCase(), bestMatch.description.toLowerCase())
+              : 0,
+            candidatesChecked: suppliersToCheck.length
+          },
+          status: 'PENDING',
+        });
       }
     }
     console.log(`[MATCH] Stage 3 complete: ${fuzzyMatches} matches`);
