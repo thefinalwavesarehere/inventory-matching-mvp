@@ -49,6 +49,14 @@ export default function ProjectDetailPage() {
     hasMore: boolean;
     nextOffset: number | null;
   } | null>(null);
+  const [aiBatchProgress, setAiBatchProgress] = useState<{
+    processed: number;
+    total: number;
+    remaining: number;
+    hasMore: boolean;
+    nextOffset: number | null;
+    estimatedCost: string;
+  } | null>(null);
 
   useEffect(() => {
     loadProject();
@@ -217,12 +225,19 @@ export default function ProjectDetailPage() {
       setRunningAiMatch(true);
       setMatchError('');
       
-      console.log('Starting AI match for project:', projectId);
+      // Use existing batch progress or start from 0
+      const offset = aiBatchProgress?.nextOffset ?? 0;
+      
+      console.log('Starting AI match for project:', projectId, 'offset:', offset);
       
       const res = await fetch('/api/match/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, limit: 50 }),
+        body: JSON.stringify({ 
+          projectId,
+          batchOffset: offset,
+          batchSize: 1000,
+        }),
       });
 
       console.log('AI match response status:', res.status);
@@ -235,7 +250,20 @@ export default function ProjectDetailPage() {
       const data = await res.json();
       console.log('AI match result:', data);
       
-      alert(`AI Matching complete! Found ${data.matchCount} additional matches from ${data.processed} items`);
+      // Update batch progress
+      if (data.batch) {
+        setAiBatchProgress(data.batch);
+        
+        if (data.batch.hasMore) {
+          alert(`AI Batch complete!\n\nProcessed: ${data.batch.processed}/${data.batch.total} items\nMatches found: ${data.matchCount}\nCost: ~$${data.batch.estimatedCost}\nTotal estimated: ~$${data.batch.totalEstimatedCost}\n\nClick "Run AI Matching" again to continue.`);
+        } else {
+          alert(`AI Matching complete!\n\nProcessed all ${data.batch.total} items\nTotal matches: ${data.matchCount}\nTotal cost: ~$${data.batch.estimatedCost}`);
+          setAiBatchProgress(null); // Reset for next run
+        }
+      } else {
+        alert(`AI Matching complete! Found ${data.matchCount} additional matches from ${data.processed} items`);
+      }
+      
       await loadProject();
     } catch (err: any) {
       console.error('AI match error:', err);
@@ -462,12 +490,25 @@ export default function ProjectDetailPage() {
               className={`px-6 py-3 rounded font-semibold ${
                 runningAiMatch || project._count.storeItems === 0 || project._count.supplierItems === 0
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : aiBatchProgress?.hasMore
+                  ? 'bg-purple-600 text-white hover:bg-purple-700'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}
               title="Uses AI to find matches for items that the standard algorithm couldn't match"
             >
-              {runningAiMatch ? 'AI Matching...' : 'Run AI Matching'}
+              {runningAiMatch 
+                ? 'AI Matching...' 
+                : aiBatchProgress?.hasMore 
+                ? `Continue AI Matching (${aiBatchProgress.processed}/${aiBatchProgress.total} done, ~$${aiBatchProgress.estimatedCost})`
+                : 'Run AI Matching (1000 items/batch)'
+              }
             </button>
+            {aiBatchProgress && aiBatchProgress.hasMore && (
+              <div className="text-sm text-gray-600 mt-2">
+                AI Progress: {aiBatchProgress.processed}/{aiBatchProgress.total} items processed
+                ({aiBatchProgress.remaining} remaining, ~${aiBatchProgress.estimatedCost} per batch)
+              </div>
+            )}
             {matchError && (
               <div className="text-red-600 text-sm mt-2">
                 Error: {matchError}

@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { projectId, limit = 50 } = body;
+    const { projectId, batchOffset = 0, batchSize = 1000 } = body;
 
     if (!projectId) {
       return NextResponse.json(
@@ -43,14 +43,22 @@ export async function POST(req: NextRequest) {
     });
     const matchedIds = new Set(existingMatches.map((m) => m.storeItemId));
 
-    const unmatchedStoreItems = await prisma.storeItem.findMany({
+    const allUnmatchedItems = await prisma.storeItem.findMany({
       where: {
         projectId,
         id: { notIn: Array.from(matchedIds) },
       },
-      take: limit,
       orderBy: { partNumber: 'asc' },
     });
+
+    // BATCH PROCESSING: Process only a slice of unmatched items
+    const unmatchedStoreItems = allUnmatchedItems.slice(batchOffset, batchOffset + batchSize);
+    const remainingAfterBatch = allUnmatchedItems.length - (batchOffset + unmatchedStoreItems.length);
+    
+    console.log(`[AI-MATCH] Total unmatched items: ${allUnmatchedItems.length}`);
+    console.log(`[AI-MATCH] Batch offset: ${batchOffset}, Batch size: ${batchSize}`);
+    console.log(`[AI-MATCH] Processing items ${batchOffset} to ${batchOffset + unmatchedStoreItems.length}`);
+    console.log(`[AI-MATCH] Remaining after batch: ${remainingAfterBatch}`);
 
     const supplierItems = await prisma.supplierItem.findMany({
       where: { projectId },
@@ -151,11 +159,30 @@ Respond with ONLY a JSON object in this exact format:
       console.log(`[AI-MATCH] Saved ${aiMatches.length} AI-powered matches`);
     }
 
+    // Calculate batch progress
+    const totalProcessed = batchOffset + unmatchedStoreItems.length;
+    const hasMore = remainingAfterBatch > 0;
+    const nextOffset = hasMore ? batchOffset + batchSize : null;
+    
+    // Estimate cost (rough: ~$0.002 per item)
+    const estimatedCost = (unmatchedStoreItems.length * 0.002).toFixed(2);
+    const totalEstimatedCost = (allUnmatchedItems.length * 0.002).toFixed(2);
+    
     return NextResponse.json({
       success: true,
-      message: `Created ${aiMatches.length} AI-powered match candidates`,
+      message: `Created ${aiMatches.length} AI-powered match candidates in this batch`,
       matchCount: aiMatches.length,
       processed: unmatchedStoreItems.length,
+      batch: {
+        processed: totalProcessed,
+        total: allUnmatchedItems.length,
+        remaining: remainingAfterBatch,
+        hasMore,
+        nextOffset,
+        batchSize,
+        estimatedCost,
+        totalEstimatedCost,
+      },
     });
   } catch (error: any) {
     console.error('[AI-MATCH] Error:', error);
