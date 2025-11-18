@@ -37,14 +37,13 @@ export async function POST(req: NextRequest) {
 
     console.log(`[ENRICH] Starting web enrichment for ${matchIds.length} matches`);
 
-    // Get matches with their store and supplier items
+    // Get matches with their store items
     const matches = await prisma.matchCandidate.findMany({
       where: {
         id: { in: matchIds },
       },
       include: {
         storeItem: true,
-        supplierItem: true,
       },
     });
 
@@ -55,7 +54,16 @@ export async function POST(req: NextRequest) {
 
     for (const match of matches) {
       try {
-        const partNumber = match.supplierItem?.partNumber || match.storeItem.partNumber;
+        // Get supplier item if this is a supplier match
+        let partNumber = match.storeItem.partNumber;
+        if (match.targetType === 'SUPPLIER') {
+          const supplierItem = await prisma.supplierItem.findUnique({
+            where: { id: match.targetId },
+          });
+          if (supplierItem) {
+            partNumber = supplierItem.partNumber;
+          }
+        }
         
         console.log(`[ENRICH] Searching for part: ${partNumber}`);
 
