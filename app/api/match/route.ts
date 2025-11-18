@@ -249,10 +249,11 @@ export async function POST(req: NextRequest) {
           );
         }
         
-        // Weighted score
-        const score = partScore * 0.7 + descScore * 0.3;
+        // Weighted score (prioritize part number since no descriptions in Arnold File)
+        const score = descScore > 0 ? (partScore * 0.7 + descScore * 0.3) : partScore;
         
-        if (score > bestScore && score >= 0.70) {
+        // Lower threshold to 0.60 to catch more potential matches
+        if (score > bestScore && score >= 0.60) {
           bestScore = score;
           bestMatch = supplierItem;
         }
