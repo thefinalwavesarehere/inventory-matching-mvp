@@ -230,11 +230,12 @@ export async function POST(req: NextRequest) {
     console.log(`[MATCH] ${unmatchedStoreItems.length} unmatched items remaining`);
 
     // OPTIMIZATION: Use prefix filtering and early termination for large datasets
-    // With 800s timeout and 2 vCPUs, we can process more items
-    // Limit to first 2000 store items to ensure completion
-    const itemsToMatch = unmatchedStoreItems.slice(0, 2000);
+    // With 800s timeout and 2 vCPUs, process ALL store items (user requirement)
+    // Aggressive optimizations to ensure completion within timeout
+    const itemsToMatch = unmatchedStoreItems; // Process ALL items
     console.log(`[MATCH] Running optimized fuzzy matching on ${itemsToMatch.length} items`);
     console.log(`[MATCH] Supplier catalog size: ${supplierItems.length} items`);
+    console.log(`[MATCH] Estimated comparisons: ${itemsToMatch.length} × ~500 candidates = ${itemsToMatch.length * 500} total`);
     
     for (const storeItem of itemsToMatch) {
       let bestMatch: any = null;
@@ -247,10 +248,11 @@ export async function POST(req: NextRequest) {
         s.partNumberNorm.includes(prefix.substring(0, 2))
       );
       
-      // If no candidates with prefix match, sample random 1000 items
+      // If no candidates with prefix match, sample random 500 items
+      // Reduced from 1000 to 500 to process all 17K+ store items within timeout
       const suppliersToCheck = candidateSuppliers.length > 0 
-        ? candidateSuppliers.slice(0, 1000)
-        : supplierItems.slice(0, 1000);
+        ? candidateSuppliers.slice(0, 500)
+        : supplierItems.slice(0, 500);
 
       for (const supplierItem of suppliersToCheck) {
         // Quick length check - if lengths differ by >50%, skip

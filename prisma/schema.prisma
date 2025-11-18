@@ -260,8 +260,10 @@ enum TargetType {
 enum MatchMethod {
   INTERCHANGE
   EXACT_NORM
+  EXACT_NORMALIZED
   LINE_PN
   DESC_SIM
+  FUZZY
   FUZZY_SUBSTRING
   AI
 }
