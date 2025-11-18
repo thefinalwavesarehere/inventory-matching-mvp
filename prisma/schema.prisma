@@ -266,6 +266,7 @@ enum MatchMethod {
   FUZZY
   FUZZY_SUBSTRING
   AI
+  WEB_SEARCH
 }
 
 enum MatchStatus {

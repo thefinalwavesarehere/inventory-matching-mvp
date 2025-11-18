@@ -41,6 +41,7 @@ export default function ProjectDetailPage() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [runningMatch, setRunningMatch] = useState(false);
   const [runningAiMatch, setRunningAiMatch] = useState(false);
+  const [runningWebSearch, setRunningWebSearch] = useState(false);
   const [matchError, setMatchError] = useState('');
   const [batchProgress, setBatchProgress] = useState<{
     processed: number;
@@ -50,6 +51,14 @@ export default function ProjectDetailPage() {
     nextOffset: number | null;
   } | null>(null);
   const [aiBatchProgress, setAiBatchProgress] = useState<{
+    processed: number;
+    total: number;
+    remaining: number;
+    hasMore: boolean;
+    nextOffset: number | null;
+    estimatedCost: string;
+  } | null>(null);
+  const [webSearchBatchProgress, setWebSearchBatchProgress] = useState<{
     processed: number;
     total: number;
     remaining: number;
@@ -271,6 +280,60 @@ export default function ProjectDetailPage() {
       alert(`Error: ${err.message}`);
     } finally {
       setRunningAiMatch(false);
+    }
+  };
+
+  const handleRunWebSearch = async () => {
+    try {
+      setRunningWebSearch(true);
+      setMatchError('');
+      
+      // Use existing batch progress or start from 0
+      const offset = webSearchBatchProgress?.nextOffset ?? 0;
+      
+      console.log('Starting web search match for project:', projectId, 'offset:', offset);
+      
+      const res = await fetch('/api/match/web-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          projectId,
+          batchOffset: offset,
+          batchSize: 50,
+        }),
+      });
+
+      console.log('Web search response status:', res.status);
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to run web search matching');
+      }
+      
+      const data = await res.json();
+      console.log('Web search result:', data);
+      
+      // Update batch progress
+      if (data.batch) {
+        setWebSearchBatchProgress(data.batch);
+        
+        if (data.batch.hasMore) {
+          alert(`Web Search Batch complete!\n\nProcessed: ${data.batch.processed}/${data.batch.total} items\nMatches found: ${data.matchCount}\nCost: ~$${data.batch.estimatedCost}\nTotal estimated: ~$${data.batch.totalEstimatedCost}\n\nClick "Run Web Search Matching" again to continue.`);
+        } else {
+          alert(`Web Search Matching complete!\n\nProcessed all ${data.batch.total} items\nTotal matches: ${data.matchCount}\nTotal cost: ~$${data.batch.estimatedCost}`);
+          setWebSearchBatchProgress(null); // Reset for next run
+        }
+      } else {
+        alert(`Web Search Matching complete! Found ${data.matchCount} additional matches from ${data.processed} items`);
+      }
+      
+      await loadProject();
+    } catch (err: any) {
+      console.error('Web search error:', err);
+      setMatchError(err.message);
+      alert(`Error: ${err.message}`);
+    } finally {
+      setRunningWebSearch(false);
     }
   };
 
@@ -507,6 +570,31 @@ export default function ProjectDetailPage() {
               <div className="text-sm text-gray-600 mt-2">
                 AI Progress: {aiBatchProgress.processed}/{aiBatchProgress.total} items processed
                 ({aiBatchProgress.remaining} remaining, ~${aiBatchProgress.estimatedCost} per batch)
+              </div>
+            )}
+            <button
+              onClick={handleRunWebSearch}
+              disabled={runningWebSearch || project._count.storeItems === 0}
+              className={`px-6 py-3 rounded font-semibold ${
+                runningWebSearch || project._count.storeItems === 0
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : webSearchBatchProgress?.hasMore
+                  ? 'bg-purple-600 text-white hover:bg-purple-700'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
+              }`}
+              title="Uses Perplexity AI to search the entire web for matching parts from any supplier"
+            >
+              {runningWebSearch 
+                ? '🌐 Searching Web...' 
+                : webSearchBatchProgress?.hasMore 
+                ? `Continue Web Search (${webSearchBatchProgress.processed}/${webSearchBatchProgress.total} done, ~$${webSearchBatchProgress.estimatedCost})`
+                : '🌐 Run Web Search Matching (50 items/batch)'
+              }
+            </button>
+            {webSearchBatchProgress && webSearchBatchProgress.hasMore && (
+              <div className="text-sm text-gray-600 mt-2">
+                Web Search Progress: {webSearchBatchProgress.processed}/{webSearchBatchProgress.total} items processed
+                ({webSearchBatchProgress.remaining} remaining, ~${webSearchBatchProgress.estimatedCost} per batch)
               </div>
             )}
             {matchError && (

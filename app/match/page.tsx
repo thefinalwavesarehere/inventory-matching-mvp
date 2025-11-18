@@ -227,13 +227,14 @@ export default function MatchPage() {
             <select
               value={methodFilter}
               onChange={(e) => setMethodFilter(e.target.value)}
-              className="px-4 py-2 border rounded bg-white hover:bg-gray-50"
+              className="px-3 py-2 border rounded"
             >
               <option value="all">All Methods</option>
               <option value="INTERCHANGE">Interchange</option>
               <option value="EXACT_NORM">Exact Match</option>
               <option value="FUZZY_SUBSTRING">Fuzzy Match</option>
               <option value="AI">AI Match</option>
+              <option value="WEB_SEARCH">Web Search</option>
             </select>
             <span className="text-sm text-gray-500">
               Showing {filteredMatches.length} of {matches.length} matches
