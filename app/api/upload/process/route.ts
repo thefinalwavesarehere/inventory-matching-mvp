@@ -78,7 +78,16 @@ export async function POST(req: NextRequest) {
     if (fileType === 'store') {
       // Import store inventory items
       const items = data.map((row: any) => {
-        const partNumber = String(row['PART NUMBER'] || row['Part Number'] || row['Part'] || '').trim();
+        // Try to get PART column first (with prefix), fallback to PART NUMBER
+        let partNumber = String(row['PART'] || row['Part'] || '').trim();
+        
+        // If PART is empty or is a formula, concatenate LINE + PART NUMBER
+        if (!partNumber || partNumber.startsWith('=')) {
+          const lineCode = String(row['LINE'] || row['Line'] || '').trim();
+          const partNum = String(row['PART NUMBER'] || row['Part Number'] || '').trim();
+          partNumber = lineCode + partNum;
+        }
+        
         return {
           projectId: project.id,
           partNumber,
