@@ -42,6 +42,13 @@ export default function ProjectDetailPage() {
   const [runningMatch, setRunningMatch] = useState(false);
   const [runningAiMatch, setRunningAiMatch] = useState(false);
   const [matchError, setMatchError] = useState('');
+  const [batchProgress, setBatchProgress] = useState<{
+    processed: number;
+    total: number;
+    remaining: number;
+    hasMore: boolean;
+    nextOffset: number | null;
+  } | null>(null);
 
   useEffect(() => {
     loadProject();
@@ -156,12 +163,19 @@ export default function ProjectDetailPage() {
       setRunningMatch(true);
       setMatchError('');
       
-      console.log('Starting match for project:', projectId);
+      // Use existing batch progress or start from 0
+      const offset = batchProgress?.nextOffset ?? 0;
+      
+      console.log('Starting match for project:', projectId, 'offset:', offset);
       
       const res = await fetch('/api/match', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({ 
+          projectId,
+          batchOffset: offset,
+          batchSize: 5000,
+        }),
       });
 
       console.log('Match response status:', res.status);
@@ -174,7 +188,20 @@ export default function ProjectDetailPage() {
       const data = await res.json();
       console.log('Match result:', data);
       
-      alert(`Matching complete! Found ${data.matchCount} matches`);
+      // Update batch progress
+      if (data.batch) {
+        setBatchProgress(data.batch);
+        
+        if (data.batch.hasMore) {
+          alert(`Batch complete! Processed ${data.batch.processed}/${data.batch.total} items.\n\nFound ${data.matchCount} matches in this batch.\n\nClick "Run Matching" again to continue.`);
+        } else {
+          alert(`Matching complete! Processed all ${data.batch.total} items.\n\nTotal matches: ${data.matchCount}`);
+          setBatchProgress(null); // Reset for next run
+        }
+      } else {
+        alert(`Matching complete! Found ${data.matchCount} matches`);
+      }
+      
       await loadProject();
     } catch (err: any) {
       console.error('Match error:', err);
@@ -411,11 +438,24 @@ export default function ProjectDetailPage() {
               className={`px-6 py-3 rounded font-semibold ${
                 runningMatch || project._count.storeItems === 0 || project._count.supplierItems === 0
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : batchProgress?.hasMore
+                  ? 'bg-orange-600 text-white hover:bg-orange-700'
                   : 'bg-green-600 text-white hover:bg-green-700'
               }`}
             >
-              {runningMatch ? 'Running...' : 'Run Matching Algorithm'}
+              {runningMatch 
+                ? 'Running...' 
+                : batchProgress?.hasMore 
+                ? `Continue Matching (${batchProgress.processed}/${batchProgress.total} done)`
+                : 'Run Matching Algorithm'
+              }
             </button>
+            {batchProgress && batchProgress.hasMore && (
+              <div className="text-sm text-gray-600 mt-2">
+                Progress: {batchProgress.processed}/{batchProgress.total} items processed
+                ({batchProgress.remaining} remaining)
+              </div>
+            )}
             <button
               onClick={handleRunAiMatch}
               disabled={runningAiMatch || project._count.storeItems === 0 || project._count.supplierItems === 0}

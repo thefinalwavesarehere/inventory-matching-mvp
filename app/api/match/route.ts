@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { projectId } = body;
+    const { projectId, batchOffset = 0, batchSize = 5000 } = body;
 
     if (!projectId) {
       return NextResponse.json(
@@ -157,19 +157,25 @@ export async function POST(req: NextRequest) {
     });
     console.log(`[MATCH] Found ${interchanges.length} interchanges`);
 
-    // Clear existing match candidates
-    await prisma.matchCandidate.deleteMany({
-      where: { projectId },
-    });
+    // Only clear existing matches on first batch (offset = 0)
+    if (batchOffset === 0) {
+      console.log(`[MATCH] First batch - clearing existing matches`);
+      await prisma.matchCandidate.deleteMany({
+        where: { projectId },
+      });
+    } else {
+      console.log(`[MATCH] Continuing from offset ${batchOffset}`);
+    }
 
     const matches: any[] = [];
     let interchangeMatches = 0;
     let exactMatches = 0;
     let fuzzyMatches = 0;
 
-    // Stage 1: Known Interchange Matching
-    console.log(`[MATCH] Stage 1: Interchange Matching`);
-    for (const storeItem of storeItems) {
+    // Stage 1: Known Interchange Matching (only on first batch)
+    if (batchOffset === 0) {
+      console.log(`[MATCH] Stage 1: Interchange Matching`);
+      for (const storeItem of storeItems) {
       const interchange = interchanges.find(
         (i) => i.oursPartNumber === storeItem.partNumber
       );
@@ -193,14 +199,14 @@ export async function POST(req: NextRequest) {
           });
         }
       }
-    }
-    console.log(`[MATCH] Stage 1 complete: ${interchangeMatches} matches`);
+      }
+      console.log(`[MATCH] Stage 1 complete: ${interchangeMatches} matches`);
 
-    // Stage 2: Exact Normalized Part Number Match
-    console.log(`[MATCH] Stage 2: Exact Normalized Matching`);
-    const matchedStoreIds = new Set(matches.map((m) => m.storeItemId));
-    
-    for (const storeItem of storeItems) {
+      // Stage 2: Exact Normalized Part Number Match
+      console.log(`[MATCH] Stage 2: Exact Normalized Matching`);
+      const matchedStoreIds = new Set(matches.map((m) => m.storeItemId));
+      
+      for (const storeItem of storeItems) {
       if (matchedStoreIds.has(storeItem.id)) continue;
       
       const exactMatch = supplierItems.find(
@@ -221,19 +227,34 @@ export async function POST(req: NextRequest) {
           status: 'PENDING',
         });
       }
+      }
+      console.log(`[MATCH] Stage 2 complete: ${exactMatches} matches`);
+    } else {
+      // For subsequent batches, get already matched store IDs from database
+      console.log(`[MATCH] Skipping Stage 1 & 2 (not first batch)`);
     }
-    console.log(`[MATCH] Stage 2 complete: ${exactMatches} matches`);
 
     // Stage 3: Fuzzy Matching (for remaining unmatched items)
-    console.log(`[MATCH] Stage 3: Fuzzy Matching`);
+    console.log(`[MATCH] Stage 3: Fuzzy Matching (Batch Processing)`);
+    
+    // Get already matched store IDs from database (for all batches)
+    const existingMatches = await prisma.matchCandidate.findMany({
+      where: { projectId },
+      select: { storeItemId: true },
+    });
+    const matchedStoreIds = new Set(existingMatches.map(m => m.storeItemId));
+    
     const unmatchedStoreItems = storeItems.filter((s) => !matchedStoreIds.has(s.id));
-    console.log(`[MATCH] ${unmatchedStoreItems.length} unmatched items remaining`);
+    console.log(`[MATCH] Total unmatched items: ${unmatchedStoreItems.length}`);
+    console.log(`[MATCH] Batch offset: ${batchOffset}, Batch size: ${batchSize}`);
 
-    // OPTIMIZATION: Use prefix filtering and early termination for large datasets
-    // With 800s timeout and 2 vCPUs, process ALL store items (user requirement)
-    // Aggressive optimizations to ensure completion within timeout
-    const itemsToMatch = unmatchedStoreItems; // Process ALL items
-    console.log(`[MATCH] Running optimized fuzzy matching on ${itemsToMatch.length} items`);
+    // BATCH PROCESSING: Process only a slice of unmatched items
+    const itemsToMatch = unmatchedStoreItems.slice(batchOffset, batchOffset + batchSize);
+    const remainingAfterBatch = unmatchedStoreItems.length - (batchOffset + itemsToMatch.length);
+    
+    console.log(`[MATCH] Processing items ${batchOffset} to ${batchOffset + itemsToMatch.length} of ${unmatchedStoreItems.length}`);
+    console.log(`[MATCH] Items in this batch: ${itemsToMatch.length}`);
+    console.log(`[MATCH] Remaining after batch: ${remainingAfterBatch}`);
     console.log(`[MATCH] Supplier catalog size: ${supplierItems.length} items`);
     console.log(`[MATCH] Estimated comparisons: ${itemsToMatch.length} × ~500 candidates = ${itemsToMatch.length * 500} total`);
     
@@ -322,14 +343,27 @@ export async function POST(req: NextRequest) {
       console.log(`[MATCH] Saved ${matches.length} match candidates`);
     }
 
+    // Calculate batch progress
+    const totalProcessed = batchOffset + itemsToMatch.length;
+    const hasMore = remainingAfterBatch > 0;
+    const nextOffset = hasMore ? batchOffset + batchSize : null;
+    
     return NextResponse.json({
       success: true,
-      message: `Created ${matches.length} match candidates`,
+      message: `Created ${matches.length} match candidates in this batch`,
       matchCount: matches.length,
       breakdown: {
         interchange: interchangeMatches,
         exact: exactMatches,
         fuzzy: fuzzyMatches,
+      },
+      batch: {
+        processed: totalProcessed,
+        total: unmatchedStoreItems.length,
+        remaining: remainingAfterBatch,
+        hasMore,
+        nextOffset,
+        batchSize,
       },
     });
   } catch (error: any) {
