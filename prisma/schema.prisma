@@ -167,12 +167,16 @@ model SupplierItem {
   // normalized
   partNumberNorm String   @db.Text
   lineCode       String?
+  mfrPartNumber  String?  // Manufacturer part number (after line code extraction)
+  canonicalPartNumber String? // Punctuation removed
   brand          String?
   rawData        Json?    // Store original row data
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   @@map("supplier_items")
+  @@index([canonicalPartNumber])
+  @@index([lineCode, mfrPartNumber])
   @@index([projectId, supplier])
   @@index([projectId, partNumberNorm])
   @@index([lineCode])
@@ -193,6 +197,8 @@ model StoreItem {
   // normalized
   partNumberNorm String   @db.Text
   lineCode       String?
+  mfrPartNumber  String?  // Manufacturer part number (after line code extraction)
+  canonicalPartNumber String? // Punctuation removed
   brand          String?
   rawData        Json?    // Store original row data
   matchCandidates MatchCandidate[]
@@ -200,6 +206,8 @@ model StoreItem {
   updatedAt      DateTime @updatedAt
 
   @@map("store_items")
+  @@index([canonicalPartNumber])
+  @@index([lineCode, mfrPartNumber])
   @@index([projectId, partNumberNorm])
   @@index([lineCode])
   @@index([partFull])
@@ -234,6 +242,11 @@ model MatchCandidate {
   method           MatchMethod
   confidence       Float      // 0..1
   features         Json       // signals used (scores, tokens, pn edits)
+  matchStage       Int?       // Which stage found this match (0-4)
+  rulesApplied     Json?      // Array of rule IDs used
+  costDifference   Decimal?   @db.Decimal(10, 2)
+  costSimilarity   Float?     // 0-1
+  transformationSignature String? // For pattern detection
   status           MatchStatus @default(PENDING)
   decidedById      String?
   decidedBy        User?      @relation("DecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
@@ -250,6 +263,8 @@ model MatchCandidate {
   @@index([status])
   @@index([method])
   @@index([confidence])
+  @@index([matchStage])
+  @@index([transformationSignature])
 }
 
 enum TargetType {
@@ -267,6 +282,7 @@ enum MatchMethod {
   FUZZY_SUBSTRING
   AI
   WEB_SEARCH
+  RULE_BASED
 }
 
 enum MatchStatus {
@@ -340,6 +356,134 @@ model MatchingProgress {
   updatedAt             DateTime @updatedAt
 
   @@map("matching_progress")
+}
+
+/// Line code mappings (client line codes → manufacturers)
+model LineCodeMapping {
+  id                String   @id @default(cuid())
+  clientLineCode    String
+  manufacturerName  String?
+  arnoldLineCode    String?
+  confidence        Float    @default(1.0)
+  source            String   // 'manual', 'learned', 'interchange'
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([clientLineCode, manufacturerName])
+  @@map("line_code_mappings")
+  @@index([clientLineCode])
+  @@index([arnoldLineCode])
+}
+
+/// Enhanced interchange mappings
+model InterchangeMapping {
+  id                    String   @id @default(cuid())
+  // Competitor/client side
+  competitorLineCode    String?
+  competitorPartNumber  String?
+  competitorFullSku     String
+  competitorManufacturer String?
+  // Arnold side
+  arnoldLineCode        String?
+  arnoldPartNumber      String?
+  arnoldFullSku         String
+  // Metadata
+  confidence            Float    @default(1.0)
+  source                String   // 'file_import', 'learned', 'manual'
+  notes                 String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("interchange_mappings")
+  @@index([competitorFullSku])
+  @@index([arnoldFullSku])
+  @@index([competitorLineCode, competitorPartNumber])
+}
+
+/// Learned rules from approved patterns
+model MatchingRule {
+  id              String   @id @default(cuid())
+  ruleType        String   // 'punctuation', 'line_code_map', 'cost_tolerance', 'pattern'
+  // Rule definition
+  pattern         Json     // e.g., {"from": "/", "to": "-", "line_code": "PPG"}
+  transformation  String   // Human-readable description
+  // Scope
+  scope           String   // 'global', 'manufacturer', 'client', 'project'
+  scopeId         String?  // ID of manufacturer/client/project if scoped
+  // Metadata
+  confidence      Float    @default(1.0)
+  usageCount      Int      @default(0)
+  approvalCount   Int      @default(0)
+  rejectionCount  Int      @default(0)
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  active          Boolean  @default(true)
+
+  @@map("matching_rules")
+  @@index([ruleType, active])
+  @@index([scope, scopeId])
+}
+
+/// Track match rates by stage
+model MatchStageMetrics {
+  id                String   @id @default(cuid())
+  projectId         String
+  jobId             String?
+  // Stage info
+  stageNumber       Int      // 0=preprocessing, 1=deterministic, 2=fuzzy, 3=AI, 4=web
+  stageName         String
+  // Metrics
+  itemsProcessed    Int
+  matchesFound      Int
+  matchRate         Float
+  avgConfidence     Float?
+  processingTimeMs  Int
+  apiCostUsd        Float    @default(0)
+  // Breakdown
+  rulesApplied      Json?    // Which rules were used
+  createdAt         DateTime @default(now())
+
+  @@map("match_stage_metrics")
+  @@index([projectId, stageNumber])
+  @@index([jobId])
+}
+
+/// Matching jobs for background processing
+model MatchingJob {
+  id                    String   @id @default(cuid())
+  projectId             String
+  createdBy             String?
+  // Status
+  status                String   // 'pending', 'processing', 'completed', 'failed', 'cancelled'
+  currentStage          Int?     // 0-4
+  currentStageName      String?
+  // Progress
+  totalItems            Int?
+  processedItems        Int      @default(0)
+  progressPercentage    Float    @default(0)
+  // Results
+  matchesFound          Int      @default(0)
+  matchRate             Float    @default(0)
+  // Timing
+  startedAt             DateTime?
+  completedAt           DateTime?
+  estimatedCompletion   DateTime?
+  // Configuration
+  config                Json?    // Which stages to run, thresholds, etc.
+  // Metrics
+  metrics               Json?    // Full MatchingRunMetrics object
+  // Error handling
+  errorMessage          String?
+  retryCount            Int      @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("matching_jobs")
+  @@index([projectId, status])
+  @@index([createdBy])
+  @@index([status, createdAt])
 }
 
 /// Project settings (thresholds, AI toggle, etc.)
