@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import BulkApprovalModal from '../components/BulkApprovalModal';
 
 interface MatchCandidate {
   id: string;
@@ -11,6 +12,8 @@ interface MatchCandidate {
     description?: string;
     price?: number;
     cost?: number;
+    canonicalPartNumber?: string;
+    mfrPartNumber?: string;
   };
   targetItem?: {
     partNumber: string;
@@ -18,6 +21,8 @@ interface MatchCandidate {
     price?: number;
     cost?: number;
     listPrice?: number;
+    canonicalPartNumber?: string;
+    mfrPartNumber?: string;
   };
   targetId: string;
   targetType: string;
@@ -25,6 +30,11 @@ interface MatchCandidate {
   method: string;
   status: string;
   features?: any;
+  matchStage?: string;
+  rulesApplied?: string[];
+  transformationSignature?: string;
+  costDifference?: number;
+  costSimilarity?: number;
 }
 
 export default function MatchPage() {
@@ -42,6 +52,9 @@ export default function MatchPage() {
   const [selectedMatches, setSelectedMatches] = useState<Set<string>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [enriching, setEnriching] = useState(false);
+  const [bulkSuggestion, setBulkSuggestion] = useState<any>(null);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkModalLoading, setBulkModalLoading] = useState(false);
 
   useEffect(() => {
     if (projectId) {
@@ -71,11 +84,80 @@ export default function MatchPage() {
         body: JSON.stringify({ matchId, action: 'confirm' }),
       });
       if (!res.ok) throw new Error('Failed to confirm match');
+      
+      // After confirming, check for pattern-based bulk approval suggestions
+      await detectPatternSuggestion(matchId);
+      
       loadMatches();
     } catch (err: any) {
       alert(err.message);
     }
   };
+
+  const detectPatternSuggestion = async (matchId: string) => {
+    try {
+      const res = await fetch('/api/patterns/detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId, projectId }),
+      });
+      
+      if (!res.ok) {
+        // Pattern detection is optional, don't throw error
+        return;
+      }
+      
+      const data = await res.json();
+      
+      if (data.suggestion && data.suggestion.affectedItems > 1) {
+        setBulkSuggestion(data.suggestion);
+        setShowBulkModal(true);
+      }
+    } catch (err) {
+      // Silently fail pattern detection
+      console.error('Pattern detection failed:', err);
+    }
+  };
+
+  const handleBulkApprove = async (createRule: boolean) => {
+    if (!bulkSuggestion) return;
+    
+    try {
+      setBulkModalLoading(true);
+      
+      const res = await fetch('/api/patterns/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          pattern: bulkSuggestion.pattern,
+          createRule,
+        }),
+      });
+      
+      if (!res.ok) throw new Error('Failed to apply bulk approval');
+      
+      const data = await res.json();
+      
+      setShowBulkModal(false);
+      setBulkSuggestion(null);
+      
+      // Show success message
+      alert(`Successfully approved ${data.approvedCount} matches!`);
+      
+      // Reload matches
+      loadMatches();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setBulkModalLoading(false);
+    }
+  };
+
+  const handleBulkDecline = () => {
+    setShowBulkModal(false);
+    setBulkSuggestion(null);
+  };}
 
   const handleReject = async (matchId: string) => {
     try {
@@ -210,14 +292,25 @@ export default function MatchPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4">
-        <div className="mb-6 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Match Review</h1>
-          <button
-            onClick={() => router.push('/')}
-            className="px-4 py-2 border rounded hover:bg-gray-50"
-          >
-            Back to Projects
-          </button>
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Match Review</h1>
+            <p className="text-gray-600 text-sm mt-1">Review and confirm inventory matches</p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => router.push(`/analytics?projectId=${projectId}`)}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium flex items-center gap-2"
+            >
+              📊 Analytics
+            </button>
+            <button
+              onClick={() => router.push('/')}
+              className="px-4 py-2 border rounded hover:bg-gray-50"
+            >
+              ← Back to Home
+            </button>
+          </div>
         </div>
 
         {/* Status Filter */}
@@ -473,22 +566,94 @@ export default function MatchPage() {
                 </div>
 
                 {/* Match Details & Actions Row */}
-                <div className="mt-6 pt-6 border-t flex items-center justify-between">
-                  <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">Confidence:</span>
-                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                        match.confidence >= 0.95 ? 'bg-green-100 text-green-800' :
-                        match.confidence >= 0.85 ? 'bg-yellow-100 text-yellow-800' :
-                        match.confidence >= 0.60 ? 'bg-orange-100 text-orange-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {(match.confidence * 100).toFixed(0)}%
-                      </span>
+                <div className="mt-6 pt-6 border-t">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-6 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600">Confidence:</span>
+                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                          match.confidence >= 0.95 ? 'bg-green-100 text-green-800' :
+                          match.confidence >= 0.85 ? 'bg-yellow-100 text-yellow-800' :
+                          match.confidence >= 0.60 ? 'bg-orange-100 text-orange-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {(match.confidence * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        <span className="font-semibold">Method:</span> {match.method}
+                      </div>
+                      {match.matchStage && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-600">Stage:</span>
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                            match.matchStage === 'Stage 1' ? 'bg-blue-100 text-blue-800' :
+                            match.matchStage === 'Stage 2' ? 'bg-purple-100 text-purple-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {match.matchStage}
+                          </span>
+                        </div>
+                      )}
+                      {match.costSimilarity !== undefined && match.costSimilarity > 0 && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-600">Cost Match:</span>
+                          <span className="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800">
+                            {(match.costSimilarity * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      )}
                     </div>
+                  </div>
+                  
+                  {/* Additional Match Information */}
+                  {(match.rulesApplied && match.rulesApplied.length > 0) || match.transformationSignature ? (
+                    <div className="mb-4 p-3 bg-blue-50 rounded border border-blue-200">
+                      {match.rulesApplied && match.rulesApplied.length > 0 && (
+                        <div className="text-sm mb-2">
+                          <span className="font-semibold text-blue-800">Rules Applied:</span>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {match.rulesApplied.map((rule, idx) => (
+                              <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                                {rule}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {match.transformationSignature && (
+                        <div className="text-sm">
+                          <span className="font-semibold text-blue-800">Pattern:</span>
+                          <span className="ml-2 text-blue-700 font-mono text-xs">{match.transformationSignature}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                  
+                  {/* Canonical Part Numbers (if different) */}
+                  {(match.storeItem.canonicalPartNumber || match.targetItem?.canonicalPartNumber) && (
+                    <div className="mb-4 p-3 bg-gray-50 rounded border border-gray-200">
+                      <div className="text-xs text-gray-600 mb-2 font-semibold">Normalized Part Numbers:</div>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        {match.storeItem.canonicalPartNumber && (
+                          <div>
+                            <span className="text-gray-500">Store:</span>
+                            <span className="ml-2 font-mono text-gray-700">{match.storeItem.canonicalPartNumber}</span>
+                          </div>
+                        )}
+                        {match.targetItem?.canonicalPartNumber && (
+                          <div>
+                            <span className="text-gray-500">Supplier:</span>
+                            <span className="ml-2 font-mono text-gray-700">{match.targetItem.canonicalPartNumber}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                  
+                  {/* Action Buttons */}
+                  <div className="flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      <span className="font-semibold">Method:</span> {match.method}
-                    </div>
                     {match.features && (
                       <div className="text-xs text-gray-500">
                         {match.features.partSimilarity && (
@@ -534,6 +699,15 @@ export default function MatchPage() {
           </>
         )}
       </div>
+      
+      {/* Bulk Approval Modal */}
+      <BulkApprovalModal
+        isOpen={showBulkModal}
+        suggestion={bulkSuggestion}
+        onApprove={handleBulkApprove}
+        onDecline={handleBulkDecline}
+        loading={bulkModalLoading}
+      />
     </div>
   );
 }

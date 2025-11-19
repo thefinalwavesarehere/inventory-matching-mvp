@@ -68,7 +68,7 @@ export default function Home() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <button
             onClick={() => router.push('/upload')}
             className="bg-black text-white p-6 rounded-lg hover:bg-gray-800 transition-colors text-left"
@@ -88,6 +88,17 @@ export default function Home() {
             <h2 className="text-xl font-semibold mb-1">View Matches</h2>
             <p className="text-sm text-blue-100">
               Review and confirm part matches
+            </p>
+          </button>
+
+          <button
+            onClick={() => router.push('/analytics')}
+            className="bg-purple-600 text-white p-6 rounded-lg hover:bg-purple-700 transition-colors text-left"
+          >
+            <div className="text-3xl mb-2">📊</div>
+            <h2 className="text-xl font-semibold mb-1">Analytics</h2>
+            <p className="text-sm text-purple-100">
+              View matching performance and metrics
             </p>
           </button>
 
