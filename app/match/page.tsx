@@ -12,8 +12,6 @@ interface MatchCandidate {
     description?: string;
     price?: number;
     cost?: number;
-    canonicalPartNumber?: string;
-    mfrPartNumber?: string;
   };
   targetItem?: {
     partNumber: string;
@@ -21,8 +19,6 @@ interface MatchCandidate {
     price?: number;
     cost?: number;
     listPrice?: number;
-    canonicalPartNumber?: string;
-    mfrPartNumber?: string;
   };
   targetId: string;
   targetType: string;
@@ -157,7 +153,7 @@ export default function MatchPage() {
   const handleBulkDecline = () => {
     setShowBulkModal(false);
     setBulkSuggestion(null);
-  };}
+  };
 
   const handleReject = async (matchId: string) => {
     try {
@@ -566,94 +562,22 @@ export default function MatchPage() {
                 </div>
 
                 {/* Match Details & Actions Row */}
-                <div className="mt-6 pt-6 border-t">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-6 flex-wrap">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600">Confidence:</span>
-                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                          match.confidence >= 0.95 ? 'bg-green-100 text-green-800' :
-                          match.confidence >= 0.85 ? 'bg-yellow-100 text-yellow-800' :
-                          match.confidence >= 0.60 ? 'bg-orange-100 text-orange-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          {(match.confidence * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        <span className="font-semibold">Method:</span> {match.method}
-                      </div>
-                      {match.matchStage && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-gray-600">Stage:</span>
-                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                            match.matchStage === 'Stage 1' ? 'bg-blue-100 text-blue-800' :
-                            match.matchStage === 'Stage 2' ? 'bg-purple-100 text-purple-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {match.matchStage}
-                          </span>
-                        </div>
-                      )}
-                      {match.costSimilarity !== undefined && match.costSimilarity > 0 && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-gray-600">Cost Match:</span>
-                          <span className="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800">
-                            {(match.costSimilarity * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                      )}
+                <div className="mt-6 pt-6 border-t flex items-center justify-between">
+                  <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600">Confidence:</span>
+                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                        match.confidence >= 0.95 ? 'bg-green-100 text-green-800' :
+                        match.confidence >= 0.85 ? 'bg-yellow-100 text-yellow-800' :
+                        match.confidence >= 0.60 ? 'bg-orange-100 text-orange-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {(match.confidence * 100).toFixed(0)}%
+                      </span>
                     </div>
-                  </div>
-                  
-                  {/* Additional Match Information */}
-                  {(match.rulesApplied && match.rulesApplied.length > 0) || match.transformationSignature ? (
-                    <div className="mb-4 p-3 bg-blue-50 rounded border border-blue-200">
-                      {match.rulesApplied && match.rulesApplied.length > 0 && (
-                        <div className="text-sm mb-2">
-                          <span className="font-semibold text-blue-800">Rules Applied:</span>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {match.rulesApplied.map((rule, idx) => (
-                              <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                                {rule}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {match.transformationSignature && (
-                        <div className="text-sm">
-                          <span className="font-semibold text-blue-800">Pattern:</span>
-                          <span className="ml-2 text-blue-700 font-mono text-xs">{match.transformationSignature}</span>
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
-                  
-                  {/* Canonical Part Numbers (if different) */}
-                  {(match.storeItem.canonicalPartNumber || match.targetItem?.canonicalPartNumber) && (
-                    <div className="mb-4 p-3 bg-gray-50 rounded border border-gray-200">
-                      <div className="text-xs text-gray-600 mb-2 font-semibold">Normalized Part Numbers:</div>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        {match.storeItem.canonicalPartNumber && (
-                          <div>
-                            <span className="text-gray-500">Store:</span>
-                            <span className="ml-2 font-mono text-gray-700">{match.storeItem.canonicalPartNumber}</span>
-                          </div>
-                        )}
-                        {match.targetItem?.canonicalPartNumber && (
-                          <div>
-                            <span className="text-gray-500">Supplier:</span>
-                            <span className="ml-2 font-mono text-gray-700">{match.targetItem.canonicalPartNumber}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
-                  
-                  {/* Action Buttons */}
-                  <div className="flex items-center justify-between">
                     <div className="text-sm text-gray-600">
+                      <span className="font-semibold">Method:</span> {match.method}
+                    </div>
                     {match.features && (
                       <div className="text-xs text-gray-500">
                         {match.features.partSimilarity && (
