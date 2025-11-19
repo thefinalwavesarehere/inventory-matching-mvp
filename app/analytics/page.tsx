@@ -407,10 +407,10 @@ export default function AnalyticsPage() {
                   
                   {selectedJob.stageMetrics.length > 0 && (
                     <>
-                      {selectedJob.stageMetrics.find(m => m.stage === 'Stage 1')?.matchRate >= 0.25 && (
+                      {(selectedJob.stageMetrics.find(m => m.stage === 'Stage 1')?.matchRate ?? 0) >= 0.25 && (
                         <p>🎯 <strong>Strong deterministic matching!</strong> Stage 1 is performing well, minimizing API costs.</p>
                       )}
-                      {selectedJob.stageMetrics.find(m => m.stage === 'Stage 2')?.matchesFound > 0 && (
+                      {(selectedJob.stageMetrics.find(m => m.stage === 'Stage 2')?.matchesFound ?? 0) > 0 && (
                         <p>🔍 <strong>Fuzzy matching is contributing.</strong> Stage 2 is finding additional matches with cost-aware scoring.</p>
                       )}
                     </>

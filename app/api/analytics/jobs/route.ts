@@ -20,13 +20,6 @@ export async function GET(request: NextRequest) {
       where: {
         projectId,
       },
-      include: {
-        stageMetrics: {
-          orderBy: {
-            stage: 'asc',
-          },
-        },
-      },
       orderBy: {
         createdAt: 'desc',
       },
@@ -34,24 +27,27 @@ export async function GET(request: NextRequest) {
     });
 
     // Transform the data
-    const transformedJobs = jobs.map(job => ({
-      id: job.id,
-      createdAt: job.createdAt.toISOString(),
-      totalItems: job.totalItems,
-      matchedItems: job.matchedItems,
-      matchRate: job.totalItems > 0 ? job.matchedItems / job.totalItems : 0,
-      executionTimeMs: job.executionTimeMs || 0,
-      stageMetrics: job.stageMetrics.map(metric => ({
-        stage: metric.stage,
-        itemsProcessed: metric.itemsProcessed,
-        matchesFound: metric.matchesFound,
-        matchRate: metric.itemsProcessed > 0 
-          ? metric.matchesFound / metric.itemsProcessed 
-          : 0,
-        avgConfidence: metric.avgConfidence || 0,
-        executionTimeMs: metric.executionTimeMs || 0,
-      })),
-    }));
+    const transformedJobs = jobs.map(job => {
+      const metrics = job.metrics as any || {};
+      const stageMetrics = metrics.stageMetrics || [];
+      
+      return {
+        id: job.id,
+        createdAt: job.createdAt.toISOString(),
+        totalItems: job.totalItems || 0,
+        matchedItems: job.matchesFound || 0,
+        matchRate: job.matchRate || 0,
+        executionTimeMs: metrics.totalExecutionTimeMs || 0,
+        stageMetrics: stageMetrics.map((metric: any) => ({
+          stage: metric.stageName || `Stage ${metric.stageNumber}`,
+          itemsProcessed: metric.itemsProcessed || 0,
+          matchesFound: metric.matchesFound || 0,
+          matchRate: metric.matchRate || 0,
+          avgConfidence: metric.avgConfidence || 0,
+          executionTimeMs: metric.executionTimeMs || 0,
+        })),
+      };
+    });
 
     return NextResponse.json({
       jobs: transformedJobs,

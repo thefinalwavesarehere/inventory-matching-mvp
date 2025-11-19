@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
     console.log('[ENHANCED-MATCH] Fetching matching rules...');
     const rules = await prisma.matchingRule.findMany({
       where: {
-        isActive: true,
+        active: true,
         OR: [
           { scope: 'global' },
           { scope: 'project', scopeId: projectId },
@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
           storeItemId: m.storeItemId,
           targetId: m.supplierItemId,
           targetType: 'SUPPLIER',
-          method: m.method,
+          method: m.method as any,
           confidence: m.confidence,
           matchStage: m.matchStage,
           status: 'PENDING',
