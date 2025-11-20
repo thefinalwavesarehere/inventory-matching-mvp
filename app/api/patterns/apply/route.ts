@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
       where: whereClause,
       data: {
         status: 'CONFIRMED',
-        confirmedAt: new Date(),
+        decidedAt: new Date(),
       },
     });
 

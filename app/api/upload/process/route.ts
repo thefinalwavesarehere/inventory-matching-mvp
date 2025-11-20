@@ -129,7 +129,7 @@ function processInterchangeFile(data: any[], projectId: string) {
   const interchanges: any[] = [];
   const interchangeMappings: any[] = [];
 
-  for (const row of any) {
+  for (const row of data) {
     const supplierSku = String(row['Supplier SKU'] || row['Their SKU'] || row['Competitor SKU'] || '').trim();
     const storeSku = String(row['Store SKU'] || row['Our SKU'] || row['Arnold SKU'] || '').trim();
 
