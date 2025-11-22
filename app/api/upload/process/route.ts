@@ -48,8 +48,8 @@ function processStoreFile(data: any[], projectId: string) {
     let partFull = getCellValue(row, row, 'PART') || getCellValue(row, row, 'Part');
     
     // Get LINE and PART NUMBER columns
-    let lineCode = getCellValue(row, row, 'LINE') || getCellValue(row, row, 'Line');
-    let partNumber = getCellValue(row, row, 'PART NUMBER') || getCellValue(row, row, 'Part Number');
+    let lineCode: any = getCellValue(row, row, 'LINE') || getCellValue(row, row, 'Line');
+    let partNumber: any = getCellValue(row, row, 'PART NUMBER') || getCellValue(row, row, 'Part Number');
 
     // Check if LINE or PART NUMBER contain Excel formulas (starts with =)
     const lineHasFormula = typeof lineCode === 'string' && lineCode.trim().startsWith('=');
@@ -97,8 +97,8 @@ function processSupplierFile(data: any[], projectId: string) {
     let partFull = getCellValue(row, row, 'PART') || getCellValue(row, row, 'Part');
     
     // Get LINE and PART NUMBER columns
-    let lineCode = getCellValue(row, row, 'LINE') || getCellValue(row, row, 'Line');
-    let partNumber = getCellValue(row, row, 'PART NUMBER') || getCellValue(row, row, 'Part Number');
+    let lineCode: any = getCellValue(row, row, 'LINE') || getCellValue(row, row, 'Line');
+    let partNumber: any = getCellValue(row, row, 'PART NUMBER') || getCellValue(row, row, 'Part Number');
 
     // Check if LINE or PART NUMBER contain Excel formulas (starts with =)
     const lineHasFormula = typeof lineCode === 'string' && lineCode.trim().startsWith('=');
