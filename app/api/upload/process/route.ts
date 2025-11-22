@@ -51,17 +51,25 @@ function processStoreFile(data: any[], projectId: string) {
     let lineCode = getCellValue(row, row, 'LINE') || getCellValue(row, row, 'Line');
     let partNumber = getCellValue(row, row, 'PART NUMBER') || getCellValue(row, row, 'Part Number');
 
-    // If PART is empty or formula, concatenate LINE + PART NUMBER
-    if (!partFull) {
+    // Check if LINE or PART NUMBER contain Excel formulas (starts with =)
+    const lineHasFormula = typeof lineCode === 'string' && lineCode.trim().startsWith('=');
+    const partNumberHasFormula = typeof partNumber === 'string' && partNumber.trim().startsWith('=');
+    
+    // If columns contain formulas, ignore them
+    if (lineHasFormula) lineCode = null;
+    if (partNumberHasFormula) partNumber = null;
+
+    // If PART is empty or formula, concatenate LINE + PART NUMBER (if they're valid)
+    if (!partFull && lineCode && partNumber) {
       partFull = lineCode + partNumber;
     }
 
-    // Apply normalization
+    // Apply normalization - this will extract line code from PART column
     const normalized = normalizePartNumber(partFull, { extractLineCode: true });
 
-    // If line code wasn't extracted, use the one from the file
-    const finalLineCode = normalized.lineCode || lineCode || null;
-    const finalMfrPartNumber = normalized.mfrPartNumber || partNumber || null;
+    // Use extracted values from normalization (don't trust formula columns)
+    const finalLineCode = normalized.lineCode || null;
+    const finalMfrPartNumber = normalized.mfrPartNumber || null;
 
     return {
       projectId,
@@ -92,17 +100,25 @@ function processSupplierFile(data: any[], projectId: string) {
     let lineCode = getCellValue(row, row, 'LINE') || getCellValue(row, row, 'Line');
     let partNumber = getCellValue(row, row, 'PART NUMBER') || getCellValue(row, row, 'Part Number');
 
-    // If PART is empty or formula, concatenate LINE + PART NUMBER
-    if (!partFull) {
+    // Check if LINE or PART NUMBER contain Excel formulas (starts with =)
+    const lineHasFormula = typeof lineCode === 'string' && lineCode.trim().startsWith('=');
+    const partNumberHasFormula = typeof partNumber === 'string' && partNumber.trim().startsWith('=');
+    
+    // If columns contain formulas, ignore them
+    if (lineHasFormula) lineCode = null;
+    if (partNumberHasFormula) partNumber = null;
+
+    // If PART is empty or formula, concatenate LINE + PART NUMBER (if they're valid)
+    if (!partFull && lineCode && partNumber) {
       partFull = lineCode + partNumber;
     }
 
-    // Apply normalization
+    // Apply normalization - this will extract line code from PART column
     const normalized = normalizePartNumber(partFull, { extractLineCode: true });
 
-    // If line code wasn't extracted, use the one from the file
-    const finalLineCode = normalized.lineCode || lineCode || null;
-    const finalMfrPartNumber = normalized.mfrPartNumber || partNumber || null;
+    // Use extracted values from normalization (don't trust formula columns)
+    const finalLineCode = normalized.lineCode || null;
+    const finalMfrPartNumber = normalized.mfrPartNumber || null;
 
     return {
       projectId,
