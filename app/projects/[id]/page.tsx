@@ -181,48 +181,57 @@ export default function ProjectDetailPage() {
       setRunningMatch(true);
       setMatchError('');
       
-      // Use existing batch progress or start from 0
-      const offset = batchProgress?.nextOffset ?? 0;
+      console.log('Starting enhanced matching for project:', projectId);
       
-      console.log('Starting match for project:', projectId, 'offset:', offset);
-      
-      const res = await fetch('/api/match', {
+      // Use the enhanced matching endpoint with multi-stage algorithm
+      const res = await fetch('/api/match/enhanced', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           projectId,
-          batchOffset: offset,
-          batchSize: 5000,
+          options: {
+            stage1Enabled: true,
+            stage2Enabled: true,
+            fuzzyThreshold: 0.75,
+            costTolerancePercent: 10,
+            maxCandidatesPerItem: 500,
+          }
         }),
       });
 
-      console.log('Match response status:', res.status);
+      console.log('Enhanced match response status:', res.status);
       
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to run matching');
+        throw new Error(errorData.error || 'Failed to run enhanced matching');
       }
       
       const data = await res.json();
-      console.log('Match result:', data);
+      console.log('Enhanced match result:', data);
       
-      // Update batch progress
-      if (data.batch) {
-        setBatchProgress(data.batch);
+      // Display results with stage breakdown
+      if (data.summary && data.metrics) {
+        const matchRate = (data.summary.overallMatchRate * 100).toFixed(1);
+        const stage1Rate = data.metrics[0] ? (data.metrics[0].matchRate * 100).toFixed(1) : '0';
+        const stage2Rate = data.metrics[1] ? (data.metrics[1].matchRate * 100).toFixed(1) : '0';
         
-        if (data.batch.hasMore) {
-          alert(`Batch complete! Processed ${data.batch.processed}/${data.batch.total} items.\n\nFound ${data.matchCount} matches in this batch.\n\nClick "Run Matching" again to continue.`);
-        } else {
-          alert(`Matching complete! Processed all ${data.batch.total} items.\n\nTotal matches: ${data.matchCount}`);
-          setBatchProgress(null); // Reset for next run
-        }
+        alert(
+          `Enhanced Matching Complete!\n\n` +
+          `Total Matches: ${data.summary.totalMatches} / ${data.summary.totalItems} (${matchRate}%)\n\n` +
+          `Stage 1 (Deterministic): ${data.summary.stage1Matches} matches (${stage1Rate}%)\n` +
+          `Stage 2 (Fuzzy): ${data.summary.stage2Matches} matches (${stage2Rate}%)\n\n` +
+          `${data.message}`
+        );
+        
+        // Clear batch progress since enhanced matcher doesn't use batching
+        setBatchProgress(null);
       } else {
-        alert(`Matching complete! Found ${data.matchCount} matches`);
+        alert(`Matching complete! Found ${data.matchCount || 0} matches`);
       }
       
       await loadProject();
     } catch (err: any) {
-      console.error('Match error:', err);
+      console.error('Enhanced match error:', err);
       setMatchError(err.message);
       alert(`Error: ${err.message}`);
     } finally {
