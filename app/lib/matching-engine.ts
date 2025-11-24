@@ -106,6 +106,9 @@ export class MatchingIndexes {
   // Line code + mfr part → supplier items
   lineCodeMfrIndex: Map<string, SupplierItem[]> = new Map();
   
+  // Manufacturer part number only (ignoring line code) → supplier items
+  mfrPartOnlyIndex: Map<string, SupplierItem[]> = new Map();
+  
   // Interchange mappings
   interchangeIndex: Map<string, string[]> = new Map();
   
@@ -147,6 +150,20 @@ export class MatchingIndexes {
       }
     }
 
+    // Build manufacturer part number only index (ignoring line code)
+    for (const item of supplierItems) {
+      if (item.mfrPartNumber) {
+        // Normalize the part number (remove punctuation)
+        const normalized = item.mfrPartNumber
+          .replace(/[-\/\.\s]/g, '')
+          .toUpperCase();
+        if (!this.mfrPartOnlyIndex.has(normalized)) {
+          this.mfrPartOnlyIndex.set(normalized, []);
+        }
+        this.mfrPartOnlyIndex.get(normalized)!.push(item);
+      }
+    }
+
     // Build interchange index
     for (const interchange of interchanges) {
       const key = interchange.competitorFullSku.toUpperCase();
@@ -172,6 +189,12 @@ export class MatchingIndexes {
   getCandidatesByLineCodeMfr(lineCode: string, mfrPart: string): SupplierItem[] {
     const key = `${lineCode}:${mfrPart}`.toUpperCase();
     return this.lineCodeMfrIndex.get(key) || [];
+  }
+
+  getCandidatesByMfrPartOnly(mfrPart: string): SupplierItem[] {
+    // Normalize the part number (remove punctuation)
+    const normalized = mfrPart.replace(/[-\/\.\s]/g, '').toUpperCase();
+    return this.mfrPartOnlyIndex.get(normalized) || [];
   }
 
   getInterchangeMatches(partNumber: string): string[] {
@@ -283,6 +306,64 @@ export function stage1DeterministicMatching(
           costSimilarity: costComp?.similarity,
         });
 
+        break;
+      }
+    }
+
+    // Method 2.5: Manufacturer part number only (ignoring line code)
+    // This handles cases where the same part is sold under different line codes
+    if (storeItem.mfrPartNumber) {
+      const candidates = indexes.getCandidatesByMfrPartOnly(storeItem.mfrPartNumber);
+
+      for (const supplier of candidates) {
+        // Check if we already matched this pair
+        const alreadyMatched = matches.some(
+          m => m.storeItemId === storeItem.id && m.supplierItemId === supplier.id
+        );
+
+        if (alreadyMatched) {
+          continue;
+        }
+
+        const costComp = compareCosts(
+          storeItem.currentCost,
+          supplier.currentCost,
+          options.costTolerancePercent || 5
+        );
+
+        // Base confidence is lower since we're ignoring line code
+        let confidence = 0.75;
+
+        // Boost confidence if costs are close
+        if (costComp && costComp.isClose) {
+          confidence = Math.min(0.85, confidence + costComp.similarity * 0.10);
+        }
+
+        // Boost confidence if line codes happen to match anyway
+        if (storeItem.lineCode && supplier.lineCode && 
+            storeItem.lineCode.toUpperCase() === supplier.lineCode.toUpperCase()) {
+          confidence = Math.min(0.90, confidence + 0.10);
+        }
+
+        matches.push({
+          storeItemId: storeItem.id,
+          supplierItemId: supplier.id,
+          method: 'MFR_PART_ONLY',
+          confidence,
+          matchStage: 1,
+          features: {
+            matchType: 'mfr_part_only',
+            mfrPart: storeItem.mfrPartNumber,
+            storeLineCode: storeItem.lineCode,
+            supplierLineCode: supplier.lineCode,
+            lineCodeMatch: storeItem.lineCode === supplier.lineCode,
+            costMatch: costComp?.isClose || false,
+          },
+          costDifference: costComp?.difference,
+          costSimilarity: costComp?.similarity,
+        });
+
+        // Only take first match for deterministic stage
         break;
       }
     }
