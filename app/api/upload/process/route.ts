@@ -146,8 +146,27 @@ function processInterchangeFile(data: any[], projectId: string) {
   const interchangeMappings: any[] = [];
 
   for (const row of data) {
-    const supplierSku = String(row['Supplier SKU'] || row['Their SKU'] || row['Competitor SKU'] || '').trim();
-    const storeSku = String(row['Store SKU'] || row['Our SKU'] || row['Arnold SKU'] || '').trim();
+    // Support multiple column name formats
+    const supplierSku = String(
+      row['Supplier SKU'] || 
+      row['Their SKU'] || 
+      row['Competitor SKU'] || 
+      row['VENDOR PART #'] ||  // New format
+      row['Vendor Part #'] || 
+      row['VENDOR PART NUMBER'] ||
+      ''
+    ).trim();
+    
+    const storeSku = String(
+      row['Store SKU'] || 
+      row['Our SKU'] || 
+      row['Arnold SKU'] || 
+      row['MERRILL PART #'] ||  // New format
+      row['Merrill Part #'] || 
+      row['MERRILL PART NUMBER'] ||
+      row[' MERRILL PART #'] ||  // Handle leading space
+      ''
+    ).trim();
 
     if (!supplierSku || !storeSku) {
       continue; // Skip invalid rows

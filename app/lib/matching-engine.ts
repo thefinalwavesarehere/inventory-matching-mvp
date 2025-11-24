@@ -647,9 +647,13 @@ export function stage2FuzzyMatching(
       let partSimilarity = 0;
       let matchMethod = 'fuzzy';
       
-      if (storePart.includes(supplierPart) || supplierPart.includes(storePart)) {
-        const minLen = Math.min(storePart.length, supplierPart.length);
-        const maxLen = Math.max(storePart.length, supplierPart.length);
+      // Check substring containment with minimum length requirement
+      const minLen = Math.min(storePart.length, supplierPart.length);
+      const maxLen = Math.max(storePart.length, supplierPart.length);
+      const isSubstring = storePart.includes(supplierPart) || supplierPart.includes(storePart);
+      
+      // Only use substring matching if the shorter string is at least 4 chars and similarity > 60%
+      if (isSubstring && minLen >= 4 && (minLen / maxLen) >= 0.6) {
         partSimilarity = minLen / maxLen; // Similarity based on length ratio
         matchMethod = 'substring_containment';
       } else {
