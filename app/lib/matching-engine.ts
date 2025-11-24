@@ -402,6 +402,117 @@ export function stage1DeterministicMatching(
       }
     }
 
+    // Method 3.5: Line code prefix stripping
+    // Try matching by removing the 3-character line code prefix
+    // Example: ABH12957 -> 12957
+    if (storeItem.lineCode && storeItem.mfrPartNumber) {
+      const candidates = indexes.getCandidatesByCanonical(
+        storeItem.mfrPartNumber.replace(/[-\/\.\s]/g, '').toUpperCase()
+      );
+      
+      for (const supplier of candidates) {
+        const alreadyMatched = matches.some(
+          m => m.storeItemId === storeItem.id && m.supplierItemId === supplier.id
+        );
+
+        if (alreadyMatched) {
+          continue;
+        }
+
+        const costComp = compareCosts(
+          storeItem.currentCost,
+          supplier.currentCost,
+          options.costTolerancePercent || 10
+        );
+
+        let confidence = 0.85; // High confidence for line code prefix match
+
+        if (costComp && costComp.isClose) {
+          confidence = Math.min(0.92, confidence + costComp.similarity * 0.07);
+        }
+
+        matches.push({
+          storeItemId: storeItem.id,
+          supplierItemId: supplier.id,
+          method: 'EXACT_NORM',
+          confidence,
+          matchStage: 1,
+          features: {
+            matchType: 'line_code_prefix_strip',
+            storePartNumber: storeItem.partNumber,
+            supplierPartNumber: supplier.partNumber,
+            lineCodeStripped: storeItem.lineCode,
+            mfrPartMatched: storeItem.mfrPartNumber,
+            costMatch: costComp?.isClose || false,
+          },
+          costDifference: costComp?.difference,
+          costSimilarity: costComp?.similarity,
+        });
+
+        break;
+      }
+    }
+
+    // Method 3.6: Common prefix/suffix variations
+    // Try matching by removing common prefixes like "ABC", "DTN", etc.
+    if (!matches.some(m => m.storeItemId === storeItem.id)) {
+      const commonPrefixes = ['ABC', 'DTN', 'BSC', 'CTS', 'RB', 'WA', 'DP'];
+      const canonical = storeItem.canonicalPartNumber || storeItem.partNumber.replace(/[-\/\.\s]/g, '').toUpperCase();
+      
+      for (const prefix of commonPrefixes) {
+        if (canonical.startsWith(prefix) && canonical.length > prefix.length + 3) {
+          const withoutPrefix = canonical.substring(prefix.length);
+          const candidates = indexes.getCandidatesByCanonical(withoutPrefix);
+          
+          for (const supplier of candidates) {
+            const alreadyMatched = matches.some(
+              m => m.storeItemId === storeItem.id && m.supplierItemId === supplier.id
+            );
+
+            if (alreadyMatched) {
+              continue;
+            }
+
+            const costComp = compareCosts(
+              storeItem.currentCost,
+              supplier.currentCost,
+              options.costTolerancePercent || 15
+            );
+
+            let confidence = 0.80; // Good confidence for prefix match
+
+            if (costComp && costComp.isClose) {
+              confidence = Math.min(0.88, confidence + costComp.similarity * 0.08);
+            }
+
+            matches.push({
+              storeItemId: storeItem.id,
+              supplierItemId: supplier.id,
+              method: 'EXACT_NORM',
+              confidence,
+              matchStage: 1,
+              features: {
+                matchType: 'prefix_variation',
+                storePartNumber: storeItem.partNumber,
+                supplierPartNumber: supplier.partNumber,
+                prefixRemoved: prefix,
+                costMatch: costComp?.isClose || false,
+              },
+              costDifference: costComp?.difference,
+              costSimilarity: costComp?.similarity,
+            });
+
+            break;
+          }
+          
+          // If we found a match, stop trying other prefixes
+          if (matches.some(m => m.storeItemId === storeItem.id && m.features.matchType === 'prefix_variation')) {
+            break;
+          }
+        }
+      }
+    }
+
     // Method 4: Rule-based matching (punctuation rules)
     const punctuationRules = indexes.getRulesByType('punctuation');
     
@@ -508,11 +619,16 @@ export function stage2FuzzyMatching(
   const unmatchedStoreItems = storeItems.filter(item => !alreadyMatched.has(item.id));
 
   for (const storeItem of unmatchedStoreItems) {
-    // Get candidates with same line code (if available)
+    // Get candidates - try same line code first, then all if no line code or no matches
     let candidates = supplierItems;
+    let sameLineCodeOnly = false;
     
     if (storeItem.lineCode) {
-      candidates = supplierItems.filter(s => s.lineCode === storeItem.lineCode);
+      const sameLineCandidates = supplierItems.filter(s => s.lineCode === storeItem.lineCode);
+      if (sameLineCandidates.length > 0 && sameLineCandidates.length < maxCandidates) {
+        candidates = sameLineCandidates;
+        sameLineCodeOnly = true;
+      }
     }
 
     // Limit candidates for performance
@@ -524,11 +640,22 @@ export function stage2FuzzyMatching(
     let bestScore = 0;
 
     for (const supplier of candidates) {
-      // Compute fuzzy similarity
-      const partSimilarity = computeFuzzySimilarity(
-        storeItem.canonicalPartNumber || storeItem.partNumber,
-        supplier.canonicalPartNumber || supplier.partNumber
-      );
+      const storePart = (storeItem.canonicalPartNumber || storeItem.partNumber).toUpperCase();
+      const supplierPart = (supplier.canonicalPartNumber || supplier.partNumber).toUpperCase();
+      
+      // Method 1: Substring containment (high confidence if one contains the other)
+      let partSimilarity = 0;
+      let matchMethod = 'fuzzy';
+      
+      if (storePart.includes(supplierPart) || supplierPart.includes(storePart)) {
+        const minLen = Math.min(storePart.length, supplierPart.length);
+        const maxLen = Math.max(storePart.length, supplierPart.length);
+        partSimilarity = minLen / maxLen; // Similarity based on length ratio
+        matchMethod = 'substring_containment';
+      } else {
+        // Method 2: Levenshtein distance for non-substring matches
+        partSimilarity = computeFuzzySimilarity(storePart, supplierPart);
+      }
 
       const descSimilarity = storeItem.description && supplier.description
         ? computeFuzzySimilarity(storeItem.description, supplier.description)
@@ -537,7 +664,10 @@ export function stage2FuzzyMatching(
       // Weighted score: part number is more important
       const score = partSimilarity * 0.7 + descSimilarity * 0.3;
 
-      if (score < fuzzyThreshold) {
+      // Lower threshold for substring matches
+      const effectiveThreshold = matchMethod === 'substring_containment' ? fuzzyThreshold * 0.8 : fuzzyThreshold;
+      
+      if (score < effectiveThreshold) {
         continue;
       }
 
@@ -573,6 +703,8 @@ export function stage2FuzzyMatching(
             descSimilarity,
             combinedScore: score,
             costAdjusted: adjustedScore !== score,
+            matchMethod,
+            sameLineCodeOnly,
           },
           costDifference: costComp?.difference,
           costSimilarity: costComp?.similarity,
