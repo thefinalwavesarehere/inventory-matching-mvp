@@ -157,21 +157,35 @@ export async function POST(req: NextRequest) {
       const batch = result.matches.slice(i, i + BATCH_SIZE);
       
       await prisma.matchCandidate.createMany({
-        data: batch.map(m => ({
-          projectId,
-          storeItemId: m.storeItemId,
-          targetId: m.supplierItemId,
-          targetType: 'SUPPLIER',
-          method: m.method as any,
-          confidence: m.confidence,
-          matchStage: m.matchStage,
-          status: 'PENDING',
-          features: m.features || {},
-          costDifference: m.costDifference,
-          costSimilarity: m.costSimilarity,
-          transformationSignature: m.transformationSignature,
-          rulesApplied: m.rulesApplied || [],
-        })),
+        data: batch.map(m => {
+          const record: any = {
+            projectId,
+            storeItemId: m.storeItemId,
+            targetId: m.supplierItemId,
+            targetType: 'SUPPLIER',
+            method: m.method as any,
+            confidence: m.confidence,
+            matchStage: m.matchStage,
+            status: 'PENDING',
+            features: m.features || {},
+          };
+          
+          // Only add optional fields if they have defined values
+          if (m.costDifference !== undefined && m.costDifference !== null) {
+            record.costDifference = m.costDifference;
+          }
+          if (m.costSimilarity !== undefined && m.costSimilarity !== null) {
+            record.costSimilarity = m.costSimilarity;
+          }
+          if (m.transformationSignature !== undefined && m.transformationSignature !== null) {
+            record.transformationSignature = m.transformationSignature;
+          }
+          if (m.rulesApplied && m.rulesApplied.length > 0) {
+            record.rulesApplied = m.rulesApplied;
+          }
+          
+          return record;
+        }),
         skipDuplicates: true,
       });
 
