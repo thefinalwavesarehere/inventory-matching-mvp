@@ -242,7 +242,7 @@ export function stage1DeterministicMatching(
         matches.push({
           storeItemId: storeItem.id,
           supplierItemId: supplier.id,
-          method: 'EXACT_CANONICAL',
+          method: 'EXACT_NORM',
           confidence,
           matchStage: 1,
           features: {
@@ -293,7 +293,7 @@ export function stage1DeterministicMatching(
         matches.push({
           storeItemId: storeItem.id,
           supplierItemId: supplier.id,
-          method: 'LINE_MFR_PART',
+          method: 'LINE_PN',
           confidence,
           matchStage: 1,
           features: {
@@ -348,7 +348,7 @@ export function stage1DeterministicMatching(
         matches.push({
           storeItemId: storeItem.id,
           supplierItemId: supplier.id,
-          method: 'MFR_PART_ONLY',
+          method: 'EXACT_NORM',
           confidence,
           matchStage: 1,
           features: {
