@@ -107,7 +107,7 @@ export async function POST(
         data: {
           status: 'completed',
           completedAt: new Date(),
-          processedItems: job.totalItems,
+          processedItems: job.totalItems || 0,
           progressPercentage: 100,
         },
       });
@@ -119,8 +119,8 @@ export async function POST(
         job: {
           id: job.id,
           status: 'completed',
-          processedItems: job.totalItems,
-          totalItems: job.totalItems,
+          processedItems: job.totalItems || 0,
+          totalItems: job.totalItems || 0,
           matchesFound: job.matchesFound,
         },
         message: 'Job completed',
@@ -143,14 +143,15 @@ export async function POST(
 
     // Update job progress
     const newProcessedItems = endIdx;
-    const progressPercentage = (newProcessedItems / job.totalItems) * 100;
+    const totalItems = job.totalItems || 0;
+    const progressPercentage = totalItems > 0 ? (newProcessedItems / totalItems) * 100 : 0;
     const newMatchesFound = job.matchesFound + newMatches;
     const matchRate = newProcessedItems > 0 ? (newMatchesFound / newProcessedItems) * 100 : 0;
 
     // Estimate completion time
     const elapsedMs = Date.now() - (job.startedAt?.getTime() || Date.now());
     const itemsPerMs = newProcessedItems / elapsedMs;
-    const remainingItems = job.totalItems - newProcessedItems;
+    const remainingItems = totalItems - newProcessedItems;
     const estimatedRemainingMs = remainingItems / itemsPerMs;
     const estimatedCompletion = new Date(Date.now() + estimatedRemainingMs);
 
@@ -165,7 +166,7 @@ export async function POST(
       },
     });
 
-    console.log(`[JOB-PROCESS] Chunk complete. Progress: ${newProcessedItems}/${job.totalItems} (${progressPercentage.toFixed(1)}%)`);
+    console.log(`[JOB-PROCESS] Chunk complete. Progress: ${newProcessedItems}/${totalItems} (${progressPercentage.toFixed(1)}%)`);
     console.log(`[JOB-PROCESS] New matches: ${newMatches}, Total matches: ${newMatchesFound}`);
 
     return NextResponse.json({
@@ -174,7 +175,7 @@ export async function POST(
         id: job.id,
         status: 'processing',
         processedItems: newProcessedItems,
-        totalItems: job.totalItems,
+        totalItems: totalItems,
         progressPercentage,
         matchesFound: newMatchesFound,
         matchRate,
