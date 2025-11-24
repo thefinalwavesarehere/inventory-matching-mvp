@@ -145,31 +145,69 @@ function processInterchangeFile(data: any[], projectId: string) {
   const interchanges: any[] = [];
   const interchangeMappings: any[] = [];
 
-  for (const row of data) {
-    // Support multiple column name formats
-    const supplierSku = String(
-      row['Supplier SKU'] || 
-      row['Their SKU'] || 
-      row['Competitor SKU'] || 
-      row['VENDOR PART #'] ||  // New format
-      row['Vendor Part #'] || 
-      row['VENDOR PART NUMBER'] ||
-      ''
-    ).trim();
-    
-    const storeSku = String(
-      row['Store SKU'] || 
-      row['Our SKU'] || 
-      row['Arnold SKU'] || 
-      row['MERRILL PART #'] ||  // New format
-      row['Merrill Part #'] || 
-      row['MERRILL PART NUMBER'] ||
-      row[' MERRILL PART #'] ||  // Handle leading space
-      ''
-    ).trim();
+  // Log column names for debugging
+  if (data.length > 0) {
+    const columnNames = Object.keys(data[0]);
+    console.log('[INTERCHANGE] Column names found:', columnNames);
+  }
 
-    if (!supplierSku || !storeSku) {
-      continue; // Skip invalid rows
+  for (const row of data) {
+    // Try to find vendor/supplier part column (try all possible names)
+    let supplierSku = '';
+    const supplierColumns = [
+      'Supplier SKU', 'Their SKU', 'Competitor SKU',
+      'VENDOR PART #', 'Vendor Part #', 'VENDOR PART NUMBER',
+      'Vendor Part Number', 'vendor part #', 'vendor part number'
+    ];
+    
+    for (const col of supplierColumns) {
+      if (row[col]) {
+        supplierSku = String(row[col]).trim();
+        break;
+      }
+    }
+    
+    // Also try with trimmed column names (handle leading/trailing spaces)
+    if (!supplierSku) {
+      for (const key of Object.keys(row)) {
+        const trimmedKey = key.trim().toUpperCase();
+        if (trimmedKey.includes('VENDOR') && trimmedKey.includes('PART')) {
+          supplierSku = String(row[key]).trim();
+          break;
+        }
+      }
+    }
+    
+    // Try to find Merrill/Arnold/Store part column
+    let storeSku = '';
+    const storeColumns = [
+      'Store SKU', 'Our SKU', 'Arnold SKU',
+      'MERRILL PART #', 'Merrill Part #', 'MERRILL PART NUMBER',
+      'Merrill Part Number', 'merrill part #', 'merrill part number',
+      ' MERRILL PART #'  // Handle leading space
+    ];
+    
+    for (const col of storeColumns) {
+      if (row[col]) {
+        storeSku = String(row[col]).trim();
+        break;
+      }
+    }
+    
+    // Also try with trimmed column names
+    if (!storeSku) {
+      for (const key of Object.keys(row)) {
+        const trimmedKey = key.trim().toUpperCase();
+        if (trimmedKey.includes('MERRILL') && trimmedKey.includes('PART')) {
+          storeSku = String(row[key]).trim();
+          break;
+        }
+      }
+    }
+
+    // Skip rows with no interchange or invalid data
+    if (!supplierSku || !storeSku || supplierSku === 'NO INTERCHANGE' || storeSku === 'NO INTERCHANGE') {
+      continue;
     }
 
     // Add to legacy interchange table
@@ -197,6 +235,7 @@ function processInterchangeFile(data: any[], projectId: string) {
     });
   }
 
+  console.log(`[INTERCHANGE] Processed ${interchangeMappings.length} interchange mappings from ${data.length} rows`);
   return { interchanges, interchangeMappings };
 }
 

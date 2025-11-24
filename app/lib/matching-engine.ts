@@ -406,8 +406,8 @@ export function stage1DeterministicMatching(
     // Try matching by removing the 3-character line code prefix
     // Example: ABH12957 -> 12957
     if (storeItem.lineCode && storeItem.mfrPartNumber) {
-      const candidates = indexes.getCandidatesByCanonical(
-        storeItem.mfrPartNumber.replace(/[-\/\.\s]/g, '').toUpperCase()
+      const candidates = indexes.getCandidatesByMfrPartOnly(
+        storeItem.mfrPartNumber
       );
       
       for (const supplier of candidates) {
