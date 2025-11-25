@@ -110,7 +110,8 @@ export class MatchingIndexes {
   mfrPartOnlyIndex: Map<string, SupplierItem[]> = new Map();
   
   // Interchange mappings
-  interchangeIndex: Map<string, string[]> = new Map();
+  interchangeIndex: Map<string, string[]> = new Map(); // competitor -> arnold
+  reverseInterchangeIndex: Map<string, string[]> = new Map(); // arnold -> competitor
   
   // Rules by type
   rulesByType: Map<string, MatchingRule[]> = new Map();
@@ -164,13 +165,22 @@ export class MatchingIndexes {
       }
     }
 
-    // Build interchange index
+    // Build interchange index (competitor -> arnold)
     for (const interchange of interchanges) {
       const key = interchange.competitorFullSku.toUpperCase();
       if (!this.interchangeIndex.has(key)) {
         this.interchangeIndex.set(key, []);
       }
       this.interchangeIndex.get(key)!.push(interchange.arnoldFullSku);
+    }
+
+    // Build reverse interchange index (arnold -> competitor)
+    for (const interchange of interchanges) {
+      const key = interchange.arnoldFullSku.toUpperCase();
+      if (!this.reverseInterchangeIndex.has(key)) {
+        this.reverseInterchangeIndex.set(key, []);
+      }
+      this.reverseInterchangeIndex.get(key)!.push(interchange.competitorFullSku);
     }
 
     // Build rules index
@@ -369,11 +379,22 @@ export function stage1DeterministicMatching(
     }
 
     // Method 3: Interchange-based match
-    const interchangeMatches = indexes.getInterchangeMatches(storeItem.partNumber);
+    // Store item is Arnold part, look up competitor equivalents
+    const competitorSkus = indexes.reverseInterchangeIndex.get(storeItem.partNumber.toUpperCase()) || [];
     
-    for (const arnoldSku of interchangeMatches) {
-      // Find supplier item with this SKU
-      const candidates = indexes.getCandidatesByCanonical(arnoldSku);
+    for (const competitorSku of competitorSkus) {
+      // Find supplier items with this competitor SKU
+      // Try canonical match first
+      let candidates = indexes.getCandidatesByCanonical(
+        competitorSku.replace(/[-\/\.\s]/g, '').toUpperCase()
+      );
+      
+      // If no canonical match, try exact part number match
+      if (candidates.length === 0) {
+        candidates = supplierItems.filter(
+          s => s.partNumber.toUpperCase() === competitorSku.toUpperCase()
+        );
+      }
       
       for (const supplier of candidates) {
         const alreadyMatched = matches.some(
@@ -392,8 +413,8 @@ export function stage1DeterministicMatching(
           matchStage: 1,
           features: {
             matchType: 'interchange',
-            competitorSku: storeItem.partNumber,
-            arnoldSku,
+            arnoldSku: storeItem.partNumber,
+            competitorSku,
           },
         });
 
