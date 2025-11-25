@@ -178,6 +178,14 @@ export class MatchingIndexes {
       this.interchangeIndex.get(key)!.push(interchange.arnoldFullSku);
     }
 
+    // Debug: Show first few raw interchange records
+    if (interchanges.length > 0) {
+      console.log(`[INTERCHANGE-RAW] First 3 interchange records:`);
+      for (let i = 0; i < Math.min(3, interchanges.length); i++) {
+        console.log(`  [${i}] competitor='${interchanges[i].competitorFullSku}' arnold='${interchanges[i].arnoldFullSku}'`);
+      }
+    }
+    
     // Build reverse interchange index (arnold -> competitor)
     for (const interchange of interchanges) {
       const key = interchange.arnoldFullSku.toUpperCase();
