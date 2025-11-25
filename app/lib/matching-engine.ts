@@ -100,6 +100,9 @@ export interface MatchingResult {
  * Build lookup indexes for fast matching
  */
 export class MatchingIndexes {
+  // Store reference to all supplier items for fallback lookups
+  supplierItems: SupplierItem[] = [];
+  
   // Canonical part number → supplier items
   canonicalIndex: Map<string, SupplierItem[]> = new Map();
   
@@ -121,6 +124,7 @@ export class MatchingIndexes {
     interchanges: InterchangeMapping[],
     rules: MatchingRule[]
   ) {
+    this.supplierItems = supplierItems;
     this.buildIndexes(supplierItems, interchanges, rules);
   }
 
@@ -391,7 +395,7 @@ export function stage1DeterministicMatching(
       
       // If no canonical match, try exact part number match
       if (candidates.length === 0) {
-        candidates = supplierItems.filter(
+        candidates = indexes.supplierItems.filter(
           s => s.partNumber.toUpperCase() === competitorSku.toUpperCase()
         );
       }
