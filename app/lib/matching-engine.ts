@@ -646,12 +646,14 @@ export function stage2FuzzyMatching(
   for (const storeItem of unmatchedStoreItems) {
     // Get candidates using smart selection
     let candidates: SupplierItem[] = [];
+    let sameLineCodeOnly = false;
     
     // Strategy 1: Same line code (most likely to match)
     if (storeItem.lineCode) {
       const sameLineCandidates = supplierItems.filter(s => s.lineCode === storeItem.lineCode);
       if (sameLineCandidates.length > 0) {
         candidates = sameLineCandidates.slice(0, maxCandidates);
+        sameLineCodeOnly = true;
       }
     }
     
