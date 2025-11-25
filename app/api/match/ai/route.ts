@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
     console.log(`[AI-MATCH] Against ${supplierItems.length} supplier items`);
 
     const aiMatches: any[] = [];
+    let savedCount = 0;
 
     // Process in batches of 10
     for (let i = 0; i < unmatchedStoreItems.length; i += 10) {
@@ -159,6 +160,17 @@ Respond with ONLY a JSON object in this exact format:
           continue;
         }
       }
+      
+      // Save incrementally every 5 matches to avoid losing data on timeout
+      if (aiMatches.length >= 5) {
+        await prisma.matchCandidate.createMany({
+          data: aiMatches,
+          skipDuplicates: true,
+        });
+        console.log(`[AI-MATCH] Saved batch of ${aiMatches.length} matches (total saved: ${savedCount + aiMatches.length})`);
+        savedCount += aiMatches.length;
+        aiMatches.length = 0; // Clear the array
+      }
 
       // Small delay between batches to avoid rate limits
       if (i + 10 < unmatchedStoreItems.length) {
@@ -166,13 +178,17 @@ Respond with ONLY a JSON object in this exact format:
       }
     }
 
-    // Save AI matches
+    // Save any remaining AI matches
     if (aiMatches.length > 0) {
       await prisma.matchCandidate.createMany({
         data: aiMatches,
+        skipDuplicates: true,
       });
-      console.log(`[AI-MATCH] Saved ${aiMatches.length} AI-powered matches`);
+      console.log(`[AI-MATCH] Saved final batch of ${aiMatches.length} matches`);
+      savedCount += aiMatches.length;
     }
+    
+    console.log(`[AI-MATCH] Total matches saved: ${savedCount}`);
 
     // Calculate batch progress
     const totalProcessed = batchOffset + unmatchedStoreItems.length;
@@ -185,8 +201,8 @@ Respond with ONLY a JSON object in this exact format:
     
     return NextResponse.json({
       success: true,
-      message: `Created ${aiMatches.length} AI-powered match candidates in this batch`,
-      matchCount: aiMatches.length,
+      message: `Created ${savedCount} AI match candidates in this batch`,
+      matchCount: savedCount,
       processed: unmatchedStoreItems.length,
       batch: {
         processed: totalProcessed,

@@ -64,9 +64,11 @@ export async function POST(req: NextRequest) {
     console.log(`[WEB-SEARCH] Processing ${unmatchedStoreItems.length} unmatched items`);
 
     const webMatches: any[] = [];
+    let savedCount = 0;
 
     // Process each unmatched item
-    for (const storeItem of unmatchedStoreItems) {
+    for (let i = 0; i < unmatchedStoreItems.length; i++) {
+      const storeItem = unmatchedStoreItems[i];
       try {
         // Create prompt for Perplexity to search the web
         const prompt = `Search the web for this automotive part and find the best matching supplier part number.
@@ -150,6 +152,17 @@ Respond with ONLY a JSON object in this exact format:
             },
             status: 'PENDING',
           });
+          
+          // Save incrementally every 5 matches to avoid losing data on timeout
+          if (webMatches.length >= 5) {
+            await prisma.matchCandidate.createMany({
+              data: webMatches,
+              skipDuplicates: true,
+            });
+            console.log(`[WEB-SEARCH] Saved batch of ${webMatches.length} matches (total saved: ${savedCount + webMatches.length})`);
+            savedCount += webMatches.length;
+            webMatches.length = 0; // Clear the array
+          }
         }
 
         // Rate limiting - 1 second between requests
@@ -160,13 +173,17 @@ Respond with ONLY a JSON object in this exact format:
       }
     }
 
-    // Save web search matches
+    // Save any remaining web search matches
     if (webMatches.length > 0) {
       await prisma.matchCandidate.createMany({
         data: webMatches,
+        skipDuplicates: true,
       });
-      console.log(`[WEB-SEARCH] Saved ${webMatches.length} web search matches`);
+      console.log(`[WEB-SEARCH] Saved final batch of ${webMatches.length} matches`);
+      savedCount += webMatches.length;
     }
+    
+    console.log(`[WEB-SEARCH] Total matches saved: ${savedCount}`);
 
     // Calculate batch progress
     const totalProcessed = batchOffset + unmatchedStoreItems.length;
@@ -179,8 +196,8 @@ Respond with ONLY a JSON object in this exact format:
     
     return NextResponse.json({
       success: true,
-      message: `Created ${webMatches.length} web search match candidates in this batch`,
-      matchCount: webMatches.length,
+      message: `Created ${savedCount} web search match candidates in this batch`,
+      matchCount: savedCount,
       processed: unmatchedStoreItems.length,
       batch: {
         processed: totalProcessed,
