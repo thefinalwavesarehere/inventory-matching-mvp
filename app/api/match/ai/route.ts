@@ -111,8 +111,7 @@ Store Item:
 - Line Code: ${storeItem.lineCode || 'N/A'}
 
 Supplier Catalog (${candidates.length} relevant items):
-${candidates.map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}${s.lineCode ? ` [${s.lineCode}]` : ''}`).join('
-')}
+${candidates.map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}${s.lineCode ? ` [${s.lineCode}]` : ''}`).join('\n')}
 
 Respond with ONLY a JSON object in this exact format:
 {
