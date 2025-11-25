@@ -186,6 +186,13 @@ export class MatchingIndexes {
       }
       this.reverseInterchangeIndex.get(key)!.push(interchange.competitorFullSku);
     }
+    
+    // Debug logging
+    console.log(`[INTERCHANGE-INDEX] Built reverse index with ${this.reverseInterchangeIndex.size} Arnold parts`);
+    if (this.reverseInterchangeIndex.size > 0) {
+      const firstFive = Array.from(this.reverseInterchangeIndex.entries()).slice(0, 5);
+      console.log(`[INTERCHANGE-INDEX] Sample entries:`, firstFive.map(([k, v]) => `${k} -> [${v.slice(0, 2).join(', ')}]`));
+    }
 
     // Build rules index
     for (const rule of rules) {
@@ -384,7 +391,16 @@ export function stage1DeterministicMatching(
 
     // Method 3: Interchange-based match
     // Store item is Arnold part, look up competitor equivalents
-    const competitorSkus = indexes.reverseInterchangeIndex.get(storeItem.partNumber.toUpperCase()) || [];
+    const storePartUpper = storeItem.partNumber.toUpperCase();
+    const competitorSkus = indexes.reverseInterchangeIndex.get(storePartUpper) || [];
+    
+    // Debug logging for first few items
+    if (matches.length < 5 && indexes.reverseInterchangeIndex.size > 0) {
+      console.log(`[INTERCHANGE-DEBUG] Store part: ${storePartUpper}, Found ${competitorSkus.length} competitor SKUs`);
+      if (competitorSkus.length > 0) {
+        console.log(`[INTERCHANGE-DEBUG] Competitor SKUs:`, competitorSkus.slice(0, 3));
+      }
+    }
     
     for (const competitorSku of competitorSkus) {
       // Find supplier items with this competitor SKU
