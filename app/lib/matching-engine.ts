@@ -661,8 +661,8 @@ export function stage2FuzzyMatching(
   const startTime = Date.now();
   const matches: MatchCandidate[] = [];
   
-  const fuzzyThreshold = options.fuzzyThreshold || 0.70;  // Lowered from 0.75 for better coverage
-  const maxCandidates = options.maxCandidatesPerItem || 500;
+  const fuzzyThreshold = options.fuzzyThreshold || 0.65;  // Lowered to 65% for better coverage
+  const maxCandidates = options.maxCandidatesPerItem || 1000;  // Increased for better matching
 
   // Filter unmatched store items
   const unmatchedStoreItems = storeItems.filter(item => !alreadyMatched.has(item.id));
@@ -682,12 +682,28 @@ export function stage2FuzzyMatching(
     }
     
     // Strategy 2: If no line code or no candidates, use manufacturer part prefix matching
-    if (candidates.length === 0 && storeItem.mfrPartNumber) {
-      const prefix = storeItem.mfrPartNumber.substring(0, Math.min(3, storeItem.mfrPartNumber.length));
+    if (candidates.length < 100 && storeItem.mfrPartNumber && storeItem.mfrPartNumber.length >= 4) {
+      const prefix = storeItem.mfrPartNumber.substring(0, Math.min(5, storeItem.mfrPartNumber.length));
       const prefixCandidates = supplierItems.filter(s => 
         s.mfrPartNumber && s.mfrPartNumber.startsWith(prefix)
       );
-      candidates = prefixCandidates.slice(0, maxCandidates);
+      candidates = [...candidates, ...prefixCandidates].slice(0, maxCandidates);
+    }
+    
+    // Strategy 2.5: Add candidates with similar part numbers (remove punctuation and compare)
+    if (candidates.length < 200) {
+      const storeCanonical = (storeItem.canonicalPartNumber || storeItem.partNumber).toUpperCase();
+      const similarCandidates = supplierItems.filter(s => {
+        const supplierCanonical = (s.canonicalPartNumber || s.partNumber).toUpperCase();
+        // Check if they share at least 4 consecutive characters
+        if (storeCanonical.length < 4 || supplierCanonical.length < 4) return false;
+        for (let i = 0; i <= storeCanonical.length - 4; i++) {
+          const substring = storeCanonical.substring(i, i + 4);
+          if (supplierCanonical.includes(substring)) return true;
+        }
+        return false;
+      });
+      candidates = [...candidates, ...similarCandidates].slice(0, maxCandidates);
     }
     
     // Strategy 3: If still no candidates, use random sampling from all suppliers
@@ -716,8 +732,8 @@ export function stage2FuzzyMatching(
       const maxLen = Math.max(storePart.length, supplierPart.length);
       const isSubstring = storePart.includes(supplierPart) || supplierPart.includes(storePart);
       
-      // Only use substring matching if the shorter string is at least 4 chars and similarity > 60%
-      if (isSubstring && minLen >= 4 && (minLen / maxLen) >= 0.6) {
+      // Only use substring matching if the shorter string is at least 4 chars and similarity > 50%
+      if (isSubstring && minLen >= 4 && (minLen / maxLen) >= 0.5) {
         partSimilarity = minLen / maxLen; // Similarity based on length ratio
         matchMethod = 'substring_containment';
       } else {
@@ -732,8 +748,13 @@ export function stage2FuzzyMatching(
       // Weighted score: part number is more important
       const score = partSimilarity * 0.7 + descSimilarity * 0.3;
 
-      // Lower threshold for substring matches
-      const effectiveThreshold = matchMethod === 'substring_containment' ? fuzzyThreshold * 0.8 : fuzzyThreshold;
+      // Lower threshold for substring matches and same line code
+      let effectiveThreshold = fuzzyThreshold;
+      if (matchMethod === 'substring_containment') {
+        effectiveThreshold = fuzzyThreshold * 0.75;  // 48.75% for substring
+      } else if (sameLineCodeOnly) {
+        effectiveThreshold = fuzzyThreshold * 0.9;  // 58.5% for same line code
+      }
       
       if (score < effectiveThreshold) {
         continue;
