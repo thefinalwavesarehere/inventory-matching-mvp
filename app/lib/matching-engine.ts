@@ -633,28 +633,41 @@ export function stage2FuzzyMatching(
   const startTime = Date.now();
   const matches: MatchCandidate[] = [];
   
-  const fuzzyThreshold = options.fuzzyThreshold || 0.75;
+  const fuzzyThreshold = options.fuzzyThreshold || 0.70;  // Lowered from 0.75 for better coverage
   const maxCandidates = options.maxCandidatesPerItem || 500;
 
   // Filter unmatched store items
   const unmatchedStoreItems = storeItems.filter(item => !alreadyMatched.has(item.id));
 
   for (const storeItem of unmatchedStoreItems) {
-    // Get candidates - try same line code first, then all if no line code or no matches
-    let candidates = supplierItems;
-    let sameLineCodeOnly = false;
+    // Get candidates using smart selection
+    let candidates: SupplierItem[] = [];
     
+    // Strategy 1: Same line code (most likely to match)
     if (storeItem.lineCode) {
       const sameLineCandidates = supplierItems.filter(s => s.lineCode === storeItem.lineCode);
-      if (sameLineCandidates.length > 0 && sameLineCandidates.length < maxCandidates) {
-        candidates = sameLineCandidates;
-        sameLineCodeOnly = true;
+      if (sameLineCandidates.length > 0) {
+        candidates = sameLineCandidates.slice(0, maxCandidates);
       }
     }
-
-    // Limit candidates for performance
-    if (candidates.length > maxCandidates) {
-      candidates = candidates.slice(0, maxCandidates);
+    
+    // Strategy 2: If no line code or no candidates, use manufacturer part prefix matching
+    if (candidates.length === 0 && storeItem.mfrPartNumber) {
+      const prefix = storeItem.mfrPartNumber.substring(0, Math.min(3, storeItem.mfrPartNumber.length));
+      const prefixCandidates = supplierItems.filter(s => 
+        s.mfrPartNumber && s.mfrPartNumber.startsWith(prefix)
+      );
+      candidates = prefixCandidates.slice(0, maxCandidates);
+    }
+    
+    // Strategy 3: If still no candidates, use random sampling from all suppliers
+    if (candidates.length === 0) {
+      // Random sample instead of first N (more diverse)
+      const sampleSize = Math.min(maxCandidates, supplierItems.length);
+      const step = Math.floor(supplierItems.length / sampleSize);
+      for (let i = 0; i < supplierItems.length && candidates.length < sampleSize; i += step) {
+        candidates.push(supplierItems[i]);
+      }
     }
 
     let bestMatch: MatchCandidate | null = null;
