@@ -74,8 +74,34 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < unmatchedStoreItems.length; i += 10) {
       const batch = unmatchedStoreItems.slice(i, i + 10);
       
-      for (const storeItem of batch) {
+       for (const storeItem of batch) {
         try {
+          // Smart candidate selection: prioritize same line code, then similar part numbers
+          let candidates = supplierItems.filter(s => s.lineCode === storeItem.lineCode);
+          
+          // If too few same-line candidates, add items with similar part numbers
+          if (candidates.length < 50) {
+            const storePartUpper = storeItem.partNumber.toUpperCase();
+            const similarParts = supplierItems.filter(s => {
+              const supplierPartUpper = s.partNumber.toUpperCase();
+              // Check if parts share significant substring (at least 4 chars)
+              return storePartUpper.length >= 4 && supplierPartUpper.length >= 4 &&
+                     (storePartUpper.includes(supplierPartUpper.substring(0, 4)) ||
+                      supplierPartUpper.includes(storePartUpper.substring(0, 4)));
+            });
+            candidates = [...new Set([...candidates, ...similarParts])];
+          }
+          
+          // If still too few, add random sample
+          if (candidates.length < 100) {
+            const remaining = supplierItems.filter(s => !candidates.includes(s));
+            const randomSample = remaining.sort(() => Math.random() - 0.5).slice(0, 100 - candidates.length);
+            candidates = [...candidates, ...randomSample];
+          }
+          
+          // Limit to 100 for token efficiency
+          candidates = candidates.slice(0, 100);
+          
           // Create prompt for AI
           const prompt = `You are an automotive parts matching expert. Match this store inventory item to the most likely supplier part.
 
@@ -84,8 +110,9 @@ Store Item:
 - Description: ${storeItem.description || 'N/A'}
 - Line Code: ${storeItem.lineCode || 'N/A'}
 
-Supplier Catalog (first 100 items):
-${supplierItems.slice(0, 100).map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}`).join('\n')}
+Supplier Catalog (${candidates.length} relevant items):
+${candidates.map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}${s.lineCode ? ` [${s.lineCode}]` : ''}`).join('
+')}
 
 Respond with ONLY a JSON object in this exact format:
 {
