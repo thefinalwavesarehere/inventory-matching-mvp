@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < matches.length; i += SAVE_BATCH_SIZE) {
       const batch = matches.slice(i, i + SAVE_BATCH_SIZE);
       
-      // Add required fields to each match and filter out any undefined values
+      // Build properly typed records for database insertion
       const validMatches = batch
         .filter(m => 
           m.storeItemId && 
@@ -119,12 +119,35 @@ export async function POST(req: NextRequest) {
           m.confidence !== undefined &&
           m.confidence !== null
         )
-        .map(m => ({
-          ...m,
-          projectId,
-          targetId: m.supplierItemId,
-          targetType: 'SUPPLIER' as const,
-        }));
+        .map(m => {
+          const record: any = {
+            projectId,
+            storeItemId: m.storeItemId,
+            targetId: m.supplierItemId,
+            targetType: 'SUPPLIER',
+            method: m.method as any,
+            confidence: m.confidence,
+            matchStage: m.matchStage,
+            status: 'PENDING',
+            features: m.features || {},
+          };
+          
+          // Only add optional fields if they have defined values
+          if (m.costDifference !== undefined && m.costDifference !== null) {
+            record.costDifference = m.costDifference;
+          }
+          if (m.costSimilarity !== undefined && m.costSimilarity !== null) {
+            record.costSimilarity = m.costSimilarity;
+          }
+          if (m.transformationSignature !== undefined && m.transformationSignature !== null) {
+            record.transformationSignature = m.transformationSignature;
+          }
+          if (m.rulesApplied && m.rulesApplied.length > 0) {
+            record.rulesApplied = m.rulesApplied;
+          }
+          
+          return record;
+        });
 
       if (validMatches.length > 0) {
         await prisma.matchCandidate.createMany({
