@@ -128,8 +128,8 @@ export async function POST(req: NextRequest) {
 
     console.log(`[ENHANCED-MATCH] Found ${rules.length} active rules`);
 
-    // Run multi-stage matching
-    console.log('[ENHANCED-MATCH] Running multi-stage matching pipeline...');
+    // Run multi-stage matching (Stage 1 only - Stage 2 fuzzy has its own endpoint)
+    console.log('[ENHANCED-MATCH] Running Stage 1 (deterministic) matching...');
     const result = await runMultiStageMatching(
       storeItems as StoreItem[],
       supplierItems as SupplierItem[],
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
       rules as MatchingRule[],
       {
         stage1Enabled: options.stage1Enabled !== false,
-        stage2Enabled: options.stage2Enabled !== false,
+        stage2Enabled: false,  // Disabled - use separate /api/match/fuzzy endpoint
         fuzzyThreshold: options.fuzzyThreshold || 0.75,
         costTolerancePercent: options.costTolerancePercent || 10,
         maxCandidatesPerItem: options.maxCandidatesPerItem || 500,
