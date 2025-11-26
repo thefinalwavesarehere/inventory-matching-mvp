@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
       hasMore,
       nextOffset,
       metrics: {
-        processingTime: metrics.processingTime,
+        processingTimeMs: metrics.processingTimeMs,
         itemsProcessed: metrics.itemsProcessed,
         matchesFound: metrics.matchesFound,
       },
