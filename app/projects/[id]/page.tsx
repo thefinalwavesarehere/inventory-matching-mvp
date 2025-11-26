@@ -360,63 +360,50 @@ export default function ProjectDetailPage() {
       setRunningFuzzyMatch(true);
       setMatchError('');
       
-      let currentOffset = 0;
-      let totalMatches = 0;
-      let hasMore = true;
-      let totalUnmatched = 0;
+      // Use existing batch progress or start from 0
+      const offset = fuzzyBatchProgress?.nextOffset ?? 0;
       
-      console.log('Starting fuzzy match for project:', projectId);
+      console.log('Starting fuzzy match for project:', projectId, 'offset:', offset);
       
-      // Loop through all batches until complete
-      while (hasMore) {
-        console.log(`Processing batch at offset ${currentOffset}...`);
-        
-        const res = await fetch('/api/match/fuzzy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            projectId,
-            batchOffset: currentOffset,
-            batchSize: 1000,
-          }),
-        });
+      const res = await fetch('/api/match/fuzzy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          projectId,
+          batchOffset: offset,
+          batchSize: 1000,
+        }),
+      });
 
-        console.log('Fuzzy match response status:', res.status);
-        
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.error || 'Failed to run fuzzy matching');
-        }
-        
-        const data = await res.json();
-        console.log('Fuzzy match result:', data);
-        
-        // Accumulate results
-        totalMatches += data.matches || 0;
-        totalUnmatched = data.totalUnmatched || 0;
-        hasMore = data.hasMore || false;
-        
-        // Update progress
-        const processed = currentOffset + data.processed;
+      console.log('Fuzzy match response status:', res.status);
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to run fuzzy matching');
+      }
+      
+      const data = await res.json();
+      console.log('Fuzzy match result:', data);
+      
+      // Update batch progress
+      if (data.hasMore !== undefined) {
         setFuzzyBatchProgress({
-          processed,
-          total: totalUnmatched,
-          remaining: totalUnmatched - processed,
-          hasMore,
+          processed: data.processed + offset,
+          total: data.totalUnmatched,
+          remaining: data.totalUnmatched - (data.processed + offset),
+          hasMore: data.hasMore,
           nextOffset: data.nextOffset,
         });
         
-        // Move to next batch
-        if (hasMore && data.nextOffset) {
-          currentOffset = data.nextOffset;
+        if (data.hasMore) {
+          alert(`Fuzzy Matching Batch complete!\n\nProcessed: ${data.processed + offset}/${data.totalUnmatched} items\nMatches found in this batch: ${data.matches}\n\nClick "Continue Fuzzy Matching" to process next batch.`);
         } else {
-          hasMore = false;
+          alert(`Fuzzy Matching complete!\n\nProcessed all ${data.totalUnmatched} unmatched items\nMatches found in final batch: ${data.matches}`);
+          setFuzzyBatchProgress(null); // Reset for next run
         }
+      } else {
+        alert(`Fuzzy Matching complete! Found ${data.matches} additional matches from ${data.processed} items`);
       }
-      
-      // All batches complete
-      alert(`Fuzzy Matching complete!\n\nProcessed all ${totalUnmatched} unmatched items\nTotal fuzzy matches found: ${totalMatches}`);
-      setFuzzyBatchProgress(null); // Reset for next run
       
       await loadProject();
     } catch (err: any) {
@@ -654,15 +641,15 @@ export default function ProjectDetailPage() {
               title="Run fuzzy matching on unmatched items (slower but finds more matches)"
             >
               {runningFuzzyMatch 
-                ? fuzzyBatchProgress 
-                  ? `Fuzzy Matching... ${fuzzyBatchProgress.processed}/${fuzzyBatchProgress.total} items`
-                  : 'Fuzzy Matching...'
-                : 'Run Fuzzy Matching (All Remaining Items)'
+                ? 'Fuzzy Matching...'
+                : fuzzyBatchProgress?.hasMore 
+                ? `Continue Fuzzy Matching (${fuzzyBatchProgress.processed}/${fuzzyBatchProgress.total})`
+                : 'Run Fuzzy Matching (1000 items/batch)'
               }
             </button>
-            {runningFuzzyMatch && fuzzyBatchProgress && (
+            {fuzzyBatchProgress && fuzzyBatchProgress.hasMore && (
               <div className="text-sm text-gray-600 mt-2">
-                Processing: {fuzzyBatchProgress.processed}/{fuzzyBatchProgress.total} items
+                Progress: {fuzzyBatchProgress.processed}/{fuzzyBatchProgress.total} items
                 ({fuzzyBatchProgress.remaining} remaining)
               </div>
             )}
