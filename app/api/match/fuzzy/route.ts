@@ -42,7 +42,10 @@ export async function POST(req: NextRequest) {
     });
     const matchedIds = new Set(existingMatches.map((m) => m.storeItemId));
 
-    console.log(`[FUZZY-MATCH] Found ${matchedIds.size} already matched items`);
+    console.log(`[FUZZY-MATCH] Found ${existingMatches.length} total match records for ${matchedIds.size} unique store items`);
+    if (existingMatches.length > matchedIds.size) {
+      console.log(`[FUZZY-MATCH] Note: ${existingMatches.length - matchedIds.size} store items have multiple matches`);
+    }
 
     // Get all unmatched store items
     const allUnmatchedItems = await prisma.storeItem.findMany({
