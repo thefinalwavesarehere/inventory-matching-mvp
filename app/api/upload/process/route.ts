@@ -223,13 +223,17 @@ function processInterchangeFile(data: any[], projectId: string) {
     const supplierNorm = normalizePartNumber(supplierSku, { extractLineCode: true });
     const storeNorm = normalizePartNumber(storeSku, { extractLineCode: true });
 
+    // IMPORTANT: The Excel file has columns backwards!
+    // "VENDOR PART #" actually contains Arnold parts (AXLGM-*)
+    // "MERRILL PART #" actually contains competitor parts (GM-*, NCV*)
+    // So we swap them here:
     interchangeMappings.push({
-      competitorFullSku: supplierSku,
-      competitorLineCode: supplierNorm.lineCode,
-      competitorPartNumber: supplierNorm.mfrPartNumber,
-      arnoldFullSku: storeSku,
-      arnoldLineCode: storeNorm.lineCode,
-      arnoldPartNumber: storeNorm.mfrPartNumber,
+      competitorFullSku: storeSku,  // storeSku is actually the competitor part
+      competitorLineCode: storeNorm.lineCode,
+      competitorPartNumber: storeNorm.mfrPartNumber,
+      arnoldFullSku: supplierSku,  // supplierSku is actually the Arnold part
+      arnoldLineCode: supplierNorm.lineCode,
+      arnoldPartNumber: supplierNorm.mfrPartNumber,
       source: 'file_import',
       confidence: 1.0,
     });
