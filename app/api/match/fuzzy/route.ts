@@ -110,15 +110,19 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < matches.length; i += SAVE_BATCH_SIZE) {
       const batch = matches.slice(i, i + SAVE_BATCH_SIZE);
       
-      // Filter out any undefined values
-      const validMatches = batch.filter(m => 
-        m.storeItemId && 
-        m.supplierItemId && 
-        m.projectId && 
-        m.method &&
-        m.confidence !== undefined &&
-        m.confidence !== null
-      );
+      // Add projectId to each match and filter out any undefined values
+      const validMatches = batch
+        .filter(m => 
+          m.storeItemId && 
+          m.supplierItemId && 
+          m.method &&
+          m.confidence !== undefined &&
+          m.confidence !== null
+        )
+        .map(m => ({
+          ...m,
+          projectId,
+        }));
 
       if (validMatches.length > 0) {
         await prisma.matchCandidate.createMany({
