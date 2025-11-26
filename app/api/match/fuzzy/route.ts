@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < matches.length; i += SAVE_BATCH_SIZE) {
       const batch = matches.slice(i, i + SAVE_BATCH_SIZE);
       
-      // Add projectId to each match and filter out any undefined values
+      // Add required fields to each match and filter out any undefined values
       const validMatches = batch
         .filter(m => 
           m.storeItemId && 
@@ -122,6 +122,8 @@ export async function POST(req: NextRequest) {
         .map(m => ({
           ...m,
           projectId,
+          targetId: m.supplierItemId,
+          targetType: 'SUPPLIER' as const,
         }));
 
       if (validMatches.length > 0) {
