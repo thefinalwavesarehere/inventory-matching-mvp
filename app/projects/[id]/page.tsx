@@ -43,6 +43,7 @@ export default function ProjectDetailPage() {
   const [runningMatch, setRunningMatch] = useState(false);
   const [runningAiMatch, setRunningAiMatch] = useState(false);
   const [runningWebSearch, setRunningWebSearch] = useState(false);
+  const [runningFuzzyMatch, setRunningFuzzyMatch] = useState(false);
   const [matchError, setMatchError] = useState('');
   const [batchProgress, setBatchProgress] = useState<{
     processed: number;
@@ -66,6 +67,13 @@ export default function ProjectDetailPage() {
     hasMore: boolean;
     nextOffset: number | null;
     estimatedCost: string;
+  } | null>(null);
+  const [fuzzyBatchProgress, setFuzzyBatchProgress] = useState<{
+    processed: number;
+    total: number;
+    remaining: number;
+    hasMore: boolean;
+    nextOffset: number | null;
   } | null>(null);
 
   useEffect(() => {
@@ -347,6 +355,66 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const handleRunFuzzyMatch = async () => {
+    try {
+      setRunningFuzzyMatch(true);
+      setMatchError('');
+      
+      // Use existing batch progress or start from 0
+      const offset = fuzzyBatchProgress?.nextOffset ?? 0;
+      
+      console.log('Starting fuzzy match for project:', projectId, 'offset:', offset);
+      
+      const res = await fetch('/api/match/fuzzy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          projectId,
+          batchOffset: offset,
+          batchSize: 1000,
+        }),
+      });
+
+      console.log('Fuzzy match response status:', res.status);
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to run fuzzy matching');
+      }
+      
+      const data = await res.json();
+      console.log('Fuzzy match result:', data);
+      
+      // Update batch progress
+      if (data.hasMore !== undefined) {
+        setFuzzyBatchProgress({
+          processed: data.processed + offset,
+          total: data.totalUnmatched,
+          remaining: data.totalUnmatched - (data.processed + offset),
+          hasMore: data.hasMore,
+          nextOffset: data.nextOffset,
+        });
+        
+        if (data.hasMore) {
+          alert(`Fuzzy Matching Batch complete!\n\nProcessed: ${data.processed + offset}/${data.totalUnmatched} items\nMatches found: ${data.matches}\n\nClick "Run Fuzzy Matching" again to continue.`);
+        } else {
+          alert(`Fuzzy Matching complete!\n\nProcessed all ${data.totalUnmatched} items\nTotal matches: ${data.matches}`);
+          setFuzzyBatchProgress(null); // Reset for next run
+        }
+      } else {
+        alert(`Fuzzy Matching complete! Found ${data.matches} additional matches from ${data.processed} items`);
+      }
+      
+      await loadProject();
+    } catch (err: any) {
+      console.error('Fuzzy match error:', err);
+      setMatchError(err.message);
+      alert(`Error: ${err.message}`);
+    } finally {
+      setRunningFuzzyMatch(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -558,6 +626,31 @@ export default function ProjectDetailPage() {
               <div className="text-sm text-gray-600 mt-2">
                 Progress: {batchProgress.processed}/{batchProgress.total} items processed
                 ({batchProgress.remaining} remaining)
+              </div>
+            )}
+            <button
+              onClick={handleRunFuzzyMatch}
+              disabled={runningFuzzyMatch || project._count.storeItems === 0 || project._count.supplierItems === 0}
+              className={`px-6 py-3 rounded font-semibold ${
+                runningFuzzyMatch || project._count.storeItems === 0 || project._count.supplierItems === 0
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : fuzzyBatchProgress?.hasMore
+                  ? 'bg-purple-600 text-white hover:bg-purple-700'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
+              title="Run fuzzy matching on unmatched items (slower but finds more matches)"
+            >
+              {runningFuzzyMatch 
+                ? 'Fuzzy Matching...' 
+                : fuzzyBatchProgress?.hasMore 
+                ? `Continue Fuzzy Matching (${fuzzyBatchProgress.processed}/${fuzzyBatchProgress.total} done)`
+                : 'Run Fuzzy Matching (1000 items/batch)'
+              }
+            </button>
+            {fuzzyBatchProgress && fuzzyBatchProgress.hasMore && (
+              <div className="text-sm text-gray-600 mt-2">
+                Fuzzy Progress: {fuzzyBatchProgress.processed}/{fuzzyBatchProgress.total} items processed
+                ({fuzzyBatchProgress.remaining} remaining)
               </div>
             )}
             <button
