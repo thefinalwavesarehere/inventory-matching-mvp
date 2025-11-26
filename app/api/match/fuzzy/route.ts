@@ -79,10 +79,21 @@ export async function POST(req: NextRequest) {
 
     console.log(`[FUZZY-MATCH] Loaded ${supplierItems.length} supplier items`);
 
+    // Convert Decimal to number for matching engine compatibility
+    const unmatchedItemsConverted = unmatchedItems.map(item => ({
+      ...item,
+      currentCost: item.currentCost ? Number(item.currentCost) : null,
+    }));
+
+    const supplierItemsConverted = supplierItems.map(item => ({
+      ...item,
+      currentCost: item.currentCost ? Number(item.currentCost) : null,
+    }));
+
     // Run fuzzy matching on this batch
     const { matches, metrics } = stage2FuzzyMatching(
-      unmatchedItems,
-      supplierItems,
+      unmatchedItemsConverted as any,
+      supplierItemsConverted as any,
       matchedIds,
       {
         fuzzyThreshold: 0.65,
