@@ -63,6 +63,12 @@ export async function POST(req: NextRequest) {
 
     console.log(`[WEB-SEARCH] Processing ${unmatchedStoreItems.length} unmatched items`);
 
+    // Load supplier catalog for intelligent web search
+    const supplierItems = await prisma.supplierItem.findMany({
+      where: { projectId },
+    });
+    console.log(`[WEB-SEARCH] Loaded ${supplierItems.length} supplier items for reference`);
+
     const webMatches: any[] = [];
     let savedCount = 0;
 
@@ -70,26 +76,53 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < unmatchedStoreItems.length; i++) {
       const storeItem = unmatchedStoreItems[i];
       try {
-        // Create prompt for Perplexity to search the web
-        const prompt = `Search the web for this automotive part and find the best matching supplier part number.
+        // Get relevant supplier candidates for context
+        let candidates: any[] = [];
+        if (storeItem.lineCode) {
+          candidates = supplierItems.filter(s => s.lineCode === storeItem.lineCode).slice(0, 30);
+        }
+        if (candidates.length < 20 && storeItem.mfrPartNumber) {
+          const storeMfr = storeItem.mfrPartNumber.toUpperCase();
+          const mfrMatches = supplierItems.filter(s => {
+            if (!s.mfrPartNumber) return false;
+            const supplierMfr = s.mfrPartNumber.toUpperCase();
+            return supplierMfr.startsWith(storeMfr.substring(0, Math.min(3, storeMfr.length)));
+          }).slice(0, 30);
+          candidates = [...new Set([...candidates, ...mfrMatches])].slice(0, 30);
+        }
 
-Store Part:
+        // Create optimized prompt for web search with supplier context
+        const catalogContext = candidates.length > 0 
+          ? `\n\nOur Supplier Catalog (${candidates.length} similar items for reference):\n${candidates.map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}`).slice(0, 20).join('\n')}`
+          : '';
+
+        const prompt = `You are an automotive parts expert. Find the BEST match for this store part.
+
+IMPORTANT: First check if this part matches anything in our supplier catalog below. If you find a match there, use it. Otherwise, search the web for alternatives.
+
+Store Part to Match:
 - Part Number: ${storeItem.partNumber}
 - Description: ${storeItem.description || 'N/A'}
 - Line Code: ${storeItem.lineCode || 'N/A'}
+- Manufacturer Part: ${storeItem.mfrPartNumber || 'N/A'}${catalogContext}
 
-Task: Find a matching automotive part from any supplier (RockAuto, AutoZone, O'Reilly, NAPA, etc.)
+MATCHING RULES:
+1. Check our supplier catalog first - prefer matches from there
+2. Part numbers may have different punctuation but same core numbers
+3. Line codes indicate manufacturer - prioritize same line code
+4. Accept 60%+ similarity - minor variations are OK
+5. If no supplier catalog match, search web for: RockAuto, AutoZone, O'Reilly, NAPA, etc.
 
-Respond with ONLY a JSON object in this exact format:
+Respond with ONLY valid JSON:
 {
   "match": true/false,
-  "supplierPartNumber": "PART123" or null,
+  "supplierPartNumber": "EXACT_PART_NUMBER" or null,
   "supplierName": "Company Name" or null,
-  "confidence": 0.0-1.0,
+  "confidence": 0.6-1.0,
   "description": "Part description",
   "price": "$XX.XX" or null,
   "sourceUrl": "https://..." or null,
-  "reason": "Brief explanation"
+  "reason": "Why this matches (catalog match, web search, etc.)"
 }`;
 
         const response = await perplexity.chat.completions.create({
@@ -97,15 +130,15 @@ Respond with ONLY a JSON object in this exact format:
           messages: [
             {
               role: 'system',
-              content: 'You are an automotive parts research assistant. Search the web for matching parts and respond with valid JSON only.',
+              content: 'You are an expert automotive parts matcher. Check the supplier catalog first, then search the web if needed. Be generous with matches - 60%+ similarity is acceptable. Always respond with valid JSON only.',
             },
             {
               role: 'user',
               content: prompt,
             },
           ],
-          temperature: 0.2,
-          max_tokens: 500,
+          temperature: 0.4,  // Increased for more creative matching
+          max_tokens: 600,
         });
 
         let responseText = response.choices[0]?.message?.content?.trim();
