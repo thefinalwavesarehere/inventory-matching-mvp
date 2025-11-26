@@ -150,13 +150,14 @@ export async function POST(req: NextRequest) {
     console.log(`[ENHANCED-MATCH] Stage 2 matches: ${result.summary.stage2Matches}`);
 
     // Save matches to database
-    console.log('[ENHANCED-MATCH] Saving matches to database...');
+    console.log(`[ENHANCED-MATCH] Saving ${result.matches.length} matches to database...`);
     const BATCH_SIZE = 1000;
+    let totalSaved = 0;
     
     for (let i = 0; i < result.matches.length; i += BATCH_SIZE) {
       const batch = result.matches.slice(i, i + BATCH_SIZE);
       
-      await prisma.matchCandidate.createMany({
+      const result_save = await prisma.matchCandidate.createMany({
         data: batch.map(m => {
           const record: any = {
             projectId,
@@ -188,8 +189,14 @@ export async function POST(req: NextRequest) {
         }),
         skipDuplicates: true,
       });
-
-      console.log(`[ENHANCED-MATCH] Saved batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} matches`);
+      
+      totalSaved += result_save.count;
+      console.log(`[ENHANCED-MATCH] Batch ${Math.floor(i / BATCH_SIZE) + 1}: Attempted ${batch.length}, Saved ${result_save.count} (${totalSaved} total)`);
+    }
+    
+    console.log(`[ENHANCED-MATCH] Save complete: ${totalSaved} matches saved out of ${result.matches.length} found`);
+    if (totalSaved < result.matches.length) {
+      console.log(`[ENHANCED-MATCH] WARNING: ${result.matches.length - totalSaved} matches were skipped as duplicates`);
     }
 
     // Save stage metrics
