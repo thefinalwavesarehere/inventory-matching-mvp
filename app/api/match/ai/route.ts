@@ -145,31 +145,38 @@ export async function POST(req: NextRequest) {
           console.log(`[AI-MATCH] Item ${itemCounter}/${unmatchedStoreItems.length}: ${storeItem.partNumber} - ${candidates.length} candidates`);
           
           // Create optimized prompt for AI
-          const prompt = `You are an expert automotive parts matcher. Your goal is to find the BEST POSSIBLE match for this store part from the supplier catalog.
+          const prompt = `You are an expert automotive parts matcher. Find the BEST match for this store part from the supplier catalog.
 
-IMPORTANT MATCHING RULES:
-1. Part numbers may have different punctuation (-/./ ) but same core numbers/letters
-2. Line codes (first 2-3 letters) indicate manufacturer - prioritize same line code
-3. Descriptions help confirm matches even if part numbers differ slightly
-4. Accept matches with 60%+ similarity - automotive parts often have minor variations
-5. Look for substring matches (one part number contains the other)
-6. Manufacturer part numbers (after line code) are most important for matching
+MATCHING EXAMPLES:
+✓ MATCH: "ABC12345" matches "ABC-12345" (same part, different punctuation)
+✓ MATCH: "ABC12345" matches "12345" (line code stripped)
+✓ MATCH: "LTG-G6002" matches "LTGG6002" (punctuation removed)
+✓ MATCH: "ABH8865" matches "BAT08865" (different line code, same core number)
+✓ MATCH: "20SC" matches "ABC20SC" (substring match)
+✗ NO MATCH: "ABC12345" vs "ABC54321" (different core numbers)
 
-Store Item to Match:
-- Part Number: ${storeItem.partNumber}
-- Description: ${storeItem.description || 'N/A'}
-- Line Code: ${storeItem.lineCode || 'N/A'}
-- Manufacturer Part: ${storeItem.mfrPartNumber || 'N/A'}
+MATCHING RULES:
+1. **Punctuation doesn't matter**: ABC-123, ABC.123, ABC 123, ABC123 are ALL the same
+2. **Line codes can differ**: ABH8865 = BAT08865 = 8865 (focus on core numbers)
+3. **Substring matches count**: If one part number contains the other, it's likely a match
+4. **60%+ similarity is acceptable**: Minor differences are OK in automotive parts
+5. **Descriptions help**: If descriptions match, part numbers can differ more
 
-Supplier Catalog (${candidates.length} pre-filtered candidates):
-${candidates.map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}${s.lineCode ? ` [Line: ${s.lineCode}]` : ''}${s.mfrPartNumber ? ` [Mfr: ${s.mfrPartNumber}]` : ''}`).join('\n')}
+Store Item:
+- Part: ${storeItem.partNumber}
+- Desc: ${storeItem.description || 'N/A'}
+- Line: ${storeItem.lineCode || 'N/A'}
+- Mfr: ${storeItem.mfrPartNumber || 'N/A'}
 
-Find the BEST match. Be generous - minor differences are OK. Respond with ONLY valid JSON:
+Supplier Catalog (${candidates.length} candidates):
+${candidates.map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}${s.lineCode ? ` [${s.lineCode}]` : ''}${s.mfrPartNumber ? ` [${s.mfrPartNumber}]` : ''}`).join('\n')}
+
+Find the BEST match. When in doubt, MATCH IT (60%+ similarity). Respond with ONLY valid JSON:
 {
   "match": true/false,
   "supplierPartNumber": "EXACT_PART_NUMBER" or null,
   "confidence": 0.6-1.0,
-  "reason": "Why this matches (line code, part similarity, description, etc.)"
+  "reason": "Brief reason"
 }`;
 
           const completion = await openai.chat.completions.create({
@@ -184,7 +191,7 @@ Find the BEST match. Be generous - minor differences are OK. Respond with ONLY v
                 content: prompt,
               },
             ],
-            temperature: 0.5,  // Increased for more creative matching
+            temperature: 0.3,  // Lower for more consistent matching
             max_tokens: 250,
           });
 
