@@ -42,6 +42,11 @@ export async function POST(req: NextRequest) {
       select: { storeItemId: true },
     });
     const matchedIds = new Set(existingMatches.map((m) => m.storeItemId));
+    
+    console.log(`[AI-MATCH] Found ${existingMatches.length} total match records for ${matchedIds.size} unique store items`);
+    if (existingMatches.length > matchedIds.size) {
+      console.log(`[AI-MATCH] Note: ${existingMatches.length - matchedIds.size} store items have multiple matches`);
+    }
 
     const allUnmatchedItems = await prisma.storeItem.findMany({
       where: {
@@ -69,13 +74,16 @@ export async function POST(req: NextRequest) {
 
     const aiMatches: any[] = [];
     let savedCount = 0;
+    let itemCounter = 0;  // Track actual item number
 
-    // Process in batches of 10
+    // Process in batches of 10 for API rate limiting
     for (let i = 0; i < unmatchedStoreItems.length; i += 10) {
       const batch = unmatchedStoreItems.slice(i, i + 10);
       
        for (const storeItem of batch) {
         try {
+          itemCounter++;
+          
           // OPTIMIZED candidate selection: Show AI the most relevant items
           let candidates: any[] = [];
           
@@ -107,8 +115,8 @@ export async function POST(req: NextRequest) {
               const supplierPartUpper = s.partNumber.toUpperCase().replace(/[^A-Z0-9]/g, '');
               // Check for 4+ char substring match
               if (storePartUpper.length < 4 || supplierPartUpper.length < 4) return false;
-              for (let i = 0; i <= storePartUpper.length - 4; i++) {
-                const substring = storePartUpper.substring(i, i + 4);
+              for (let j = 0; j <= storePartUpper.length - 4; j++) {
+                const substring = storePartUpper.substring(j, j + 4);
                 if (supplierPartUpper.includes(substring)) return true;
               }
               return false;
@@ -134,7 +142,7 @@ export async function POST(req: NextRequest) {
           // Limit to 150 candidates (increased from 100 for better coverage)
           candidates = candidates.slice(0, 150);
           
-          console.log(`[AI-MATCH] Item ${i + 1}/${unmatchedStoreItems.length}: ${storeItem.partNumber} - ${candidates.length} candidates`);
+          console.log(`[AI-MATCH] Item ${itemCounter}/${unmatchedStoreItems.length}: ${storeItem.partNumber} - ${candidates.length} candidates`);
           
           // Create optimized prompt for AI
           const prompt = `You are an expert automotive parts matcher. Your goal is to find the BEST POSSIBLE match for this store part from the supplier catalog.

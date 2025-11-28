@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { projectId, batchOffset = 0, batchSize = 1000 } = body;
+    const { projectId, batchOffset = 0, batchSize = 3000 } = body;
 
     if (!projectId) {
       return NextResponse.json(

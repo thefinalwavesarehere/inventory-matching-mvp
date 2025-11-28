@@ -371,7 +371,7 @@ export default function ProjectDetailPage() {
         body: JSON.stringify({ 
           projectId,
           batchOffset: offset,
-          batchSize: 1000,
+          batchSize: 3000,
         }),
       });
 
@@ -644,7 +644,7 @@ export default function ProjectDetailPage() {
                 ? 'Fuzzy Matching...'
                 : fuzzyBatchProgress?.hasMore 
                 ? `Continue Fuzzy Matching (${fuzzyBatchProgress.processed}/${fuzzyBatchProgress.total})`
-                : 'Run Fuzzy Matching (1000 items/batch)'
+                : 'Run Fuzzy Matching (3000 items/batch)'
               }
             </button>
             {fuzzyBatchProgress && fuzzyBatchProgress.hasMore && (
