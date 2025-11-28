@@ -317,7 +317,7 @@ export default function ProjectDetailPage() {
         body: JSON.stringify({ 
           projectId,
           batchOffset: offset,
-          batchSize: 50,
+          batchSize: 20,
         }),
       });
 
@@ -694,7 +694,7 @@ export default function ProjectDetailPage() {
                 ? '🌐 Searching Web...' 
                 : webSearchBatchProgress?.hasMore 
                 ? `Continue Web Search (${webSearchBatchProgress.processed}/${webSearchBatchProgress.total} done, ~$${webSearchBatchProgress.estimatedCost})`
-                : '🌐 Run Web Search Matching (50 items/batch)'
+                : '🌐 Run Web Search Matching (20 items/batch)'
               }
             </button>
             {webSearchBatchProgress && webSearchBatchProgress.hasMore && (

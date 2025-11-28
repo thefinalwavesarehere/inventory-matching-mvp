@@ -223,6 +223,7 @@ Find the BEST match. Be generous - minor differences are OK. Respond with ONLY v
                 targetId: supplierItem.id,
                 method: 'AI',
                 confidence: aiResponse.confidence,
+                matchStage: 3,  // AI matching is stage 3
                 features: {
                   reason: aiResponse.reason,
                   aiModel: 'gpt-4.1-mini',

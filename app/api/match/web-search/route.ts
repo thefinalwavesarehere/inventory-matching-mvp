@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { projectId, batchOffset = 0, batchSize = 50 } = body;
+    const { projectId, batchOffset = 0, batchSize = 20 } = body;
 
     if (!projectId) {
       return NextResponse.json(
@@ -165,26 +165,70 @@ Respond with ONLY valid JSON:
         if (webResponse.match && webResponse.supplierPartNumber) {
           console.log(`[WEB-SEARCH] Found match: ${storeItem.partNumber} -> ${webResponse.supplierPartNumber} (${webResponse.confidence})`);
 
-          // Create a "virtual" supplier item for web-found matches
-          // We'll store the web data in the features field
-          webMatches.push({
-            projectId,
-            storeItemId: storeItem.id,
-            targetType: 'SUPPLIER', // Using SUPPLIER type but it's actually a web result
-            targetId: 'WEB_' + storeItem.id, // Special ID to indicate web-found match
-            method: 'AI', // Temporarily using AI until WEB_SEARCH is added to database enum
-            confidence: webResponse.confidence,
-            features: {
-              webSearch: true,
-              supplierPartNumber: webResponse.supplierPartNumber,
-              supplierName: webResponse.supplierName,
-              description: webResponse.description,
-              price: webResponse.price,
-              sourceUrl: webResponse.sourceUrl,
-              reason: webResponse.reason,
-            },
-            status: 'PENDING',
-          });
+          // Find or create supplier item for web-found match
+          // First check if this supplier part already exists
+          let supplierItem = supplierItems.find(
+            (s) => s.partNumber === webResponse.supplierPartNumber
+          );
+          
+          if (supplierItem) {
+            // Match found in existing supplier catalog
+            webMatches.push({
+              projectId,
+              storeItemId: storeItem.id,
+              targetType: 'SUPPLIER',
+              targetId: supplierItem.id,
+              method: 'WEB_SEARCH' as any,  // Cast to any to bypass enum check
+              confidence: webResponse.confidence,
+              matchStage: 4,  // Web search is stage 4
+              features: {
+                webSearch: true,
+                supplierName: webResponse.supplierName,
+                description: webResponse.description,
+                price: webResponse.price,
+                sourceUrl: webResponse.sourceUrl,
+                reason: webResponse.reason,
+              },
+              status: 'PENDING',
+            });
+          } else {
+            // Create new supplier item from web search result
+            const newSupplierItem = await prisma.supplierItem.create({
+              data: {
+                projectId,
+                supplier: webResponse.supplierName || 'Web Search',
+                partNumber: webResponse.supplierPartNumber,
+                partFull: webResponse.supplierPartNumber,
+                partNumberNorm: webResponse.supplierPartNumber.toLowerCase(),
+                canonicalPartNumber: webResponse.supplierPartNumber.replace(/[-\/\.\s]/g, '').toUpperCase(),
+                description: webResponse.description || null,
+                currentCost: webResponse.price ? parseFloat(webResponse.price.replace(/[^0-9.]/g, '')) : null,
+                rawData: {
+                  source: 'web_search',
+                  url: webResponse.sourceUrl,
+                },
+              },
+            });
+            
+            webMatches.push({
+              projectId,
+              storeItemId: storeItem.id,
+              targetType: 'SUPPLIER',
+              targetId: newSupplierItem.id,
+              method: 'WEB_SEARCH' as any,
+              confidence: webResponse.confidence,
+              matchStage: 4,
+              features: {
+                webSearch: true,
+                supplierName: webResponse.supplierName,
+                description: webResponse.description,
+                price: webResponse.price,
+                sourceUrl: webResponse.sourceUrl,
+                reason: webResponse.reason,
+              },
+              status: 'PENDING',
+            });
+          }
           
           // Save incrementally every 5 matches to avoid losing data on timeout
           if (webMatches.length >= 5) {
