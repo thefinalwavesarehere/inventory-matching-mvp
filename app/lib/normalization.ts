@@ -38,13 +38,27 @@ export function extractLineCode(partNumber: string): {
     return { lineCode: null, mfrPartNumber: partNumber || null };
   }
 
-  const lineCode = partNumber.substring(0, 3).toUpperCase();
-  const mfrPartNumber = partNumber.substring(3);
-
-  return {
-    lineCode,
-    mfrPartNumber: mfrPartNumber || null,
-  };
+  const potentialLineCode = partNumber.substring(0, 3).toUpperCase();
+  const potentialMfrPart = partNumber.substring(3);
+  
+  // Validate that the line code contains at least 2 letters
+  // This prevents "20SC" from being parsed as lineCode="20S", mfr="C"
+  const letterCount = (potentialLineCode.match(/[A-Z]/g) || []).length;
+  
+  if (letterCount >= 2) {
+    // Valid line code (e.g., "ABC", "PPG", "01M")
+    return {
+      lineCode: potentialLineCode,
+      mfrPartNumber: potentialMfrPart || null,
+    };
+  } else {
+    // Not a valid line code - treat entire part as mfr part number
+    // (e.g., "20SC", "1234", "5A-123")
+    return {
+      lineCode: null,
+      mfrPartNumber: partNumber,
+    };
+  }
 }
 
 /**
