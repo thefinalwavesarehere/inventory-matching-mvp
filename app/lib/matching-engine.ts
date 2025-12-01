@@ -70,6 +70,7 @@ export interface MatchingOptions {
   fuzzyThreshold?: number;
   costTolerancePercent?: number;
   maxCandidatesPerItem?: number;
+  maxTopMatches?: number;
 }
 
 export interface StageMetrics {
@@ -660,9 +661,10 @@ export function stage2FuzzyMatching(
 ): { matches: MatchCandidate[]; metrics: StageMetrics } {
   const startTime = Date.now();
   const matches: MatchCandidate[] = [];
-  
+
   const fuzzyThreshold = options.fuzzyThreshold || 0.65;  // Lowered to 65% for better coverage
   const maxCandidates = options.maxCandidatesPerItem || 1000;  // Increased for better matching
+  const topK = options.maxTopMatches || 3;
 
   // Filter unmatched store items
   const unmatchedStoreItems = storeItems.filter(item => !alreadyMatched.has(item.id));
@@ -706,17 +708,19 @@ export function stage2FuzzyMatching(
       candidates = [...candidates, ...similarCandidates].slice(0, maxCandidates);
     }
     
-    // Strategy 3: If still no candidates, use random sampling from all suppliers
+    // Strategy 3: If still no candidates, use deterministic, diverse sampling from all suppliers
     if (candidates.length === 0) {
-      // Random sample instead of first N (more diverse)
       const sampleSize = Math.min(maxCandidates, supplierItems.length);
-      const step = Math.floor(supplierItems.length / sampleSize);
+      const seed = hashString(storeItem.partNumberNorm || storeItem.partNumber || storeItem.id);
+      const step = Math.max(1, Math.floor(supplierItems.length / sampleSize));
+
       for (let i = 0; i < supplierItems.length && candidates.length < sampleSize; i += step) {
-        candidates.push(supplierItems[i]);
+        const index = (i + seed) % supplierItems.length;
+        candidates.push(supplierItems[index]);
       }
     }
 
-    let bestMatch: MatchCandidate | null = null;
+    const candidateMatches: MatchCandidate[] = [];
     let bestScore = 0;
 
     for (const supplier of candidates) {
@@ -779,36 +783,57 @@ export function stage2FuzzyMatching(
         }
       }
 
+      candidateMatches.push({
+        storeItemId: storeItem.id,
+        supplierItemId: supplier.id,
+        method: 'FUZZY_SUBSTRING',
+        confidence: adjustedScore,
+        matchStage: 2,
+        features: {
+          partSimilarity,
+          descSimilarity,
+          combinedScore: score,
+          costAdjusted: adjustedScore !== score,
+          matchMethod,
+          sameLineCodeOnly,
+        },
+        costDifference: costComp?.difference,
+        costSimilarity: costComp?.similarity,
+      });
+
       if (adjustedScore > bestScore) {
         bestScore = adjustedScore;
-        bestMatch = {
-          storeItemId: storeItem.id,
-          supplierItemId: supplier.id,
-          method: 'FUZZY_SUBSTRING',
-          confidence: adjustedScore,
-          matchStage: 2,
-          features: {
-            partSimilarity,
-            descSimilarity,
-            combinedScore: score,
-            costAdjusted: adjustedScore !== score,
-            matchMethod,
-            sameLineCodeOnly,
-          },
-          costDifference: costComp?.difference,
-          costSimilarity: costComp?.similarity,
-        };
       }
     }
 
-    if (bestMatch) {
-      matches.push(bestMatch);
+    if (candidateMatches.length > 0) {
+      const sorted = candidateMatches
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, topK)
+        .map((match, idx) => ({
+          ...match,
+          features: {
+            ...match.features,
+            rank: idx + 1,
+            candidateCount: candidateMatches.length,
+          },
+        }));
+
+      matches.push(...sorted);
     }
   }
 
   const processingTimeMs = Date.now() - startTime;
-  const avgConfidence = matches.length > 0
-    ? matches.reduce((sum, m) => sum + m.confidence, 0) / matches.length
+  const bestPerStore = new Map<string, number>();
+  for (const match of matches) {
+    const current = bestPerStore.get(match.storeItemId) || 0;
+    if (match.confidence > current) {
+      bestPerStore.set(match.storeItemId, match.confidence);
+    }
+  }
+
+  const avgConfidence = bestPerStore.size > 0
+    ? Array.from(bestPerStore.values()).reduce((sum, value) => sum + value, 0) / bestPerStore.size
     : 0;
 
   const metrics: StageMetrics = {
@@ -816,7 +841,7 @@ export function stage2FuzzyMatching(
     stageName: 'Fuzzy Matching',
     itemsProcessed: unmatchedStoreItems.length,
     matchesFound: matches.length,
-    matchRate: unmatchedStoreItems.length > 0 ? matches.length / unmatchedStoreItems.length : 0,
+    matchRate: unmatchedStoreItems.length > 0 ? bestPerStore.size / unmatchedStoreItems.length : 0,
     avgConfidence,
     processingTimeMs,
     rulesApplied: [],
@@ -868,6 +893,15 @@ function levenshteinDistance(str1: string, str2: string): number {
   }
 
   return matrix[str2.length][str1.length];
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash << 5) - hash + value.charCodeAt(i);
+    hash |= 0; // Convert to 32bit integer
+  }
+  return Math.abs(hash);
 }
 
 /**

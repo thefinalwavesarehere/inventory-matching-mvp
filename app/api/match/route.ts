@@ -9,38 +9,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/lib/auth';
 import prisma from '@/app/lib/db/prisma';
-
-// Simple string similarity (Levenshtein distance)
-function similarity(s1: string, s2: string): number {
-  const longer = s1.length > s2.length ? s1 : s2;
-  const shorter = s1.length > s2.length ? s2 : s1;
-  
-  if (longer.length === 0) return 1.0;
-  
-  const editDistance = levenshteinDistance(longer, shorter);
-  return (longer.length - editDistance) / longer.length;
-}
-
-function levenshteinDistance(s1: string, s2: string): number {
-  const costs: number[] = [];
-  for (let i = 0; i <= s1.length; i++) {
-    let lastValue = i;
-    for (let j = 0; j <= s2.length; j++) {
-      if (i === 0) {
-        costs[j] = j;
-      } else if (j > 0) {
-        let newValue = costs[j - 1];
-        if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
-          newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
-        }
-        costs[j - 1] = lastValue;
-        lastValue = newValue;
-      }
-    }
-    if (i > 0) costs[s2.length] = lastValue;
-  }
-  return costs[s2.length];
-}
+import {
+  stage2FuzzyMatching,
+  StoreItem as EngineStoreItem,
+  SupplierItem as EngineSupplierItem,
+} from '@/app/lib/matching-engine';
 
 export async function GET(req: NextRequest) {
   try {
@@ -236,14 +209,18 @@ export async function POST(req: NextRequest) {
 
     // Stage 3: Fuzzy Matching (for remaining unmatched items)
     console.log(`[MATCH] Stage 3: Fuzzy Matching (Batch Processing)`);
-    
+
     // Get already matched store IDs from database (for all batches)
     const existingMatches = await prisma.matchCandidate.findMany({
       where: { projectId },
       select: { storeItemId: true },
     });
     const matchedStoreIds = new Set(existingMatches.map(m => m.storeItemId));
-    
+
+    for (const match of matches) {
+      matchedStoreIds.add(match.storeItemId);
+    }
+
     const unmatchedStoreItems = storeItems.filter((s) => !matchedStoreIds.has(s.id));
     console.log(`[MATCH] Total unmatched items: ${unmatchedStoreItems.length}`);
     console.log(`[MATCH] Batch offset: ${batchOffset}, Batch size: ${batchSize}`);
@@ -251,86 +228,57 @@ export async function POST(req: NextRequest) {
     // BATCH PROCESSING: Process only a slice of unmatched items
     const itemsToMatch = unmatchedStoreItems.slice(batchOffset, batchOffset + batchSize);
     const remainingAfterBatch = unmatchedStoreItems.length - (batchOffset + itemsToMatch.length);
-    
+
     console.log(`[MATCH] Processing items ${batchOffset} to ${batchOffset + itemsToMatch.length} of ${unmatchedStoreItems.length}`);
     console.log(`[MATCH] Items in this batch: ${itemsToMatch.length}`);
     console.log(`[MATCH] Remaining after batch: ${remainingAfterBatch}`);
     console.log(`[MATCH] Supplier catalog size: ${supplierItems.length} items`);
-    console.log(`[MATCH] Estimated comparisons: ${itemsToMatch.length} × ~500 candidates = ${itemsToMatch.length * 500} total`);
-    
-    for (const storeItem of itemsToMatch) {
-      let bestMatch: any = null;
-      let bestScore = 0;
 
-      // OPTIMIZATION: Filter supplier items by first 3 characters for faster matching
-      const prefix = storeItem.partNumberNorm.substring(0, 3);
-      const candidateSuppliers = supplierItems.filter(s => 
-        s.partNumberNorm.startsWith(prefix) || 
-        s.partNumberNorm.includes(prefix.substring(0, 2))
-      );
-      
-      // If no candidates with prefix match, sample random 500 items
-      // Reduced from 1000 to 500 to process all 17K+ store items within timeout
-      const suppliersToCheck = candidateSuppliers.length > 0 
-        ? candidateSuppliers.slice(0, 500)
-        : supplierItems.slice(0, 500);
+    const engineStoreItems: EngineStoreItem[] = itemsToMatch.map((item) => ({
+      id: item.id,
+      partNumber: item.partNumber,
+      partNumberNorm: item.partNumberNorm,
+      canonicalPartNumber: (item as any).canonicalPartNumber || null,
+      lineCode: item.lineCode,
+      mfrPartNumber: item.mfrPartNumber,
+      description: item.description,
+      currentCost: item.currentCost,
+    }));
 
-      for (const supplierItem of suppliersToCheck) {
-        // Quick length check - if lengths differ by >50%, skip
-        const lengthDiff = Math.abs(storeItem.partNumberNorm.length - supplierItem.partNumberNorm.length);
-        if (lengthDiff > Math.max(storeItem.partNumberNorm.length, supplierItem.partNumberNorm.length) * 0.5) {
-          continue;
-        }
-        
-        // Compare normalized part numbers
-        const partScore = similarity(storeItem.partNumberNorm, supplierItem.partNumberNorm);
-        
-        // Early termination if score is too low
-        if (partScore < 0.50) continue;
-        
-        // Compare descriptions if available
-        let descScore = 0;
-        if (storeItem.description && supplierItem.description) {
-          descScore = similarity(
-            storeItem.description.toLowerCase(), 
-            supplierItem.description.toLowerCase()
-          );
-        }
-        
-        // Weighted score (prioritize part number since no descriptions in Arnold File)
-        const score = descScore > 0 ? (partScore * 0.7 + descScore * 0.3) : partScore;
-        
-        // Lower threshold to 0.60 to catch more potential matches
-        if (score > bestScore && score >= 0.60) {
-          bestScore = score;
-          bestMatch = supplierItem;
-          
-          // Early termination if we found a great match
-          if (bestScore >= 0.95) break;
-        }
-      }
+    const engineSupplierItems: EngineSupplierItem[] = supplierItems.map((item) => ({
+      id: item.id,
+      partNumber: item.partNumber,
+      partNumberNorm: item.partNumberNorm,
+      canonicalPartNumber: (item as any).canonicalPartNumber || null,
+      lineCode: item.lineCode,
+      mfrPartNumber: item.mfrPartNumber,
+      description: item.description,
+      currentCost: item.currentCost,
+    }));
 
-      if (bestMatch) {
-        fuzzyMatches++;
-        matches.push({
-          projectId,
-          storeItemId: storeItem.id,
-          targetType: 'SUPPLIER',
-          targetId: bestMatch.id,
-          method: 'FUZZY_SUBSTRING',
-          confidence: bestScore,
-          features: { 
-            partSimilarity: similarity(storeItem.partNumberNorm, bestMatch.partNumberNorm),
-            descSimilarity: storeItem.description && bestMatch.description 
-              ? similarity(storeItem.description.toLowerCase(), bestMatch.description.toLowerCase())
-              : 0,
-            candidatesChecked: suppliersToCheck.length
-          },
-          status: 'PENDING',
-        });
-      }
-    }
-    console.log(`[MATCH] Stage 3 complete: ${fuzzyMatches} matches`);
+    const fuzzyResult = stage2FuzzyMatching(engineStoreItems, engineSupplierItems, matchedStoreIds, {
+      fuzzyThreshold: 0.65,
+      maxCandidatesPerItem: 800,
+      maxTopMatches: 3,
+    });
+
+    fuzzyMatches += fuzzyResult.matches.length;
+
+    matches.push(
+      ...fuzzyResult.matches.map((m) => ({
+        projectId,
+        storeItemId: m.storeItemId,
+        targetType: 'SUPPLIER',
+        targetId: m.supplierItemId,
+        method: m.method,
+        confidence: m.confidence,
+        matchStage: m.matchStage,
+        features: m.features,
+        status: 'PENDING',
+      }))
+    );
+
+    console.log(`[MATCH] Stage 3 complete: ${fuzzyResult.matches.length} matches in batch, ${(fuzzyResult.metrics.matchRate * 100).toFixed(1)}% match rate`);
 
     // Save all matches
     console.log(`[MATCH] Total matches: ${matches.length}`);

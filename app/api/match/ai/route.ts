@@ -13,6 +13,57 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const normalizePartNumber = (value?: string | null) =>
+  (value || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+
+const computePartSimilarity = (a: string, b: string) => {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length > b.length ? a : b;
+
+  if (longer.includes(shorter)) {
+    return shorter.length / longer.length;
+  }
+
+  let longest = 0;
+  for (let i = 0; i < shorter.length; i++) {
+    for (let j = i + 3; j <= shorter.length; j++) {
+      const segment = shorter.slice(i, j);
+      if (segment.length <= longest) continue;
+      if (longer.includes(segment)) {
+        longest = segment.length;
+      }
+    }
+  }
+
+  return longest / longer.length;
+};
+
+const scoreCandidate = (storeItem: any, supplierItem: any) => {
+  const storeNorm = normalizePartNumber(storeItem.partNumber);
+  const supplierNorm = normalizePartNumber(supplierItem.partNumber);
+  const storeMfr = normalizePartNumber(storeItem.mfrPartNumber);
+  const supplierMfr = normalizePartNumber(supplierItem.mfrPartNumber);
+
+  const partScore = computePartSimilarity(storeNorm, supplierNorm);
+  const mfrScore = computePartSimilarity(storeMfr, supplierMfr) * 0.4;
+  const lineBonus = storeItem.lineCode && supplierItem.lineCode && storeItem.lineCode === supplierItem.lineCode ? 0.25 : 0;
+
+  let descBonus = 0;
+  if (storeItem.description && supplierItem.description) {
+    const storeWords = new Set(storeItem.description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3));
+    const supplierWords = supplierItem.description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
+    const overlap = supplierWords.filter((w: string) => storeWords.has(w)).length;
+    if (overlap >= 2) {
+      descBonus = Math.min(0.2, overlap * 0.05);
+    }
+  }
+
+  return partScore + mfrScore + lineBonus + descBonus;
+};
+
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -69,6 +120,21 @@ export async function POST(req: NextRequest) {
       where: { projectId },
     });
 
+    const supplierByExactPart = new Map<string, any>();
+    const supplierByNormalizedPart = new Map<string, any[]>();
+
+    for (const supplier of supplierItems) {
+      supplierByExactPart.set(supplier.partNumber.toUpperCase(), supplier);
+
+      const normalized = normalizePartNumber(supplier.partNumber || supplier.partNumberNorm);
+      if (normalized) {
+        if (!supplierByNormalizedPart.has(normalized)) {
+          supplierByNormalizedPart.set(normalized, []);
+        }
+        supplierByNormalizedPart.get(normalized)!.push(supplier);
+      }
+    }
+
     console.log(`[AI-MATCH] Processing ${unmatchedStoreItems.length} unmatched items`);
     console.log(`[AI-MATCH] Against ${supplierItems.length} supplier items`);
 
@@ -84,68 +150,72 @@ export async function POST(req: NextRequest) {
         try {
           itemCounter++;
           
-          // OPTIMIZED candidate selection: Show AI the most relevant items
+          // OPTIMIZED candidate selection: score and prioritize
           let candidates: any[] = [];
-          
+
           // Strategy 1: Same line code (highest priority - same manufacturer)
           if (storeItem.lineCode) {
-            candidates = supplierItems.filter(s => s.lineCode === storeItem.lineCode);
+            candidates = supplierItems.filter((s) => s.lineCode === storeItem.lineCode);
           }
-          
+
           // Strategy 2: Similar manufacturer part numbers
           if (candidates.length < 80 && storeItem.mfrPartNumber && storeItem.mfrPartNumber.length >= 3) {
-            const storeMfr = storeItem.mfrPartNumber.toUpperCase();
-            const mfrMatches = supplierItems.filter(s => {
+            const storeMfrNorm = normalizePartNumber(storeItem.mfrPartNumber);
+            const mfrMatches = supplierItems.filter((s) => {
               if (!s.mfrPartNumber) return false;
-              const supplierMfr = s.mfrPartNumber.toUpperCase();
-              // Check for 3+ char prefix match or substring containment
-              return storeMfr.length >= 3 && supplierMfr.length >= 3 &&
-                     (storeMfr.startsWith(supplierMfr.substring(0, 3)) ||
-                      supplierMfr.startsWith(storeMfr.substring(0, 3)) ||
-                      storeMfr.includes(supplierMfr) ||
-                      supplierMfr.includes(storeMfr));
+              const supplierMfrNorm = normalizePartNumber(s.mfrPartNumber);
+              return supplierMfrNorm && storeMfrNorm && computePartSimilarity(storeMfrNorm, supplierMfrNorm) >= 0.5;
             });
             candidates = [...new Set([...candidates, ...mfrMatches])];
           }
-          
+
           // Strategy 3: Similar full part numbers (substring matching)
           if (candidates.length < 120) {
-            const storePartUpper = storeItem.partNumber.toUpperCase().replace(/[^A-Z0-9]/g, '');
-            const partMatches = supplierItems.filter(s => {
-              const supplierPartUpper = s.partNumber.toUpperCase().replace(/[^A-Z0-9]/g, '');
-              // Check for 4+ char substring match
-              if (storePartUpper.length < 4 || supplierPartUpper.length < 4) return false;
-              for (let j = 0; j <= storePartUpper.length - 4; j++) {
-                const substring = storePartUpper.substring(j, j + 4);
-                if (supplierPartUpper.includes(substring)) return true;
-              }
-              return false;
+            const storePartUpper = normalizePartNumber(storeItem.partNumber || storeItem.partNumberNorm);
+            const partMatches = supplierItems.filter((s) => {
+              const supplierPartUpper = normalizePartNumber(s.partNumber || s.partNumberNorm);
+              const similarity = computePartSimilarity(storePartUpper, supplierPartUpper);
+              return similarity >= 0.45;
             });
             candidates = [...new Set([...candidates, ...partMatches])];
           }
-          
+
           // Strategy 4: Description similarity (if available)
-          if (candidates.length < 150 && storeItem.description) {
+          if (candidates.length < 180 && storeItem.description) {
             const storeDesc = storeItem.description.toLowerCase();
-            const descMatches = supplierItems.filter(s => {
+            const descMatches = supplierItems.filter((s) => {
               if (!s.description) return false;
               const supplierDesc = s.description.toLowerCase();
-              // Check if descriptions share 2+ significant words
-              const storeWords = storeDesc.split(/\s+/).filter(w => w.length > 3);
-              const supplierWords = new Set(supplierDesc.split(/\s+/).filter(w => w.length > 3));
-              const commonWords = storeWords.filter(w => supplierWords.has(w));
+              const storeWords = storeDesc.split(/\s+/).filter((w) => w.length > 3);
+              const supplierWords = new Set(supplierDesc.split(/\s+/).filter((w) => w.length > 3));
+              const commonWords = storeWords.filter((w) => supplierWords.has(w));
               return commonWords.length >= 2;
             });
             candidates = [...new Set([...candidates, ...descMatches])];
           }
-          
-          // Limit to 150 candidates (increased from 100 for better coverage)
-          candidates = candidates.slice(0, 150);
-          
-          console.log(`[AI-MATCH] Item ${itemCounter}/${unmatchedStoreItems.length}: ${storeItem.partNumber} - ${candidates.length} candidates`);
+
+          // Score candidates and take top-ranked list
+          const candidateScores = new Map<string, number>();
+          for (const candidate of candidates) {
+            const score = scoreCandidate(storeItem, candidate);
+            const previous = candidateScores.get(candidate.id) || 0;
+            if (score > previous) {
+              candidateScores.set(candidate.id, score);
+            }
+          }
+
+          const rankedCandidates = Array.from(candidateScores.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 50)
+            .map(([id, score]) => ({
+              ...(candidates.find((c) => c.id === id) as any),
+              __score: score,
+            }));
+
+          console.log(`[AI-MATCH] Item ${itemCounter}/${unmatchedStoreItems.length}: ${storeItem.partNumber} - ${rankedCandidates.length} ranked candidates`);
           
           // Create optimized prompt for AI
-          const prompt = `You are an expert automotive parts matcher. Find the BEST match for this store part from the supplier catalog.
+          const prompt = `You are an expert automotive parts matcher. Candidates are pre-ranked (best first). Find the BEST match for this store part from the supplier catalog.
 
 MATCHING EXAMPLES:
 ✓ MATCH: "ABC12345" matches "ABC-12345" (same part, different punctuation)
@@ -168,8 +238,8 @@ Store Item:
 - Line: ${storeItem.lineCode || 'N/A'}
 - Mfr: ${storeItem.mfrPartNumber || 'N/A'}
 
-Supplier Catalog (${candidates.length} candidates):
-${candidates.map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}${s.lineCode ? ` [${s.lineCode}]` : ''}${s.mfrPartNumber ? ` [${s.mfrPartNumber}]` : ''}`).join('\n')}
+Supplier Catalog (${rankedCandidates.length} candidates):
+${rankedCandidates.map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}${s.lineCode ? ` [${s.lineCode}]` : ''}${s.mfrPartNumber ? ` [${s.mfrPartNumber}]` : ''} (score: ${s.__score.toFixed(2)})`).join('\n')}
 
 Find the BEST match. When in doubt, MATCH IT (60%+ similarity). Respond with ONLY valid JSON:
 {
@@ -217,10 +287,35 @@ Find the BEST match. When in doubt, MATCH IT (60%+ similarity). Respond with ONL
           const aiResponse = JSON.parse(responseText);
 
           if (aiResponse.match && aiResponse.supplierPartNumber) {
-            // Find the supplier item
-            const supplierItem = supplierItems.find(
-              (s) => s.partNumber === aiResponse.supplierPartNumber
-            );
+            const proposedPart = aiResponse.supplierPartNumber;
+            const normalizedProposed = normalizePartNumber(proposedPart);
+
+            let supplierItem = supplierByExactPart.get(proposedPart.toUpperCase()) || null;
+
+            if (!supplierItem && normalizedProposed) {
+              const normalizedHits = supplierByNormalizedPart.get(normalizedProposed);
+              if (normalizedHits && normalizedHits.length > 0) {
+                supplierItem = normalizedHits[0];
+              }
+            }
+
+            if (!supplierItem && normalizedProposed) {
+              supplierItem = rankedCandidates.find((candidate) => {
+                const candidateNorm = normalizePartNumber(candidate.partNumber || candidate.partNumberNorm);
+                return (
+                  candidateNorm === normalizedProposed ||
+                  candidateNorm.includes(normalizedProposed) ||
+                  normalizedProposed.includes(candidateNorm)
+                );
+              }) || null;
+            }
+
+            if (!supplierItem && normalizedProposed) {
+              supplierItem = rankedCandidates.find((candidate) => {
+                const candidateNorm = normalizePartNumber(candidate.partNumber || candidate.partNumberNorm);
+                return computePartSimilarity(candidateNorm, normalizedProposed) >= 0.6;
+              }) || null;
+            }
 
             if (supplierItem) {
               aiMatches.push({
@@ -234,10 +329,18 @@ Find the BEST match. When in doubt, MATCH IT (60%+ similarity). Respond with ONL
                 features: {
                   reason: aiResponse.reason,
                   aiModel: 'gpt-4.1-mini',
+                  normalizedResponse: normalizedProposed,
+                  resolution: supplierByExactPart.has(proposedPart.toUpperCase())
+                    ? 'exact_part_number'
+                    : supplierByNormalizedPart.has(normalizedProposed)
+                      ? 'normalized_part_match'
+                      : 'candidate_fuzzy',
                 },
                 status: 'PENDING',
               });
-              console.log(`[AI-MATCH] Found match: ${storeItem.partNumber} -> ${supplierItem.partNumber} (${aiResponse.confidence})`);
+              console.log(`[AI-MATCH] Found match: ${storeItem.partNumber} -> ${supplierItem.partNumber} (${aiResponse.confidence}) via ${normalizedProposed}`);
+            } else {
+              console.log(`[AI-MATCH] Could not resolve AI response for ${storeItem.partNumber}: ${proposedPart}`);
             }
           }
         } catch (error: any) {
