@@ -24,7 +24,6 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const processingJobsRef = useRef<Set<string>>(new Set());
 
   // Poll for active jobs
   useEffect(() => {
@@ -54,48 +53,19 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
       
       setActiveJobs(jobs);
       
-      // Process next chunk for each active job (only if not already processing)
-      for (const job of jobs) {
-        if ((job.status === 'processing' || job.status === 'pending') && !processingJobsRef.current.has(job.id)) {
-          processJobChunk(job.id);
-        }
-      }
+      // Jobs are now processed by Vercel Cron, we just monitor status
     } catch (err) {
       console.error('Failed to load jobs:', err);
     }
   };
 
-  const processJobChunk = async (jobId: string) => {
-    // Mark job as being processed
-    processingJobsRef.current.add(jobId);
-    
-    try {
-      const res = await fetch(`/api/jobs/${jobId}/process`, {
-        method: 'POST',
-      });
-      
-      if (!res.ok) {
-        processingJobsRef.current.delete(jobId);
-        return;
-      }
-      
-      const data = await res.json();
-      
-      if (data.job?.status === 'completed') {
-        // Job completed, refresh project data
-        if (onJobComplete) {
-          onJobComplete();
-        }
-        processingJobsRef.current.delete(jobId);
-      } else {
-        // Chunk complete, allow next chunk to be processed
-        processingJobsRef.current.delete(jobId);
-      }
-    } catch (err) {
-      console.error(`Failed to process job ${jobId}:`, err);
-      processingJobsRef.current.delete(jobId);
+  // Check if any jobs completed and trigger refresh
+  useEffect(() => {
+    const completedJobs = activeJobs.filter(j => j.status === 'completed');
+    if (completedJobs.length > 0 && onJobComplete) {
+      onJobComplete();
     }
-  };
+  }, [activeJobs, onJobComplete]);
 
   const startJob = async (jobType: 'fuzzy' | 'ai' | 'web-search') => {
     setLoading(true);
@@ -228,10 +198,7 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
           <div className="text-xs mt-1">20 items/batch, auto-continues</div>
         </button>
       </div>
-      
-      <div className="mt-4 text-sm text-gray-600">
-        <p>💡 <strong>Tip:</strong> Background jobs run automatically in batches to avoid timeouts. You can close this page and come back later - jobs will continue running.</p>
-      </div>
-    </div>
-  );
-}
+            <p className="flex items-start gap-2 text-sm text-gray-600">
+          <span>💡</span>
+          <span><strong>Tip:</strong> Background jobs are processed by Vercel Cron every minute. You can close this page and come back later - jobs will continue running automatically.</span>
+        </p>

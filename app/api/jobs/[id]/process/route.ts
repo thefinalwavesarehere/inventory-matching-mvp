@@ -32,13 +32,19 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    // Allow internal calls from cron
+    const internalCall = req.headers.get('x-internal-call');
+    const isInternalCall = internalCall === process.env.CRON_SECRET;
     
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
+    if (!isInternalCall) {
+      const session = await getServerSession(authOptions);
+      
+      if (!session) {
+        return NextResponse.json(
+          { success: false, error: 'Unauthorized' },
+          { status: 401 }
+        );
+      }
     }
 
     const jobId = params.id;
