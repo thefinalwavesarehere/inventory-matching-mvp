@@ -148,10 +148,10 @@ export async function POST(
     if (jobType === 'fuzzy') {
       newMatches = await processFuzzyChunk(chunk, supplierItems, job.projectId);
     } else if (jobType === 'ai') {
-      const { processAIMatching } = await import('./processors');
+      const { processAIMatching } = await import('../processors');
       newMatches = await processAIMatching(chunk, supplierItems, job.projectId);
     } else if (jobType === 'web-search') {
-      const { processWebSearchMatching } = await import('./processors');
+      const { processWebSearchMatching } = await import('../processors');
       newMatches = await processWebSearchMatching(chunk, supplierItems, job.projectId);
     }
 
