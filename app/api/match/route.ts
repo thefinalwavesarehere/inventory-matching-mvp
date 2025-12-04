@@ -242,7 +242,7 @@ export async function POST(req: NextRequest) {
       lineCode: item.lineCode,
       mfrPartNumber: item.mfrPartNumber,
       description: item.description,
-      currentCost: item.currentCost,
+      currentCost: item.currentCost ? Number(item.currentCost) : null,
     }));
 
     const engineSupplierItems: EngineSupplierItem[] = supplierItems.map((item) => ({
@@ -253,7 +253,7 @@ export async function POST(req: NextRequest) {
       lineCode: item.lineCode,
       mfrPartNumber: item.mfrPartNumber,
       description: item.description,
-      currentCost: item.currentCost,
+      currentCost: item.currentCost ? Number(item.currentCost) : null,
     }));
 
     const fuzzyResult = stage2FuzzyMatching(engineStoreItems, engineSupplierItems, matchedStoreIds, {
