@@ -42,18 +42,20 @@ export function extractLineCode(partNumber: string): {
   const potentialMfrPart = partNumber.substring(3);
   
   // Validate that the line code contains at least 2 letters
-  // This prevents "20SC" from being parsed as lineCode="20S", mfr="C"
+  // AND that the remaining mfrPartNumber is at least 2 characters
+  // This prevents "AC488" from being parsed as lineCode="AC4", mfr="88"
   const letterCount = (potentialLineCode.match(/[A-Z]/g) || []).length;
+  const hasValidMfrPart = potentialMfrPart && potentialMfrPart.length >= 2;
   
-  if (letterCount >= 2) {
-    // Valid line code (e.g., "ABC", "PPG", "01M")
+  if (letterCount >= 2 && hasValidMfrPart) {
+    // Valid line code (e.g., "ABC", "PPG", "AEL")
     return {
       lineCode: potentialLineCode,
-      mfrPartNumber: potentialMfrPart || null,
+      mfrPartNumber: potentialMfrPart,
     };
   } else {
     // Not a valid line code - treat entire part as mfr part number
-    // (e.g., "20SC", "1234", "5A-123")
+    // (e.g., "20SC", "1234", "AC488", "5A-123")
     return {
       lineCode: null,
       mfrPartNumber: partNumber,

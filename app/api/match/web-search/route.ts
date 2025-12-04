@@ -9,9 +9,9 @@ import { authOptions } from '@/app/lib/auth';
 import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
 
-const perplexity = new OpenAI({
-  apiKey: process.env.PERPLEXITY_API_KEY,
-  baseURL: 'https://api.perplexity.ai',
+// Use OpenAI instead of Perplexity for better results
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function POST(req: NextRequest) {
@@ -96,49 +96,50 @@ export async function POST(req: NextRequest) {
           ? `\n\nOur Supplier Catalog (${candidates.length} similar items for reference):\n${candidates.map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}`).slice(0, 20).join('\n')}`
           : '';
 
-        const prompt = `You are an automotive parts expert. Find the BEST match for this store part.
+        const prompt = `You are an automotive parts expert. Find the BEST match for this store part from our supplier catalog.
 
-IMPORTANT: First check if this part matches anything in our supplier catalog below. If you find a match there, use it. Otherwise, search the web for alternatives.
+MATCHING EXAMPLES:
+✓ MATCH: "AELAC488" matches "AC488" (line code stripped)
+✓ MATCH: "ABC-123" matches "ABC123" (punctuation removed)
+✓ MATCH: "LTG-G6002" matches "LTGG6002" (punctuation removed)
+✓ MATCH: "ABH8865" matches "BAT08865" (different line code, same core)
+✗ NO MATCH: "ABC12345" vs "ABC54321" (different core numbers)
 
 Store Part to Match:
-- Part Number: ${storeItem.partNumber}
-- Description: ${storeItem.description || 'N/A'}
-- Line Code: ${storeItem.lineCode || 'N/A'}
-- Manufacturer Part: ${storeItem.mfrPartNumber || 'N/A'}${catalogContext}
+- Part: ${storeItem.partNumber}
+- Desc: ${storeItem.description || 'N/A'}
+- Line: ${storeItem.lineCode || 'N/A'}
+- Mfr: ${storeItem.mfrPartNumber || 'N/A'}${catalogContext}
 
 MATCHING RULES:
-1. Check our supplier catalog first - prefer matches from there
-2. Part numbers may have different punctuation but same core numbers
-3. Line codes indicate manufacturer - prioritize same line code
-4. Accept 60%+ similarity - minor variations are OK
-5. If no supplier catalog match, search web for: RockAuto, AutoZone, O'Reilly, NAPA, etc.
+1. **Check supplier catalog ONLY** - do not search the web
+2. **Punctuation doesn't matter**: ABC-123 = ABC.123 = ABC 123 = ABC123
+3. **Line codes can differ**: AELAC488 = AC488 (focus on core numbers)
+4. **60%+ similarity is acceptable**: Minor differences are OK
+5. **When in doubt, MATCH IT** - be generous
 
 Respond with ONLY valid JSON:
 {
   "match": true/false,
   "supplierPartNumber": "EXACT_PART_NUMBER" or null,
-  "supplierName": "Company Name" or null,
   "confidence": 0.6-1.0,
-  "description": "Part description",
-  "price": "$XX.XX" or null,
-  "sourceUrl": "https://..." or null,
-  "reason": "Why this matches (catalog match, web search, etc.)"
+  "reason": "Brief reason"
 }`;
 
-        const response = await perplexity.chat.completions.create({
-          model: 'sonar-pro',
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4.1-mini',
           messages: [
             {
               role: 'system',
-              content: 'You are an expert automotive parts matcher. Check the supplier catalog first, then search the web if needed. Be generous with matches - 60%+ similarity is acceptable. Always respond with valid JSON only.',
+              content: 'You are an expert automotive parts matcher. Match parts from the supplier catalog only. Be generous - 60%+ similarity is acceptable. Always respond with valid JSON only.',
             },
             {
               role: 'user',
               content: prompt,
             },
           ],
-          temperature: 0.4,  // Increased for more creative matching
-          max_tokens: 600,
+          temperature: 0.3,  // Lower for more consistent matching
+          max_tokens: 250,
         });
 
         let responseText = response.choices[0]?.message?.content?.trim();
@@ -163,6 +164,11 @@ Respond with ONLY valid JSON:
         const webResponse = JSON.parse(responseText);
 
         if (webResponse.match && webResponse.supplierPartNumber) {
+          // Fill in missing fields for catalog-only matches
+          if (!webResponse.supplierName) webResponse.supplierName = 'Supplier Catalog';
+          if (!webResponse.description) webResponse.description = null;
+          if (!webResponse.price) webResponse.price = null;
+          if (!webResponse.sourceUrl) webResponse.sourceUrl = null;
           console.log(`[WEB-SEARCH] Found match: ${storeItem.partNumber} -> ${webResponse.supplierPartNumber} (${webResponse.confidence})`);
 
           // Find or create supplier item for web-found match
