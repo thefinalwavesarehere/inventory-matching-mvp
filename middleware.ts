@@ -31,9 +31,10 @@ export const config = {
      * - /api/auth (NextAuth API routes - includes signin page)
      * - /api/cron (Vercel Cron jobs - has own CRON_SECRET auth)
      * - /api/jobs (Background job processing - has own auth)
+     * - /api/progress (Progress tracking - public read access)
      * - /_next (Next.js internals)
      * - /favicon.ico, /robots.txt (static files)
      */
-    '/((?!api/auth|api/cron|api/jobs|_next|favicon.ico|robots.txt).*)',
+    '/((?!api/auth|api/cron|api/jobs|api/progress|_next|favicon.ico|robots.txt).*)',
   ],
 };
