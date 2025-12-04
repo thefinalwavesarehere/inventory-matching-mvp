@@ -50,56 +50,41 @@ export async function GET(req: NextRequest) {
 
     const results = [];
 
-    // Process one chunk for each active job
+    // Process one chunk for each active job (fire-and-forget)
     for (const job of activeJobs) {
       try {
-        console.log(`[CRON] ========== Processing job ${job.id} ==========`);
+        console.log(`[CRON] ========== Triggering job ${job.id} ==========`);
         console.log(`[CRON] Job name: ${job.currentStageName}`);
         console.log(`[CRON] Job status: ${job.status}`);
         console.log(`[CRON] Job config:`, JSON.stringify(job.config));
 
-        // Call the process endpoint
+        // Call the process endpoint (fire-and-forget - don't wait for response)
         const processUrl = `${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}/api/jobs/${job.id}/process`;
-        console.log(`[CRON] Calling process URL: ${processUrl}`);
+        console.log(`[CRON] Triggering process URL: ${processUrl}`);
         
-        const response = await fetch(processUrl, {
+        // Fire-and-forget: trigger the request but don't await the response
+        fetch(processUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             // Pass through a special header to bypass auth for internal calls
             'x-internal-call': process.env.CRON_SECRET || '',
           },
+        }).catch(error => {
+          // Log errors but don't block
+          console.error(`[CRON] Error triggering job ${job.id}:`, error.message);
         });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`[CRON] Failed to process job ${job.id}: ${response.status} ${response.statusText}`);
-          console.error(`[CRON] Error response:`, errorText);
-          results.push({
-            jobId: job.id,
-            success: false,
-            error: `${response.statusText}: ${errorText}`,
-          });
-          continue;
-        }
-
-        const data = await response.json();
         
-        console.log(`[CRON] ========== Job ${job.id} chunk complete ==========`);
-        console.log(`[CRON] Progress: ${data.job?.processedItems}/${data.job?.totalItems} items (${data.job?.progressPercentage?.toFixed(1)}%)`);
-        console.log(`[CRON] Matches: ${data.job?.matchesFound} (${data.job?.matchRate?.toFixed(1)}% rate)`);
-        console.log(`[CRON] Status: ${data.job?.status}`);
-        console.log(`[CRON] Message: ${data.message}`);
+        console.log(`[CRON] Job ${job.id} triggered successfully (processing in background)`);
         
         results.push({
           jobId: job.id,
           success: true,
-          status: data.job?.status,
-          progress: data.job?.progressPercentage,
+          triggered: true,
         });
 
       } catch (error: any) {
-        console.error(`[CRON] ========== ERROR processing job ${job.id} ==========`);
+        console.error(`[CRON] ========== ERROR triggering job ${job.id} ==========`);
         console.error(`[CRON] Error type: ${error.constructor.name}`);
         console.error(`[CRON] Error message:`, error.message);
         console.error(`[CRON] Error stack:`, error.stack);
