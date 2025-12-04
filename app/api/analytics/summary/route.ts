@@ -53,9 +53,9 @@ export async function GET(request: NextRequest) {
       rejected: matchCounts.find(m => m.status === 'REJECTED')?._count || 0,
     };
 
-    // Get match counts by source
-    const matchesBySource = await prisma.matchCandidate.groupBy({
-      by: ['matchSource'],
+    // Get match counts by method
+    const matchesByMethod = await prisma.matchCandidate.groupBy({
+      by: ['method'],
       where: {
         projectId,
         status: { in: ['PENDING', 'CONFIRMED'] },
@@ -64,11 +64,11 @@ export async function GET(request: NextRequest) {
     });
 
     const sourceBreakdown = {
-      exact: matchesBySource.find(m => m.matchSource === 'EXACT')?._count || 0,
-      interchange: matchesBySource.find(m => m.matchSource === 'INTERCHANGE')?._count || 0,
-      fuzzy: matchesBySource.find(m => m.matchSource === 'FUZZY')?._count || 0,
-      ai: matchesBySource.find(m => m.matchSource === 'AI')?._count || 0,
-      web: matchesBySource.find(m => m.matchSource === 'WEB_SEARCH')?._count || 0,
+      exact: matchesByMethod.find(m => m.method === 'EXACT')?._count || 0,
+      interchange: matchesByMethod.find(m => m.method === 'INTERCHANGE')?._count || 0,
+      fuzzy: matchesByMethod.find(m => m.method === 'FUZZY')?._count || 0,
+      ai: matchesByMethod.find(m => m.method === 'AI')?._count || 0,
+      web: matchesByMethod.find(m => m.method === 'WEB_SEARCH')?._count || 0,
     };
 
     // Calculate match rate (unique store items matched / total store items)
