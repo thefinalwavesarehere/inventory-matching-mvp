@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import FileUploader from '@/app/components/FileUploader';
 import WorkflowStatus from '@/app/components/WorkflowStatus';
+import BackgroundJobControls from '@/app/components/BackgroundJobControls';
 
 interface Project {
   id: string;
@@ -600,9 +601,15 @@ export default function ProjectDetailPage() {
           </div>
         </div>
 
+        {/* Background Jobs */}
+        <BackgroundJobControls 
+          projectId={projectId} 
+          onJobComplete={() => loadProject()}
+        />
+
         {/* Actions */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Actions</h2>
+          <h2 className="text-xl font-bold mb-4">Manual Matching (Click-by-Click)</h2>
           <div className="flex gap-4">
             <button
               onClick={handleRunMatch}
