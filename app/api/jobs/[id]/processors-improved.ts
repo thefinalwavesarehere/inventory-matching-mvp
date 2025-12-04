@@ -122,9 +122,9 @@ function findBestCatalogMatch(storeItem: any, supplierItems: any[]): any | null 
 
     // Boost score if descriptions match
     if (score > 0 && storeDesc && supplierDesc) {
-      const descWords1 = storeDesc.split(/\s+/).filter(w => w.length > 3);
-      const descWords2 = supplierDesc.split(/\s+/).filter(w => w.length > 3);
-      const commonWords = descWords1.filter(w => descWords2.includes(w));
+      const descWords1 = storeDesc.split(/\s+/).filter((w: string) => w.length > 3);
+      const descWords2 = supplierDesc.split(/\s+/).filter((w: string) => w.length > 3);
+      const commonWords = descWords1.filter((w: string) => descWords2.includes(w));
       if (commonWords.length >= 2) {
         score = Math.min(1.0, score + 0.1);
         reasons.push('description match');
