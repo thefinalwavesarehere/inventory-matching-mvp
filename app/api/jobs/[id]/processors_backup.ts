@@ -131,8 +131,7 @@ Respond with ONLY valid JSON:
 
 /**
  * Process web search matching for a chunk of items
- * Uses multi-strategy approach: aggressive catalog matching, pattern inference, and AI reasoning
- * Achieves 90%+ match rate through intelligent matching
+ * Uses improved OpenAI-based catalog search
  */
 export async function processWebSearchMatching(
   storeItems: any[],
@@ -150,23 +149,14 @@ export async function processWebSearchMatching(
         ? `\\n\\nOur Supplier Catalog (${candidates.length} similar items for reference):\\n${candidates.map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}`).slice(0, 20).join('\\n')}`
         : '';
 
-      const prompt = `You are an automotive parts expert with deep knowledge of part numbering systems. Your goal is to find or INFER the most likely supplier part number for this store item.
-
-MATCHING STRATEGIES (in order of preference):
-1. **Exact catalog match** - Find exact match in supplier catalog
-2. **Pattern-based inference** - Infer likely part number based on patterns:
-   - Strip line codes: "AELAC488" → "AC488"
-   - Remove punctuation: "ABC-123" → "ABC123"
-   - Common substitutions: "BAT" prefix → remove, "FIL" → "F", etc.
-3. **Manufacturer cross-reference** - Use mfrPartNumber if available
-4. **Description-based inference** - Infer from description patterns
+      const prompt = `You are an automotive parts expert. Find the BEST match for this store part from our supplier catalog.
 
 MATCHING EXAMPLES:
-✓ "AELAC488" → "AC488" (strip line code)
-✓ "ABC-123" → "ABC123" (remove punctuation)
-✓ "LTG-G6002" → "LTGG6002" or "G6002" (remove punctuation/prefix)
-✓ "ABH8865" → "BAT08865" or "8865" (try variations)
-✓ "FILTER-OIL-123" → "F123" or "OF123" (abbreviate)
+✓ MATCH: "AELAC488" matches "AC488" (line code stripped)
+✓ MATCH: "ABC-123" matches "ABC123" (punctuation removed)
+✓ MATCH: "LTG-G6002" matches "LTGG6002" (punctuation removed)
+✓ MATCH: "ABH8865" matches "BAT08865" (different line code, same core)
+✗ NO MATCH: "ABC12345" vs "ABC54321" (different core numbers)
 
 Store Part to Match:
 - Part: ${storeItem.partNumber}
@@ -175,22 +165,18 @@ Store Part to Match:
 - Mfr: ${storeItem.mfrPartNumber || 'N/A'}${catalogContext}
 
 MATCHING RULES:
-1. **BE AGGRESSIVE** - Try to find a match for EVERY item
-2. **Use catalog as reference** - But also infer new part numbers
-3. **Punctuation doesn't matter** - ABC-123 = ABC123
-4. **Line codes can be stripped** - AELAC488 → AC488
-5. **50%+ similarity is acceptable** - Be very generous
-6. **When in doubt, INFER IT** - Create the most likely part number
-7. **Use manufacturer part if available** - mfrPartNumber is often the answer
-
-Your task: Return the MOST LIKELY supplier part number, even if you have to infer it.
+1. **Check supplier catalog ONLY** - do not search the web
+2. **Punctuation doesn't matter**: ABC-123 = ABC.123 = ABC 123 = ABC123
+3. **Line codes can differ**: AELAC488 = AC488 (focus on core numbers)
+4. **60%+ similarity is acceptable**: Minor differences are OK
+5. **When in doubt, MATCH IT** - be generous
 
 Respond with ONLY valid JSON:
 {
   "match": true/false,
-  "supplierPartNumber": "INFERRED_OR_MATCHED_PART_NUMBER" or null,
-  "confidence": 0.5-1.0,
-  "reason": "Brief reason (e.g., 'catalog match', 'inferred from pattern', 'mfr cross-ref')"
+  "supplierPartNumber": "EXACT_PART_NUMBER" or null,
+  "confidence": 0.6-1.0,
+  "reason": "Brief reason"
 }`;
 
       const response = await openai.chat.completions.create({
@@ -198,7 +184,7 @@ Respond with ONLY valid JSON:
         messages: [
           {
             role: 'system',
-            content: 'You are an expert automotive parts matcher with deep knowledge of part numbering patterns. Be VERY aggressive - 50%+ similarity is acceptable. Infer part numbers when needed. Always respond with valid JSON only.',
+            content: 'You are an expert automotive parts matcher. Match parts from the supplier catalog only. Be generous - 60%+ similarity is acceptable. Always respond with valid JSON only.',
           },
           {
             role: 'user',
