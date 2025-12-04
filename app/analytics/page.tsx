@@ -3,23 +3,23 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-interface StageMetrics {
-  stage: string;
-  itemsProcessed: number;
-  matchesFound: number;
+interface AnalyticsSummary {
+  totalStoreItems: number;
+  uniqueMatchedItems: number;
+  totalMatchCandidates: number;
   matchRate: number;
-  avgConfidence: number;
-  executionTimeMs: number;
-}
-
-interface MatchingJobMetrics {
-  id: string;
-  createdAt: string;
-  totalItems: number;
-  matchedItems: number;
-  matchRate: number;
-  executionTimeMs: number;
-  stageMetrics: StageMetrics[];
+  matchCounts: {
+    pending: number;
+    confirmed: number;
+    rejected: number;
+  };
+  sourceBreakdown: {
+    exact: number;
+    interchange: number;
+    fuzzy: number;
+    ai: number;
+    web: number;
+  };
 }
 
 interface ConfidenceBucket {
@@ -28,15 +28,26 @@ interface ConfidenceBucket {
   percentage: number;
 }
 
+interface BackgroundJob {
+  id: string;
+  jobType: string;
+  status: string;
+  totalItems: number;
+  processedItems: number;
+  matchesFound: number;
+  createdAt: string;
+  completedAt: string | null;
+}
+
 export default function AnalyticsPage() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get('projectId');
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [jobs, setJobs] = useState<MatchingJobMetrics[]>([]);
-  const [selectedJob, setSelectedJob] = useState<MatchingJobMetrics | null>(null);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [confidenceDistribution, setConfidenceDistribution] = useState<ConfidenceBucket[]>([]);
+  const [backgroundJobs, setBackgroundJobs] = useState<BackgroundJob[]>([]);
 
   useEffect(() => {
     if (projectId) {
@@ -48,21 +59,24 @@ export default function AnalyticsPage() {
     try {
       setLoading(true);
       
-      // Load matching jobs with metrics
-      const jobsRes = await fetch(`/api/analytics/jobs?projectId=${projectId}`);
-      if (!jobsRes.ok) throw new Error('Failed to load job metrics');
-      const jobsData = await jobsRes.json();
-      setJobs(jobsData.jobs || []);
-      
-      if (jobsData.jobs && jobsData.jobs.length > 0) {
-        setSelectedJob(jobsData.jobs[0]);
-      }
+      // Load summary metrics
+      const summaryRes = await fetch(`/api/analytics/summary?projectId=${projectId}`);
+      if (!summaryRes.ok) throw new Error('Failed to load summary');
+      const summaryData = await summaryRes.json();
+      setSummary(summaryData);
       
       // Load confidence distribution
       const confRes = await fetch(`/api/analytics/confidence?projectId=${projectId}`);
       if (!confRes.ok) throw new Error('Failed to load confidence distribution');
       const confData = await confRes.json();
       setConfidenceDistribution(confData.distribution || []);
+      
+      // Load background jobs
+      const jobsRes = await fetch(`/api/jobs?projectId=${projectId}&status=completed`);
+      if (jobsRes.ok) {
+        const jobsData = await jobsRes.json();
+        setBackgroundJobs(jobsData.jobs || []);
+      }
       
     } catch (err: any) {
       setError(err.message);
@@ -127,191 +141,138 @@ export default function AnalyticsPage() {
           <div className="text-center py-12">
             <div className="text-gray-500">Loading analytics...</div>
           </div>
-        ) : (
+        ) : summary ? (
           <div className="space-y-6">
             {/* Overall Stats */}
-            {selectedJob && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-white rounded-lg shadow p-6">
-                  <div className="text-sm text-gray-600 mb-1">Total Items</div>
-                  <div className="text-3xl font-bold text-gray-900">
-                    {selectedJob.totalItems.toLocaleString()}
-                  </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="text-sm text-gray-600 mb-1">Total Items</div>
+                <div className="text-3xl font-bold text-gray-900">
+                  {summary.totalStoreItems.toLocaleString()}
                 </div>
-                <div className="bg-white rounded-lg shadow p-6">
-                  <div className="text-sm text-gray-600 mb-1">Matched Items</div>
-                  <div className="text-3xl font-bold text-green-600">
-                    {selectedJob.matchedItems.toLocaleString()}
-                  </div>
-                </div>
-                <div className="bg-white rounded-lg shadow p-6">
-                  <div className="text-sm text-gray-600 mb-1">Match Rate</div>
-                  <div className="text-3xl font-bold text-blue-600">
-                    {(selectedJob.matchRate * 100).toFixed(1)}%
-                  </div>
-                </div>
-                <div className="bg-white rounded-lg shadow p-6">
-                  <div className="text-sm text-gray-600 mb-1">Execution Time</div>
-                  <div className="text-3xl font-bold text-purple-600">
-                    {(selectedJob.executionTimeMs / 1000).toFixed(1)}s
-                  </div>
-                </div>
+                <div className="text-xs text-gray-500 mt-1">Store inventory items</div>
               </div>
-            )}
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="text-sm text-gray-600 mb-1">Matched Items</div>
+                <div className="text-3xl font-bold text-green-600">
+                  {summary.uniqueMatchedItems.toLocaleString()}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Unique items with matches</div>
+              </div>
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="text-sm text-gray-600 mb-1">Match Rate</div>
+                <div className="text-3xl font-bold text-blue-600">
+                  {(summary.matchRate * 100).toFixed(1)}%
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Items matched / Total items</div>
+              </div>
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="text-sm text-gray-600 mb-1">Total Candidates</div>
+                <div className="text-3xl font-bold text-purple-600">
+                  {summary.totalMatchCandidates.toLocaleString()}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">All potential matches</div>
+              </div>
+            </div>
 
-            {/* Stage-by-Stage Metrics */}
-            {selectedJob && selectedJob.stageMetrics.length > 0 && (
-              <div className="bg-white rounded-lg shadow">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h2 className="text-xl font-semibold text-gray-900">
-                    Stage-by-Stage Performance
-                  </h2>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Breakdown of matching performance by stage
-                  </p>
+            {/* Match Status Breakdown */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Match Status</h2>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center p-4 bg-yellow-50 rounded-lg">
+                  <div className="text-2xl font-bold text-yellow-600">
+                    {summary.matchCounts.pending.toLocaleString()}
+                  </div>
+                  <div className="text-sm text-gray-600 mt-1">Pending Review</div>
                 </div>
-                <div className="p-6">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Stage
-                          </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Items Processed
-                          </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Matches Found
-                          </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Match Rate
-                          </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Avg Confidence
-                          </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Time (ms)
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {selectedJob.stageMetrics.map((metric, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                metric.stage === 'Stage 1' ? 'bg-blue-100 text-blue-800' :
-                                metric.stage === 'Stage 2' ? 'bg-purple-100 text-purple-800' :
-                                metric.stage === 'Stage 3' ? 'bg-orange-100 text-orange-800' :
-                                'bg-gray-100 text-gray-800'
-                              }`}>
-                                {metric.stage}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-900">
-                              {metric.itemsProcessed.toLocaleString()}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right font-semibold text-green-600">
-                              {metric.matchesFound.toLocaleString()}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right">
-                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                metric.matchRate >= 0.3 ? 'bg-green-100 text-green-800' :
-                                metric.matchRate >= 0.15 ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-gray-100 text-gray-800'
-                              }`}>
-                                {(metric.matchRate * 100).toFixed(1)}%
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-900">
-                              {(metric.avgConfidence * 100).toFixed(0)}%
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-600">
-                              {metric.executionTimeMs.toLocaleString()}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                <div className="text-center p-4 bg-green-50 rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">
+                    {summary.matchCounts.confirmed.toLocaleString()}
                   </div>
-                  
-                  {/* Visual Stage Breakdown */}
-                  <div className="mt-6">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-3">Match Distribution by Stage</h3>
-                    <div className="space-y-3">
-                      {selectedJob.stageMetrics.map((metric, idx) => {
-                        const percentage = selectedJob.matchedItems > 0 
-                          ? (metric.matchesFound / selectedJob.matchedItems) * 100 
-                          : 0;
-                        return (
-                          <div key={idx}>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="text-gray-700">{metric.stage}</span>
-                              <span className="text-gray-600">
-                                {metric.matchesFound} matches ({percentage.toFixed(1)}%)
-                              </span>
-                            </div>
-                            <div className="w-full bg-gray-200 rounded-full h-3">
-                              <div
-                                className={`h-3 rounded-full ${
-                                  metric.stage === 'Stage 1' ? 'bg-blue-600' :
-                                  metric.stage === 'Stage 2' ? 'bg-purple-600' :
-                                  metric.stage === 'Stage 3' ? 'bg-orange-600' :
-                                  'bg-gray-600'
-                                }`}
-                                style={{ width: `${percentage}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                  <div className="text-sm text-gray-600 mt-1">Confirmed</div>
+                </div>
+                <div className="text-center p-4 bg-red-50 rounded-lg">
+                  <div className="text-2xl font-bold text-red-600">
+                    {summary.matchCounts.rejected.toLocaleString()}
                   </div>
+                  <div className="text-sm text-gray-600 mt-1">Rejected</div>
                 </div>
               </div>
-            )}
+            </div>
+
+            {/* Match Source Breakdown */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Matches by Source</h2>
+              <div className="space-y-3">
+                {Object.entries(summary.sourceBreakdown).map(([source, count]) => {
+                  const percentage = summary.totalMatchCandidates > 0 
+                    ? (count / summary.totalMatchCandidates) * 100 
+                    : 0;
+                  const label = source.charAt(0).toUpperCase() + source.slice(1).replace('_', ' ');
+                  const color = 
+                    source === 'exact' ? 'bg-green-500' :
+                    source === 'interchange' ? 'bg-blue-500' :
+                    source === 'fuzzy' ? 'bg-purple-500' :
+                    source === 'ai' ? 'bg-orange-500' :
+                    'bg-pink-500';
+                  
+                  return (
+                    <div key={source}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-700 font-medium">{label}</span>
+                        <span className="text-gray-600">
+                          {count.toLocaleString()} ({percentage.toFixed(1)}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div
+                          className={`${color} h-3 rounded-full transition-all duration-300`}
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* Confidence Distribution */}
-            {confidenceDistribution.length > 0 && (
-              <div className="bg-white rounded-lg shadow">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h2 className="text-xl font-semibold text-gray-900">
-                    Confidence Distribution
-                  </h2>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Distribution of match confidence scores
-                  </p>
-                </div>
-                <div className="p-6">
-                  <div className="space-y-3">
-                    {confidenceDistribution.map((bucket, idx) => (
-                      <div key={idx}>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-gray-700 font-medium">{bucket.range}</span>
-                          <span className="text-gray-600">
-                            {bucket.count} matches ({bucket.percentage.toFixed(1)}%)
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-4">
-                          <div
-                            className={`h-4 rounded-full ${
-                              bucket.range.includes('95-100') ? 'bg-green-600' :
-                              bucket.range.includes('85-94') ? 'bg-yellow-600' :
-                              bucket.range.includes('60-84') ? 'bg-orange-600' :
-                              'bg-red-600'
-                            }`}
-                            style={{ width: `${bucket.percentage}%` }}
-                          />
-                        </div>
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">Confidence Distribution</h2>
+              <p className="text-sm text-gray-600 mb-4">Distribution of match confidence scores</p>
+              <div className="space-y-3">
+                {confidenceDistribution.map((bucket) => {
+                  const color = 
+                    bucket.range === '95-100%' ? 'bg-green-500' :
+                    bucket.range === '85-94%' ? 'bg-green-400' :
+                    bucket.range === '80-84%' ? 'bg-yellow-500' :
+                    bucket.range === '75-79%' ? 'bg-yellow-400' :
+                    bucket.range === '70-74%' ? 'bg-orange-400' :
+                    bucket.range === '60-69%' ? 'bg-orange-500' :
+                    'bg-red-500';
+                  
+                  return (
+                    <div key={bucket.range}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-700 font-medium">{bucket.range}</span>
+                        <span className="text-gray-600">
+                          {bucket.count.toLocaleString()} matches ({bucket.percentage.toFixed(1)}%)
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div
+                          className={`${color} h-3 rounded-full transition-all duration-300`}
+                          style={{ width: `${bucket.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            )}
+            </div>
 
-            {/* Historical Jobs */}
-            {jobs.length > 1 && (
+            {/* Historical Matching Jobs */}
+            {backgroundJobs.length > 0 && (
               <div className="bg-white rounded-lg shadow">
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h2 className="text-xl font-semibold text-gray-900">
@@ -321,107 +282,105 @@ export default function AnalyticsPage() {
                     Track match rate trends over time
                   </p>
                 </div>
-                <div className="p-6">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Date
-                          </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Total Items
-                          </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Matched
-                          </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Match Rate
-                          </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Time
-                          </th>
-                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {jobs.map((job) => (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Date
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Job Type
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Total Items
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Matched
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Match Rate
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {backgroundJobs.map((job) => {
+                        const matchRate = job.totalItems > 0 ? (job.matchesFound / job.totalItems) * 100 : 0;
+                        const jobTypeLabel = 
+                          job.jobType === 'fuzzy' ? 'Fuzzy Matching' :
+                          job.jobType === 'ai' ? 'AI Matching' :
+                          job.jobType === 'web' ? 'Web Search' :
+                          job.jobType;
+                        
+                        return (
                           <tr 
                             key={job.id} 
-                            className={`hover:bg-gray-50 ${selectedJob?.id === job.id ? 'bg-blue-50' : ''}`}
+                            className="hover:bg-gray-50"
                           >
-                            <td className="px-4 py-3 text-sm text-gray-900">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                               {new Date(job.createdAt).toLocaleString()}
                             </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-900">
-                              {job.totalItems.toLocaleString()}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right font-semibold text-green-600">
-                              {job.matchedItems.toLocaleString()}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right">
-                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                job.matchRate >= 0.3 ? 'bg-green-100 text-green-800' :
-                                job.matchRate >= 0.15 ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-gray-100 text-gray-800'
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                                job.jobType === 'fuzzy' ? 'bg-purple-100 text-purple-800' :
+                                job.jobType === 'ai' ? 'bg-orange-100 text-orange-800' :
+                                'bg-pink-100 text-pink-800'
                               }`}>
-                                {(job.matchRate * 100).toFixed(1)}%
+                                {jobTypeLabel}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-600">
-                              {(job.executionTimeMs / 1000).toFixed(1)}s
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              {job.totalItems.toLocaleString()}
                             </td>
-                            <td className="px-4 py-3 text-center">
-                              <button
-                                onClick={() => setSelectedJob(job)}
-                                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                              >
-                                View Details
-                              </button>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-green-600">
+                              {job.matchesFound.toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                matchRate >= 30 ? 'bg-green-100 text-green-800' :
+                                matchRate >= 15 ? 'bg-yellow-100 text-yellow-800' :
+                                matchRate >= 5 ? 'bg-orange-100 text-orange-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {matchRate.toFixed(1)}%
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                                job.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                job.status === 'processing' ? 'bg-blue-100 text-blue-800' :
+                                job.status === 'failed' ? 'bg-red-100 text-red-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {job.status}
+                              </span>
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
 
-            {/* Key Insights */}
-            {selectedJob && (
-              <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg shadow p-6 border border-blue-200">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                  💡 Key Insights
-                </h2>
-                <div className="space-y-2 text-sm text-gray-700">
-                  {selectedJob.matchRate >= 0.3 ? (
-                    <p>✅ <strong>Excellent match rate!</strong> You've achieved the target of 30-40% match rate.</p>
-                  ) : selectedJob.matchRate >= 0.15 ? (
-                    <p>⚠️ <strong>Good progress.</strong> Match rate is improving but hasn't reached the 30% target yet.</p>
-                  ) : (
-                    <p>📈 <strong>Room for improvement.</strong> Consider reviewing and approving more patterns to build up matching rules.</p>
-                  )}
-                  
-                  {selectedJob.stageMetrics.length > 0 && (
-                    <>
-                      {(selectedJob.stageMetrics.find(m => m.stage === 'Stage 1')?.matchRate ?? 0) >= 0.25 && (
-                        <p>🎯 <strong>Strong deterministic matching!</strong> Stage 1 is performing well, minimizing API costs.</p>
-                      )}
-                      {(selectedJob.stageMetrics.find(m => m.stage === 'Stage 2')?.matchesFound ?? 0) > 0 && (
-                        <p>🔍 <strong>Fuzzy matching is contributing.</strong> Stage 2 is finding additional matches with cost-aware scoring.</p>
-                      )}
-                    </>
-                  )}
-                  
-                  <p className="mt-4 pt-4 border-t border-blue-200">
-                    <strong>Tip:</strong> Approve matches with clear patterns to enable bulk approvals and build up your rule library for future runs.
-                  </p>
-                </div>
-              </div>
-            )}
+            {/* Info Box */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-blue-900 mb-2">📌 Understanding the Metrics</h3>
+              <ul className="text-sm text-blue-800 space-y-1">
+                <li><strong>Total Items:</strong> Number of parts in your store inventory</li>
+                <li><strong>Matched Items:</strong> Unique store items that have at least one supplier match</li>
+                <li><strong>Match Rate:</strong> Percentage of your inventory that has been matched</li>
+                <li><strong>Total Candidates:</strong> All potential matches (one item can have multiple matches)</li>
+              </ul>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <div className="text-gray-500">No analytics data available</div>
           </div>
         )}
       </div>

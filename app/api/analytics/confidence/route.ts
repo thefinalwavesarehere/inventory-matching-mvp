@@ -30,11 +30,14 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Calculate confidence distribution
+    // Calculate confidence distribution with finer increments
     const buckets = {
       '95-100%': 0,
       '85-94%': 0,
-      '60-84%': 0,
+      '80-84%': 0,
+      '75-79%': 0,
+      '70-74%': 0,
+      '60-69%': 0,
       'Below 60%': 0,
     };
 
@@ -44,8 +47,14 @@ export async function GET(request: NextRequest) {
         buckets['95-100%']++;
       } else if (conf >= 0.85) {
         buckets['85-94%']++;
+      } else if (conf >= 0.80) {
+        buckets['80-84%']++;
+      } else if (conf >= 0.75) {
+        buckets['75-79%']++;
+      } else if (conf >= 0.70) {
+        buckets['70-74%']++;
       } else if (conf >= 0.60) {
-        buckets['60-84%']++;
+        buckets['60-69%']++;
       } else {
         buckets['Below 60%']++;
       }

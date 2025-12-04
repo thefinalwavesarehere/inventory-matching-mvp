@@ -13,6 +13,14 @@ interface Project {
     supplierItems: number;
     matchCandidates: number;
   };
+  progress?: {
+    currentStage: string;
+    standardCompleted: boolean;
+    aiCompleted: boolean;
+    webSearchCompleted: boolean;
+  };
+  matchRate?: number;
+  uniqueMatchedItems?: number;
 }
 
 export default function Home() {
@@ -154,6 +162,32 @@ export default function Home() {
                     </p>
                   )}
 
+                  {/* Progress Badges */}
+                  {project.progress && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {project.progress.standardCompleted && (
+                        <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">
+                          ✓ Standard
+                        </span>
+                      )}
+                      {project.progress.aiCompleted && (
+                        <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs font-semibold rounded">
+                          ✓ AI
+                        </span>
+                      )}
+                      {project.progress.webSearchCompleted && (
+                        <span className="px-2 py-1 bg-pink-100 text-pink-800 text-xs font-semibold rounded">
+                          ✓ Web Search
+                        </span>
+                      )}
+                      {!project.progress.standardCompleted && !project.progress.aiCompleted && !project.progress.webSearchCompleted && (
+                        <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded">
+                          Not Started
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   <div className="space-y-2 mb-4">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Store Items:</span>
@@ -167,6 +201,14 @@ export default function Home() {
                       <span className="text-gray-600">Matches:</span>
                       <span className="font-semibold">{project._count.matchCandidates}</span>
                     </div>
+                    {project.matchRate !== undefined && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Match Rate:</span>
+                        <span className="font-semibold text-blue-600">
+                          {(project.matchRate * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-2">

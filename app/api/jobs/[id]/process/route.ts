@@ -134,7 +134,39 @@ export async function POST(
         },
       });
 
-      console.log(`[JOB-PROCESS] Job ${jobId} completed`);
+      // Update matchingProgress based on job type
+      const progressUpdate: any = {};
+      if (jobType === 'fuzzy') {
+        progressUpdate.standardCompleted = true;
+        progressUpdate.standardProcessed = job.totalItems || 0;
+        progressUpdate.standardTotalItems = job.totalItems || 0;
+        progressUpdate.standardLastRun = new Date();
+        progressUpdate.currentStage = 'AI'; // Move to next stage
+      } else if (jobType === 'ai') {
+        progressUpdate.aiCompleted = true;
+        progressUpdate.aiProcessed = job.totalItems || 0;
+        progressUpdate.aiTotalItems = job.totalItems || 0;
+        progressUpdate.aiLastRun = new Date();
+        progressUpdate.currentStage = 'WEB_SEARCH'; // Move to next stage
+      } else if (jobType === 'web-search') {
+        progressUpdate.webSearchCompleted = true;
+        progressUpdate.webSearchProcessed = job.totalItems || 0;
+        progressUpdate.webSearchTotalItems = job.totalItems || 0;
+        progressUpdate.webSearchLastRun = new Date();
+        progressUpdate.currentStage = 'REVIEW'; // Move to final stage
+      }
+
+      await prisma.matchingProgress.upsert({
+        where: { projectId: job.projectId },
+        create: {
+          projectId: job.projectId,
+          currentStage: progressUpdate.currentStage || 'STANDARD',
+          ...progressUpdate,
+        },
+        update: progressUpdate,
+      });
+
+      console.log(`[JOB-PROCESS] Job ${jobId} completed, progress updated`);
 
       return NextResponse.json({
         success: true,

@@ -34,20 +34,70 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // Get progress for all projects
+    const progressData = await prisma.matchingProgress.findMany({
+      where: {
+        projectId: {
+          in: projects.map(p => p.id),
+        },
+      },
+    });
+
+    // Get unique matched items for each project
+    const matchRates = await Promise.all(
+      projects.map(async (project) => {
+        if (project._count.storeItems === 0) {
+          return { projectId: project.id, matchRate: 0, uniqueMatchedItems: 0 };
+        }
+        
+        const matchedItems = await prisma.matchCandidate.findMany({
+          where: {
+            projectId: project.id,
+            status: { in: ['PENDING', 'CONFIRMED'] },
+          },
+          select: {
+            storeItemId: true,
+          },
+          distinct: ['storeItemId'],
+        });
+        
+        const uniqueMatchedCount = matchedItems.length;
+        const matchRate = uniqueMatchedCount / project._count.storeItems;
+        
+        return { projectId: project.id, matchRate, uniqueMatchedItems: uniqueMatchedCount };
+      })
+    );
+
+    const progressMap = new Map(progressData.map(p => [p.projectId, p]));
+    const matchRateMap = new Map(matchRates.map(m => [m.projectId, m]));
+
     return NextResponse.json({
       success: true,
-      projects: projects.map(p => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        createdAt: p.createdAt.toISOString(),
-        updatedAt: p.updatedAt.toISOString(),
-        _count: {
-          storeItems: p._count.storeItems,
-          supplierItems: p._count.supplierItems,
-          matchCandidates: p._count.matchCandidates,
-        },
-      })),
+      projects: projects.map(p => {
+        const progress = progressMap.get(p.id);
+        const matchData = matchRateMap.get(p.id);
+        
+        return {
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          createdAt: p.createdAt.toISOString(),
+          updatedAt: p.updatedAt.toISOString(),
+          _count: {
+            storeItems: p._count.storeItems,
+            supplierItems: p._count.supplierItems,
+            matchCandidates: p._count.matchCandidates,
+          },
+          progress: progress ? {
+            currentStage: progress.currentStage,
+            standardCompleted: progress.standardCompleted,
+            aiCompleted: progress.aiCompleted,
+            webSearchCompleted: progress.webSearchCompleted,
+          } : undefined,
+          matchRate: matchData?.matchRate,
+          uniqueMatchedItems: matchData?.uniqueMatchedItems,
+        };
+      }),
     });
   } catch (error) {
     console.error('Error fetching projects:', error);
