@@ -63,10 +63,18 @@ export async function GET(request: NextRequest) {
       _count: true,
     });
 
+    // Count matches by method type
+    const exactCount = matchesByMethod
+      .filter(m => m.method === 'EXACT_NORM' || m.method === 'EXACT_NORMALIZED')
+      .reduce((sum, m) => sum + m._count, 0);
+    const fuzzyCount = matchesByMethod
+      .filter(m => m.method === 'FUZZY' || m.method === 'FUZZY_SUBSTRING')
+      .reduce((sum, m) => sum + m._count, 0);
+    
     const sourceBreakdown = {
-      exact: matchesByMethod.find(m => m.method === 'EXACT')?._count || 0,
+      exact: exactCount,
       interchange: matchesByMethod.find(m => m.method === 'INTERCHANGE')?._count || 0,
-      fuzzy: matchesByMethod.find(m => m.method === 'FUZZY')?._count || 0,
+      fuzzy: fuzzyCount,
       ai: matchesByMethod.find(m => m.method === 'AI')?._count || 0,
       web: matchesByMethod.find(m => m.method === 'WEB_SEARCH')?._count || 0,
     };
