@@ -18,7 +18,7 @@ const openai = new OpenAI({
 
 // Chunk sizes optimized for each job type
 const CHUNK_SIZES: Record<string, number> = {
-  'fuzzy': 3000,  // Fuzzy can handle 3000 items in ~2 minutes
+  'fuzzy': 1000,  // Fuzzy processes 1000 items in ~2 minutes (safe from timeout)
   'ai': 100,      // AI processes 100 items in ~3-4 minutes
   'web-search': 20, // Web search processes 20 items in ~1-2 minutes
 };

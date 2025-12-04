@@ -195,7 +195,7 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
           className="bg-green-600 text-white px-4 py-3 rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
           <div className="font-medium">Start Fuzzy Matching</div>
-          <div className="text-xs mt-1">3000 items/batch, auto-continues</div>
+          <div className="text-xs mt-1">1000 items/batch, auto-continues</div>
         </button>
         
         <button
