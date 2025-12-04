@@ -24,6 +24,7 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const processingJobsRef = useRef<Set<string>>(new Set());
 
   // Poll for active jobs
   useEffect(() => {
@@ -53,9 +54,9 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
       
       setActiveJobs(jobs);
       
-      // Process next chunk for each active job
+      // Process next chunk for each active job (only if not already processing)
       for (const job of jobs) {
-        if (job.status === 'processing' || job.status === 'pending') {
+        if ((job.status === 'processing' || job.status === 'pending') && !processingJobsRef.current.has(job.id)) {
           processJobChunk(job.id);
         }
       }
@@ -65,12 +66,18 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
   };
 
   const processJobChunk = async (jobId: string) => {
+    // Mark job as being processed
+    processingJobsRef.current.add(jobId);
+    
     try {
       const res = await fetch(`/api/jobs/${jobId}/process`, {
         method: 'POST',
       });
       
-      if (!res.ok) return;
+      if (!res.ok) {
+        processingJobsRef.current.delete(jobId);
+        return;
+      }
       
       const data = await res.json();
       
@@ -79,9 +86,14 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
         if (onJobComplete) {
           onJobComplete();
         }
+        processingJobsRef.current.delete(jobId);
+      } else {
+        // Chunk complete, allow next chunk to be processed
+        processingJobsRef.current.delete(jobId);
       }
     } catch (err) {
       console.error(`Failed to process job ${jobId}:`, err);
+      processingJobsRef.current.delete(jobId);
     }
   };
 
@@ -195,7 +207,7 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
           className="bg-green-600 text-white px-4 py-3 rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
           <div className="font-medium">Start Fuzzy Matching</div>
-          <div className="text-xs mt-1">1000 items/batch, auto-continues</div>
+          <div className="text-xs mt-1">3000 items/batch, auto-continues</div>
         </button>
         
         <button
