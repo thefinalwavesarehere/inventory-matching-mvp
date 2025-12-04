@@ -90,8 +90,12 @@ export async function POST(
     const config = job.config as any || {};
     const jobType = config.jobType || 'ai'; // 'ai' or 'web-search'
 
-    console.log(`[JOB-PROCESS] Processing chunk for job ${jobId}, type: ${jobType}`);
+    console.log(`[JOB-PROCESS] ========== PROCESSING JOB ${jobId} ==========`);
+    console.log(`[JOB-PROCESS] Job config:`, JSON.stringify(config));
+    console.log(`[JOB-PROCESS] Job type: ${jobType}`);
+    console.log(`[JOB-PROCESS] Job status: ${job.status}`);
     console.log(`[JOB-PROCESS] Current progress: ${job.processedItems}/${job.totalItems}`);
+    console.log(`[JOB-PROCESS] Current matches: ${job.matchesFound}`);
 
     // Get unmatched items
     const existingMatches = await prisma.matchCandidate.findMany({
@@ -114,6 +118,8 @@ export async function POST(
     const endIdx = Math.min(startIdx + chunkSize, allUnmatchedItems.length);
     const chunk = allUnmatchedItems.slice(startIdx, endIdx);
 
+    console.log(`[JOB-PROCESS] Total unmatched items available: ${allUnmatchedItems.length}`);
+    console.log(`[JOB-PROCESS] Chunk size for ${jobType}: ${chunkSize}`);
     console.log(`[JOB-PROCESS] Processing items ${startIdx} to ${endIdx} (${chunk.length} items)`);
 
     if (chunk.length === 0) {
@@ -151,14 +157,26 @@ export async function POST(
     let newMatches = 0;
 
     // Process chunk based on job type
+    console.log(`[JOB-PROCESS] Starting ${jobType} processing for ${chunk.length} items...`);
+    const processingStartTime = Date.now();
+    
     if (jobType === 'fuzzy') {
+      console.log(`[JOB-PROCESS] Calling processFuzzyChunk with ${chunk.length} store items and ${supplierItems.length} supplier items`);
       newMatches = await processFuzzyChunk(chunk, supplierItems, job.projectId);
+      console.log(`[JOB-PROCESS] Fuzzy chunk complete in ${Date.now() - processingStartTime}ms, found ${newMatches} matches`);
     } else if (jobType === 'ai') {
+      console.log(`[JOB-PROCESS] Calling processAIMatching...`);
       const { processAIMatching } = await import('../processors');
       newMatches = await processAIMatching(chunk, supplierItems, job.projectId);
+      console.log(`[JOB-PROCESS] AI chunk complete in ${Date.now() - processingStartTime}ms, found ${newMatches} matches`);
     } else if (jobType === 'web-search') {
+      console.log(`[JOB-PROCESS] Calling processWebSearchMatching...`);
       const { processWebSearchMatching } = await import('../processors');
       newMatches = await processWebSearchMatching(chunk, supplierItems, job.projectId);
+      console.log(`[JOB-PROCESS] Web search chunk complete in ${Date.now() - processingStartTime}ms, found ${newMatches} matches`);
+    } else {
+      console.error(`[JOB-PROCESS] Unknown job type: ${jobType}`);
+      throw new Error(`Unknown job type: ${jobType}`);
     }
 
     // Update job progress
