@@ -198,7 +198,13 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
           <div className="text-xs mt-1">20 items/batch, auto-continues</div>
         </button>
       </div>
-            <p className="flex items-start gap-2 text-sm text-gray-600">
+      
+      <div className="mt-4">
+        <p className="flex items-start gap-2 text-sm text-gray-600">
           <span>💡</span>
           <span><strong>Tip:</strong> Background jobs are processed by Vercel Cron every minute. You can close this page and come back later - jobs will continue running automatically.</span>
         </p>
+      </div>
+    </div>
+  );
+}
