@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get all completed jobs for this project
-    const completedJobs = await prisma.backgroundJob.findMany({
+    const completedJobs = await prisma.matchingJob.findMany({
       where: {
         projectId,
         status: 'completed',
