@@ -16,7 +16,16 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const CHUNK_SIZE = 10; // Process 10 items per chunk to stay under timeout
+// Chunk sizes optimized for each job type
+const CHUNK_SIZES: Record<string, number> = {
+  'fuzzy': 3000,  // Fuzzy can handle 3000 items in ~2 minutes
+  'ai': 100,      // AI processes 100 items in ~3-4 minutes
+  'web-search': 20, // Web search processes 20 items in ~1-2 minutes
+};
+
+function getChunkSize(jobType: string): number {
+  return CHUNK_SIZES[jobType] || 100;
+}
 
 export async function POST(
   req: NextRequest,
@@ -94,8 +103,9 @@ export async function POST(
     });
 
     // Calculate which chunk to process
+    const chunkSize = getChunkSize(jobType);
     const startIdx = job.processedItems;
-    const endIdx = Math.min(startIdx + CHUNK_SIZE, allUnmatchedItems.length);
+    const endIdx = Math.min(startIdx + chunkSize, allUnmatchedItems.length);
     const chunk = allUnmatchedItems.slice(startIdx, endIdx);
 
     console.log(`[JOB-PROCESS] Processing items ${startIdx} to ${endIdx} (${chunk.length} items)`);
@@ -135,10 +145,14 @@ export async function POST(
     let newMatches = 0;
 
     // Process chunk based on job type
-    if (jobType === 'ai') {
-      newMatches = await processAIChunk(chunk, supplierItems, job.projectId);
+    if (jobType === 'fuzzy') {
+      newMatches = await processFuzzyChunk(chunk, supplierItems, job.projectId);
+    } else if (jobType === 'ai') {
+      const { processAIMatching } = await import('./processors');
+      newMatches = await processAIMatching(chunk, supplierItems, job.projectId);
     } else if (jobType === 'web-search') {
-      newMatches = await processWebSearchChunk(chunk, supplierItems, job.projectId);
+      const { processWebSearchMatching } = await import('./processors');
+      newMatches = await processWebSearchMatching(chunk, supplierItems, job.projectId);
     }
 
     // Update job progress
@@ -208,133 +222,85 @@ export async function POST(
 }
 
 /**
- * Process a chunk of items using AI matching
+ * Process a chunk of items using fuzzy matching
  */
-async function processAIChunk(
+async function processFuzzyChunk(
   storeItems: any[],
   supplierItems: any[],
   projectId: string
 ): Promise<number> {
-  let matchCount = 0;
+  // Import fuzzy matching logic from matching engine
+  const { stage2FuzzyMatching } = await import('@/app/lib/matching-engine');
+  
+  // Convert to engine format
+  const engineStoreItems = storeItems.map((item) => ({
+    id: item.id,
+    partNumber: item.partNumber,
+    partNumberNorm: item.partNumberNorm,
+    canonicalPartNumber: (item as any).canonicalPartNumber || null,
+    lineCode: item.lineCode,
+    mfrPartNumber: item.mfrPartNumber,
+    description: item.description,
+    currentCost: item.currentCost ? Number(item.currentCost) : null,
+  }));
 
-  for (const storeItem of storeItems) {
-    try {
-      const prompt = `You are an automotive parts matching expert. Match this store inventory item to the most likely supplier part.
+  const engineSupplierItems = supplierItems.map((item) => ({
+    id: item.id,
+    partNumber: item.partNumber,
+    partNumberNorm: item.partNumberNorm,
+    canonicalPartNumber: (item as any).canonicalPartNumber || null,
+    lineCode: item.lineCode,
+    mfrPartNumber: item.mfrPartNumber,
+    description: item.description,
+    currentCost: item.currentCost ? Number(item.currentCost) : null,
+  }));
 
-Store Item:
-- Part Number: ${storeItem.partNumber}
-- Description: ${storeItem.description || 'N/A'}
-- Line Code: ${storeItem.lineCode || 'N/A'}
+  // Get already matched IDs
+  const existingMatches = await prisma.matchCandidate.findMany({
+    where: { projectId },
+    select: { storeItemId: true },
+  });
+  const matchedStoreIds = new Set(existingMatches.map(m => m.storeItemId));
 
-Supplier Catalog (first 100 items):
-${supplierItems.slice(0, 100).map((s, idx) => `${idx + 1}. ${s.partNumber}${s.description ? ` - ${s.description}` : ''}`).join('\n')}
+  // Run fuzzy matching
+  const fuzzyResult = stage2FuzzyMatching(engineStoreItems, engineSupplierItems, matchedStoreIds, {
+    fuzzyThreshold: 0.65,
+    maxCandidatesPerItem: 800,
+    costTolerancePercent: 10,
+  });
 
-Respond with ONLY a JSON object in this exact format:
-{
-  "match": true/false,
-  "supplierPartNumber": "PART123" or null,
-  "confidence": 0.0-1.0,
-  "reason": "Brief explanation"
-}`;
+  // Save matches to database
+  const fuzzyMatches = fuzzyResult.matches;
+  let savedCount = 0;
 
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4.1-mini',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 200,
-      });
-
-      const responseText = completion.choices[0]?.message?.content?.trim() || '{}';
-      const aiResponse = JSON.parse(responseText);
-
-      if (aiResponse.match && aiResponse.supplierPartNumber) {
-        const supplier = supplierItems.find(
-          (s) => s.partNumber === aiResponse.supplierPartNumber
-        );
-
-        if (supplier) {
-          await prisma.matchCandidate.create({
-            data: {
-              projectId,
-              storeItemId: storeItem.id,
-              targetType: 'SUPPLIER',
-              targetId: supplier.id,
-              method: 'AI',
-              confidence: aiResponse.confidence || 0.8,
-              matchStage: 3,
-              status: 'PENDING',
-              features: {
-                aiReason: aiResponse.reason,
-                model: 'gpt-4.1-mini',
-              },
-            },
-          });
-
-          matchCount++;
-          console.log(`[AI-MATCH] Found match: ${storeItem.partNumber} -> ${supplier.partNumber} (${aiResponse.confidence})`);
-        }
-      }
-    } catch (error) {
-      console.error(`[AI-MATCH] Error processing ${storeItem.partNumber}:`, error);
-    }
+  // Save in batches of 100 to avoid transaction limits
+  for (let i = 0; i < fuzzyMatches.length; i += 100) {
+    const batch = fuzzyMatches.slice(i, i + 100);
+    
+    await prisma.matchCandidate.createMany({
+      data: batch.map((match) => ({
+        projectId,
+        storeItemId: match.storeItemId,
+        targetType: 'SUPPLIER' as const,
+        targetId: match.supplierItemId,
+        method: match.method as any,
+        confidence: match.confidence,
+        matchStage: match.matchStage,
+        status: 'PENDING' as const,
+        features: match.features || {},
+        costDifference: match.costDifference,
+        costSimilarity: match.costSimilarity,
+        transformationSignature: match.transformationSignature,
+        rulesApplied: match.rulesApplied,
+      })),
+      skipDuplicates: true,
+    });
+    
+    savedCount += batch.length;
   }
 
-  return matchCount;
+  console.log(`[FUZZY-JOB] Processed ${storeItems.length} items, found ${fuzzyMatches.length} matches, saved ${savedCount}`);
+  return savedCount;
 }
 
-/**
- * Process a chunk of items using web search matching
- */
-async function processWebSearchChunk(
-  storeItems: any[],
-  supplierItems: any[],
-  projectId: string
-): Promise<number> {
-  let matchCount = 0;
-
-  for (const storeItem of storeItems) {
-    try {
-      // Simulate web search with AI (placeholder - implement actual web search logic)
-      const prompt = `Find the best matching part number for: ${storeItem.partNumber} ${storeItem.description || ''}`;
-
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4.1-mini',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 100,
-      });
-
-      const responseText = completion.choices[0]?.message?.content?.trim() || '';
-      
-      // Try to find matching supplier item
-      const matchedSupplier = supplierItems.find((s) =>
-        responseText.toLowerCase().includes(s.partNumber.toLowerCase())
-      );
-
-      if (matchedSupplier) {
-        await prisma.matchCandidate.create({
-          data: {
-            projectId,
-            storeItemId: storeItem.id,
-            targetType: 'SUPPLIER',
-            targetId: matchedSupplier.id,
-            method: 'WEB_SEARCH',
-            confidence: 0.85,
-            matchStage: 4,
-            status: 'PENDING',
-            features: {
-              searchResult: responseText,
-            },
-          },
-        });
-
-        matchCount++;
-        console.log(`[WEB-SEARCH] Found match: ${storeItem.partNumber} -> ${matchedSupplier.partNumber}`);
-      }
-    } catch (error) {
-      console.error(`[WEB-SEARCH] Error processing ${storeItem.partNumber}:`, error);
-    }
-  }
-
-  return matchCount;
-}
+// AI and Web Search processing moved to processors.ts

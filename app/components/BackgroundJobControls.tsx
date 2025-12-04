@@ -1,0 +1,225 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+
+interface BackgroundJobControlsProps {
+  projectId: string;
+  onJobComplete?: () => void;
+}
+
+interface Job {
+  id: string;
+  status: string;
+  currentStageName: string;
+  processedItems: number;
+  totalItems: number;
+  progressPercentage: number;
+  matchesFound: number;
+  matchRate: number;
+  estimatedCompletion?: string;
+}
+
+export default function BackgroundJobControls({ projectId, onJobComplete }: BackgroundJobControlsProps) {
+  const [activeJobs, setActiveJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Poll for active jobs
+  useEffect(() => {
+    loadActiveJobs();
+    
+    // Start polling if there are active jobs
+    const interval = setInterval(() => {
+      loadActiveJobs();
+    }, 2000); // Poll every 2 seconds
+    
+    pollingIntervalRef.current = interval;
+    
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, [projectId]);
+
+  const loadActiveJobs = async () => {
+    try {
+      const res = await fetch(`/api/jobs?projectId=${projectId}&status=processing,pending`);
+      if (!res.ok) return;
+      
+      const data = await res.json();
+      const jobs = data.jobs || [];
+      
+      setActiveJobs(jobs);
+      
+      // Process next chunk for each active job
+      for (const job of jobs) {
+        if (job.status === 'processing' || job.status === 'pending') {
+          processJobChunk(job.id);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load jobs:', err);
+    }
+  };
+
+  const processJobChunk = async (jobId: string) => {
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/process`, {
+        method: 'POST',
+      });
+      
+      if (!res.ok) return;
+      
+      const data = await res.json();
+      
+      if (data.job?.status === 'completed') {
+        // Job completed, refresh project data
+        if (onJobComplete) {
+          onJobComplete();
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to process job ${jobId}:`, err);
+    }
+  };
+
+  const startJob = async (jobType: 'fuzzy' | 'ai' | 'web-search') => {
+    setLoading(true);
+    setError('');
+    
+    try {
+      const res = await fetch('/api/jobs/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          jobType,
+          config: { jobType },
+        }),
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to create job');
+      }
+      
+      const data = await res.json();
+      
+      // Job created, it will be picked up by polling
+      loadActiveJobs();
+      
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cancelJob = async (jobId: string) => {
+    try {
+      await fetch(`/api/jobs/${jobId}/cancel`, {
+        method: 'POST',
+      });
+      
+      loadActiveJobs();
+    } catch (err) {
+      console.error('Failed to cancel job:', err);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow p-6 mb-6">
+      <h2 className="text-xl font-semibold mb-4">Background Matching Jobs</h2>
+      
+      {error && (
+        <div className="bg-red-50 text-red-800 p-3 rounded mb-4">
+          {error}
+        </div>
+      )}
+      
+      {/* Active Jobs */}
+      {activeJobs.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-lg font-medium mb-3">Active Jobs</h3>
+          {activeJobs.map((job) => (
+            <div key={job.id} className="border rounded p-4 mb-3">
+              <div className="flex justify-between items-center mb-2">
+                <div>
+                  <span className="font-medium">{job.currentStageName}</span>
+                  <span className="ml-2 text-sm text-gray-500">
+                    ({job.status})
+                  </span>
+                </div>
+                <button
+                  onClick={() => cancelJob(job.id)}
+                  className="text-red-600 hover:text-red-800 text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+              
+              {/* Progress Bar */}
+              <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                <div
+                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                  style={{ width: `${job.progressPercentage}%` }}
+                ></div>
+              </div>
+              
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-4 text-sm text-gray-600">
+                <div>
+                  <span className="font-medium">Progress:</span> {job.processedItems}/{job.totalItems}
+                </div>
+                <div>
+                  <span className="font-medium">Matches:</span> {job.matchesFound} ({job.matchRate.toFixed(1)}%)
+                </div>
+                {job.estimatedCompletion && (
+                  <div>
+                    <span className="font-medium">ETA:</span> {new Date(job.estimatedCompletion).toLocaleTimeString()}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      
+      {/* Start Job Buttons */}
+      <div className="grid grid-cols-3 gap-4">
+        <button
+          onClick={() => startJob('fuzzy')}
+          disabled={loading || activeJobs.some(j => j.currentStageName.includes('Fuzzy'))}
+          className="bg-green-600 text-white px-4 py-3 rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
+          <div className="font-medium">Start Fuzzy Matching</div>
+          <div className="text-xs mt-1">3000 items/batch, auto-continues</div>
+        </button>
+        
+        <button
+          onClick={() => startJob('ai')}
+          disabled={loading || activeJobs.some(j => j.currentStageName.includes('AI'))}
+          className="bg-blue-600 text-white px-4 py-3 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
+          <div className="font-medium">Start AI Matching</div>
+          <div className="text-xs mt-1">100 items/batch, auto-continues</div>
+        </button>
+        
+        <button
+          onClick={() => startJob('web-search')}
+          disabled={loading || activeJobs.some(j => j.currentStageName.includes('Web'))}
+          className="bg-purple-600 text-white px-4 py-3 rounded hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
+          <div className="font-medium">Start Web Search</div>
+          <div className="text-xs mt-1">20 items/batch, auto-continues</div>
+        </button>
+      </div>
+      
+      <div className="mt-4 text-sm text-gray-600">
+        <p>💡 <strong>Tip:</strong> Background jobs run automatically in batches to avoid timeouts. You can close this page and come back later - jobs will continue running.</p>
+      </div>
+    </div>
+  );
+}
