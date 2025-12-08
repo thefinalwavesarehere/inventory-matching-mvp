@@ -12,6 +12,8 @@
  */
 
 import { compareCosts, computeTransformationSignature } from './normalization';
+import { loadMatchingConfig, describeMatchingConfig } from './matching-config';
+import { createTelemetryLogger, type TelemetryLogger } from './telemetry';
 
 export interface MatchCandidate {
   storeItemId: string;
@@ -71,6 +73,10 @@ export interface MatchingOptions {
   costTolerancePercent?: number;
   maxCandidatesPerItem?: number;
   maxTopMatches?: number;
+  traceId?: string;
+  jobId?: string;
+  requestId?: string;
+  telemetryLogger?: TelemetryLogger;
 }
 
 export interface StageMetrics {
@@ -904,6 +910,34 @@ function hashString(value: string): number {
   return Math.abs(hash);
 }
 
+function resolveOptions(options: MatchingOptions) {
+  const config = loadMatchingConfig();
+
+  const resolved = {
+    stage1Enabled:
+      options.stage1Enabled ??
+      (config.modes.defaultMode !== 'full-ai' ? config.flags.deterministicEnabled : true),
+    stage2Enabled:
+      options.stage2Enabled ??
+      (config.modes.defaultMode === 'deterministic-only'
+        ? false
+        : config.flags.fuzzyEnabled),
+    fuzzyThreshold: options.fuzzyThreshold ?? config.thresholds.fuzzySimilarity,
+    costTolerancePercent: options.costTolerancePercent ?? config.thresholds.costTolerancePercent,
+    maxCandidatesPerItem: options.maxCandidatesPerItem ?? config.limits.maxCandidatesPerItem,
+    maxTopMatches: options.maxTopMatches ?? config.limits.maxTopMatches,
+    traceId: options.traceId,
+    jobId: options.jobId,
+    requestId: options.requestId,
+    telemetryLogger: options.telemetryLogger,
+  };
+
+  return {
+    resolvedOptions: resolved,
+    config,
+  };
+}
+
 /**
  * Main matching orchestrator
  */
@@ -914,30 +948,45 @@ export async function runMultiStageMatching(
   rules: MatchingRule[],
   options: MatchingOptions = {}
 ): Promise<MatchingResult> {
+  const { resolvedOptions, config } = resolveOptions(options);
+  const telemetry =
+    resolvedOptions.telemetryLogger ||
+    createTelemetryLogger('matching', {
+      traceId: resolvedOptions.traceId || `trace-${Date.now()}`,
+      jobId: resolvedOptions.jobId,
+      requestId: resolvedOptions.requestId,
+    });
   const allMatches: MatchCandidate[] = [];
   const allMetrics: StageMetrics[] = [];
 
   // Stage 0: Build indexes
   console.log('[MATCHING] Stage 0: Building indexes...');
+  telemetry.logStageStart(0, {
+    storeItems: storeItems.length,
+    supplierItems: supplierItems.length,
+    config: describeMatchingConfig(config),
+  });
   const indexes = new MatchingIndexes(supplierItems, interchanges, rules);
 
   // Stage 1: Deterministic matching
-  if (options.stage1Enabled !== false) {
+  if (resolvedOptions.stage1Enabled !== false) {
     console.log('[MATCHING] Stage 1: Deterministic matching...');
-    const stage1 = stage1DeterministicMatching(storeItems, indexes, options);
+    const stage1 = stage1DeterministicMatching(storeItems, indexes, resolvedOptions);
     allMatches.push(...stage1.matches);
     allMetrics.push(stage1.metrics);
     console.log(`[MATCHING] Stage 1 complete: ${stage1.matches.length} matches (${(stage1.metrics.matchRate * 100).toFixed(1)}%)`);
+    telemetry.logStageComplete(1, stage1.metrics);
   }
 
   // Stage 2: Fuzzy matching
-  if (options.stage2Enabled !== false) {
+  if (resolvedOptions.stage2Enabled !== false) {
     console.log('[MATCHING] Stage 2: Fuzzy matching...');
     const matchedStoreIds = new Set(allMatches.map(m => m.storeItemId));
-    const stage2 = stage2FuzzyMatching(storeItems, supplierItems, matchedStoreIds, options);
+    const stage2 = stage2FuzzyMatching(storeItems, supplierItems, matchedStoreIds, resolvedOptions);
     allMatches.push(...stage2.matches);
     allMetrics.push(stage2.metrics);
     console.log(`[MATCHING] Stage 2 complete: ${stage2.matches.length} matches (${(stage2.metrics.matchRate * 100).toFixed(1)}%)`);
+    telemetry.logStageComplete(2, stage2.metrics);
   }
 
   // Compute summary
@@ -953,6 +1002,7 @@ export async function runMultiStageMatching(
   };
 
   console.log(`[MATCHING] Complete: ${allMatches.length}/${storeItems.length} matched (${(summary.overallMatchRate * 100).toFixed(1)}%)`);
+  telemetry.logSummary('Pipeline complete', summary);
 
   return {
     matches: allMatches,

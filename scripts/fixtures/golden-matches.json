@@ -1,0 +1,52 @@
+{
+  "storeItems": [
+    {
+      "id": "store-1",
+      "partNumber": "ABC-123",
+      "partNumberNorm": "ABC123",
+      "canonicalPartNumber": "ABC123",
+      "lineCode": "LC1",
+      "mfrPartNumber": "ABC123",
+      "description": "Widget A",
+      "currentCost": 25
+    },
+    {
+      "id": "store-2",
+      "partNumber": "XYZ-789",
+      "partNumberNorm": "XYZ789",
+      "canonicalPartNumber": "XYZ789",
+      "lineCode": "LC2",
+      "mfrPartNumber": "XYZ789",
+      "description": "Widget B",
+      "currentCost": 40
+    }
+  ],
+  "supplierItems": [
+    {
+      "id": "supplier-1",
+      "partNumber": "abc123",
+      "partNumberNorm": "ABC123",
+      "canonicalPartNumber": "ABC123",
+      "lineCode": "LC1",
+      "mfrPartNumber": "ABC123",
+      "description": "Widget A supplier",
+      "currentCost": 24
+    },
+    {
+      "id": "supplier-2",
+      "partNumber": "XYZ789",
+      "partNumberNorm": "XYZ789",
+      "canonicalPartNumber": "XYZ789",
+      "lineCode": "LC2",
+      "mfrPartNumber": "XYZ789",
+      "description": "Widget B supplier",
+      "currentCost": 42
+    }
+  ],
+  "interchanges": [],
+  "rules": [],
+  "expectations": [
+    { "storeItemId": "store-1", "expectedSupplierIds": ["supplier-1"] },
+    { "storeItemId": "store-2", "expectedSupplierIds": ["supplier-2"] }
+  ]
+}
