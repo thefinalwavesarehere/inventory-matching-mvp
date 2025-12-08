@@ -155,16 +155,16 @@ export async function GET(
         subcategory: '',
         
         // Vendor action
-        vendor_action: match.vendorAction || 'NONE',
+        vendor_action: (match as any).vendorAction || 'NONE',
         
         // Review fields (editable in Excel)
         review_decision: mapStatusToReviewDecision(match.status),
-        corrected_supplier_part: match.correctedSupplierPartNumber || '',
+        corrected_supplier_part: (match as any).correctedSupplierPartNumber || '',
         
         // Review metadata (read-only)
         reviewed_by: match.decidedBy?.name || match.decidedBy?.email || '',
-        reviewed_at: match.reviewedAt ? match.reviewedAt.toISOString() : '',
-        review_source: match.reviewSource || '',
+        reviewed_at: (match as any).reviewedAt ? (match as any).reviewedAt.toISOString() : '',
+        review_source: (match as any).reviewSource || '',
         
         // Notes
         notes: match.note || '',
