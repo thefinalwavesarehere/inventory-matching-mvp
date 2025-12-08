@@ -252,6 +252,12 @@ model MatchCandidate {
   decidedBy        User?      @relation("DecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
   decidedAt        DateTime?
   note             String?
+  // Excel review fields
+  vendorAction     VendorAction @default(NONE)
+  correctedSupplierPartNumber String?
+  reviewSource     ReviewSource?
+  reviewedAt       DateTime?
+  reviewedByUserId String?
   enrichmentData   EnrichmentData[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -289,6 +295,19 @@ enum MatchStatus {
   PENDING
   CONFIRMED
   REJECTED
+}
+
+enum VendorAction {
+  NONE
+  LIFT
+  REBOX
+  UNKNOWN
+  CONTACT_VENDOR
+}
+
+enum ReviewSource {
+  UI
+  EXCEL
 }
 
 /// Data enrichment for matched parts
