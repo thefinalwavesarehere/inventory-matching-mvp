@@ -72,6 +72,49 @@ export default function MatchPage() {
     }
   };
 
+  const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('projectId', projectId);
+
+      const res = await fetch('/api/match/import', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.details || error.error || 'Failed to import CSV');
+      }
+
+      const result = await res.json();
+      
+      // Show summary
+      alert(
+        `Import Complete!\n\n` +
+        `Total Rows: ${result.summary.totalRows}\n` +
+        `Successful Updates: ${result.summary.successfulUpdates}\n` +
+        `Failed Updates: ${result.summary.failedUpdates}\n` +
+        `Parse Errors: ${result.summary.parseErrors}\n\n` +
+        (result.errors.length > 0 ? `Errors:\n${result.errors.slice(0, 5).join('\n')}` : '')
+      );
+
+      // Reload matches to show updated statuses
+      loadMatches();
+      
+      // Reset file input
+      event.target.value = '';
+    } catch (err: any) {
+      console.error('Import error:', err);
+      alert(`Error importing CSV: ${err.message}`);
+      event.target.value = '';
+    }
+  };
+
   const handleConfirm = async (matchId: string) => {
     try {
       const res = await fetch('/api/confirm', {
@@ -348,6 +391,15 @@ export default function MatchPage() {
             >
               📥 Export All
             </a>
+            <label className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 inline-flex items-center gap-2 cursor-pointer">
+              📄 Import CSV
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleImportCSV}
+                className="hidden"
+              />
+            </label>
           </div>
         </div>
 

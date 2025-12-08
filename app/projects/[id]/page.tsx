@@ -185,17 +185,6 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const handleExportMatches = async () => {
-    try {
-      // Trigger CSV download
-      const url = `/api/projects/${projectId}/matches/export`;
-      window.open(url, '_blank');
-    } catch (err: any) {
-      console.error('Export error:', err);
-      alert(`Error exporting matches: ${err.message}`);
-    }
-  };
-
   const handleRunMatch = async () => {
     try {
       setRunningMatch(true);
@@ -736,18 +725,6 @@ export default function ProjectDetailPage() {
               }`}
             >
               Review Matches ({project._count.matchCandidates})
-            </button>
-            <button
-              onClick={handleExportMatches}
-              disabled={project._count.matchCandidates === 0}
-              className={`px-6 py-3 rounded font-semibold ${
-                project._count.matchCandidates === 0
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-green-600 text-white hover:bg-green-700'
-              }`}
-              title="Export matches to CSV for bulk review in Excel"
-            >
-              📊 Export for Excel Review
             </button>
           </div>
         </div>
