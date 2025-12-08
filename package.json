@@ -12,7 +12,8 @@
     "init-storage": "npx tsx scripts/init-storage.ts",
     "worker:parse": "node dist/workers/parseFile.worker.js",
     "worker:match": "node dist/workers/matchProject.worker.js",
-    "worker:export": "node dist/workers/export.worker.js"
+    "worker:export": "node dist/workers/export.worker.js",
+    "match:golden": "npx tsx scripts/run-golden-matches.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.18.0",
