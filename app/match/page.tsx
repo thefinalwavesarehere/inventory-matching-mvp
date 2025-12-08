@@ -76,6 +76,11 @@ export default function MatchPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (!projectId) {
+      alert('Project ID is missing');
+      return;
+    }
+
     try {
       const formData = new FormData();
       formData.append('file', file);
