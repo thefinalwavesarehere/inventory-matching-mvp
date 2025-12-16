@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/app/lib/db/prisma';
 import { stringify } from 'csv-stringify';
-import { Readable } from 'stream';
 
 /**
  * Epic A1.2 - Excel Export Endpoint
@@ -201,24 +200,13 @@ export async function GET(
           // End the stringifier
           stringifier.end();
 
-          // Pipe stringifier output to controller
-          const nodeStream = Readable.from(stringifier);
-          const reader = nodeStream.getReader?.() || (nodeStream as any);
-
-          if (reader.read) {
-            // Web Streams API
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              controller.enqueue(value);
-            }
-          } else {
-            // Node.js Stream
-            for await (const chunk of nodeStream) {
-              controller.enqueue(
-                typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk
-              );
-            }
+          // Convert Node.js stream to Web Stream
+          // Iterate through the stringifier output
+          for await (const chunk of stringifier) {
+            const encoded = typeof chunk === 'string' 
+              ? new TextEncoder().encode(chunk) 
+              : chunk;
+            controller.enqueue(encoded);
           }
 
           controller.close();
