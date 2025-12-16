@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/app/lib/db/prisma';
-import { stringify } from 'csv-stringify';
 
 /**
  * Epic A1.2 - Excel Export Endpoint
@@ -45,37 +44,53 @@ export async function GET(
       );
     }
 
-    // Create CSV stringifier with streaming support
-    const stringifier = stringify({
-      header: true,
-      columns: [
-        { key: 'match_id', header: 'match_id' },
-        { key: 'project_id', header: 'project_id' },
-        { key: 'status', header: 'status' },
-        { key: 'method', header: 'method' },
-        { key: 'confidence', header: 'confidence' },
-        { key: 'store_part_number', header: 'store_part_number' },
-        { key: 'store_line_code', header: 'store_line_code' },
-        { key: 'store_description', header: 'store_description' },
-        { key: 'supplier_part_number', header: 'supplier_part_number' },
-        { key: 'supplier_line_code', header: 'supplier_line_code' },
-        { key: 'supplier_description', header: 'supplier_description' },
-        { key: 'vendor_action', header: 'vendor_action' },
-        { key: 'review_decision', header: 'review_decision' },
-        { key: 'corrected_supplier_part', header: 'corrected_supplier_part' },
-      ],
-    });
+    // Helper function to escape CSV fields
+    const escapeCsvField = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      // If contains comma, quote, or newline, wrap in quotes and escape quotes
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
 
-    // Fetch matches in batches to avoid memory issues
+    // Helper function to create CSV row
+    const createCsvRow = (fields: any[]): string => {
+      return fields.map(escapeCsvField).join(',') + '\n';
+    };
+
+    // Fetch matches in batches
     const BATCH_SIZE = 1000;
     let offset = 0;
     let totalExported = 0;
 
     // Start streaming
+    const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Write CSV data in batches
+          // Write CSV header
+          const headers = [
+            'match_id',
+            'project_id',
+            'status',
+            'method',
+            'confidence',
+            'store_part_number',
+            'store_line_code',
+            'store_description',
+            'supplier_part_number',
+            'supplier_line_code',
+            'supplier_description',
+            'vendor_action',
+            'review_decision',
+            'corrected_supplier_part',
+          ];
+          
+          controller.enqueue(encoder.encode(createCsvRow(headers)));
+
+          // Process matches in batches
           while (true) {
             const matches = await prisma.matchCandidate.findMany({
               where: { projectId },
@@ -167,25 +182,25 @@ export async function GET(
               // Format confidence as percentage
               const confidencePercent = (match.confidence * 100).toFixed(1);
 
-              const row = {
-                match_id: match.id,
-                project_id: match.projectId,
-                status: match.status,
-                method: match.method,
-                confidence: confidencePercent,
-                store_part_number: storeItem.partNumber || '',
-                store_line_code: storeItem.lineCode || '',
-                store_description: storeItem.description || '',
-                supplier_part_number: supplierPartNumber,
-                supplier_line_code: supplierLineCode,
-                supplier_description: supplierDescription,
-                vendor_action: match.vendorAction || 'NONE',
-                review_decision: reviewDecision,
-                corrected_supplier_part: match.correctedSupplierPartNumber || '',
-              };
+              const row = [
+                match.id,
+                match.projectId,
+                match.status,
+                match.method,
+                confidencePercent,
+                storeItem.partNumber || '',
+                storeItem.lineCode || '',
+                storeItem.description || '',
+                supplierPartNumber,
+                supplierLineCode,
+                supplierDescription,
+                match.vendorAction || 'NONE',
+                reviewDecision,
+                match.correctedSupplierPartNumber || '',
+              ];
 
-              // Write row to stringifier
-              stringifier.write(row);
+              // Write row to stream
+              controller.enqueue(encoder.encode(createCsvRow(row)));
               totalExported++;
             }
 
@@ -195,18 +210,6 @@ export async function GET(
             if (totalExported % 1000 === 0) {
               console.log(`[EXPORT] Exported ${totalExported} matches...`);
             }
-          }
-
-          // End the stringifier
-          stringifier.end();
-
-          // Convert Node.js stream to Web Stream
-          // Iterate through the stringifier output
-          for await (const chunk of stringifier) {
-            const encoded = typeof chunk === 'string' 
-              ? new TextEncoder().encode(chunk) 
-              : chunk;
-            controller.enqueue(encoded);
           }
 
           controller.close();
