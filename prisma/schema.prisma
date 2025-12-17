@@ -364,6 +364,42 @@ model RejectedMatchHistory {
   @@index([supplierLineCode])
 }
 
+/// Line Code Interchange: Maps source line codes to target line codes
+model LineCodeInterchange {
+  id              String   @id @default(cuid())
+  projectId       String?  // Nullable: null = global rule, value = project-specific
+  sourceLineCode  String   // Source supplier line code (e.g., "GATES")
+  targetLineCode  String   // Target supplier line code to use instead
+  priority        Int      @default(0) // Higher priority rules take precedence
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("line_code_interchange")
+  @@index([sourceLineCode, active])
+  @@index([projectId])
+  @@index([priority])
+}
+
+/// Part Number Interchange: Direct part number mappings
+model PartNumberInterchange {
+  id                      String   @id @default(cuid())
+  projectId               String   // Project-specific interchange
+  sourceSupplierLineCode  String   // Source supplier line code
+  sourcePartNumber        String   // Source part number
+  targetSupplierLineCode  String   // Target supplier line code
+  targetPartNumber        String   // Target part number
+  priority                Int      @default(0) // Higher priority rules take precedence
+  active                  Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@map("part_number_interchange")
+  @@index([sourceSupplierLineCode, sourcePartNumber, active])
+  @@index([projectId])
+  @@index([priority])
+}
+
 /// Data enrichment for matched parts
 model EnrichmentData {
   id          String   @id @default(cuid())

@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveVendorActionsBatch } from '@/app/lib/vendor-action-resolver';
+import { resolveInterchangesBatch } from '@/app/lib/interchange-resolver';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/lib/auth';
 import prisma from '@/app/lib/db/prisma';
@@ -142,14 +143,56 @@ export async function POST(req: NextRequest) {
     }
 
     const matches: any[] = [];
+    let epicA4InterchangeMatches = 0;
     let interchangeMatches = 0;
     let exactMatches = 0;
     let fuzzyMatches = 0;
 
+    // Epic A4: Deterministic Interchange Lookup (BEFORE all other stages)
+    if (batchOffset === 0) {
+      console.log(`[MATCH] Epic A4: Deterministic Interchange Lookup`);
+      
+      // Prepare store parts data for batch resolution
+      const storeParts = storeItems.map(item => ({
+        partNumber: item.partNumber,
+        lineCode: item.lineCode,
+      }));
+
+      // Batch resolve interchanges
+      const interchangeResults = await resolveInterchangesBatch(projectId, storeParts);
+
+      // Create matches for interchange hits
+      for (let i = 0; i < storeItems.length; i++) {
+        const interchangeMatch = interchangeResults[i];
+        if (interchangeMatch) {
+          epicA4InterchangeMatches++;
+          matches.push({
+            projectId,
+            storeItemId: storeItems[i].id,
+            targetType: 'SUPPLIER',
+            targetId: interchangeMatch.supplierItemId,
+            method: 'INTERCHANGE',
+            confidence: 1.0, // 100% confidence for interchange matches
+            features: {
+              reason: 'Epic A4 deterministic interchange',
+              translatedLineCode: interchangeMatch.translatedLineCode,
+            },
+            status: 'PENDING',
+            vendorAction: 'NONE', // Will be resolved later
+          });
+        }
+      }
+
+      console.log(`[MATCH] Epic A4 complete: ${epicA4InterchangeMatches} matches`);
+    }
+
     // Stage 1: Known Interchange Matching (only on first batch)
     if (batchOffset === 0) {
       console.log(`[MATCH] Stage 1: Interchange Matching`);
+      const matchedStoreIds = new Set(matches.map((m) => m.storeItemId));
+      
       for (const storeItem of storeItems) {
+      if (matchedStoreIds.has(storeItem.id)) continue; // Skip Epic A4 matched items
       const interchange = interchanges.find(
         (i) => i.oursPartNumber === storeItem.partNumber
       );
@@ -161,6 +204,7 @@ export async function POST(req: NextRequest) {
         
         if (supplierItem) {
           interchangeMatches++;
+          matchedStoreIds.add(storeItem.id);
           matches.push({
             projectId,
             storeItemId: storeItem.id,
