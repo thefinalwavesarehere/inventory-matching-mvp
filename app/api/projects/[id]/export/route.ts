@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/app/lib/db/prisma';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Epic A1.2 - Excel Export Endpoint
  * 
