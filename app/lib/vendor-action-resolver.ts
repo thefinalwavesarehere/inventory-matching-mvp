@@ -24,6 +24,8 @@ export interface MatchData {
  */
 interface RuleWithPriority {
   action: VendorAction;
+  categoryPattern: string;
+  subcategoryPattern: string;
   priority: number;
 }
 
@@ -138,6 +140,8 @@ export async function resolveVendorAction(match: MatchData): Promise<VendorActio
       .filter(rule => ruleMatches(rule, match))
       .map(rule => ({
         action: rule.action,
+        categoryPattern: rule.categoryPattern,
+        subcategoryPattern: rule.subcategoryPattern,
         priority: calculatePriority(rule, match.category, match.subcategory),
       }));
 
