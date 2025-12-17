@@ -174,18 +174,25 @@ export async function POST(
       let hasChanges = false;
 
       // Process review_decision
-      if (reviewDecision) {
-        if (reviewDecision === 'ACCEPT' || reviewDecision === 'ACCEPTED') {
+      if (reviewDecision && reviewDecision.trim() !== '') {
+        const normalizedDecision = reviewDecision.toUpperCase();
+        
+        // Skip if this looks like a vendor_action value (common mistake)
+        const vendorActionValues = ['NONE', 'LIFT', 'REBOX', 'UNKNOWN', 'CONTACT_VENDOR'];
+        if (vendorActionValues.includes(normalizedDecision)) {
+          // This is likely vendor_action in the wrong column, skip validation
+          console.warn(`[IMPORT] Row ${rowNumber}: Skipping vendor_action value "${reviewDecision}" in review_decision column`);
+        } else if (normalizedDecision === 'ACCEPT' || normalizedDecision === 'ACCEPTED') {
           updateData.status = 'CONFIRMED';
           hasChanges = true;
-        } else if (reviewDecision === 'REJECT' || reviewDecision === 'REJECTED') {
+        } else if (normalizedDecision === 'REJECT' || normalizedDecision === 'REJECTED') {
           updateData.status = 'REJECTED';
           hasChanges = true;
-        } else if (reviewDecision !== '' && reviewDecision !== 'PENDING') {
+        } else if (normalizedDecision !== 'PENDING') {
           errors.push({
             row: rowNumber,
             matchId,
-            error: `Invalid review_decision: "${reviewDecision}". Must be ACCEPT, ACCEPTED, REJECT, REJECTED, or blank.`,
+            error: `Invalid review_decision: "${reviewDecision}". Must be ACCEPT, ACCEPTED, REJECT, REJECTED, or blank (case-insensitive).`,
           });
           continue;
         }
