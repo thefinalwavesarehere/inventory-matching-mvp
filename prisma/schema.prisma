@@ -60,6 +60,7 @@ model Project {
   interchanges Interchange[]
   matchCandidates MatchCandidate[]
   auditLogs    AuditLog[]
+  columnMappings FileColumnMapping[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -101,6 +102,13 @@ enum FileStatus {
   PARSING
   PARSED
   FAILED
+}
+
+enum FileTypeForMapping {
+  STORE_INVENTORY
+  SUPPLIER_CATALOG
+  LINE_CODE_INTERCHANGE
+  PART_NUMBER_INTERCHANGE
 }
 
 model ImportRun {
@@ -608,4 +616,21 @@ model ProjectSettings {
   updatedAt         DateTime @updatedAt
 
   @@map("project_settings")
+}
+
+/// Epic A5: Flexible column mapping for CSV uploads
+/// Allows users to map arbitrary CSV headers to system fields
+model FileColumnMapping {
+  id            String              @id @default(cuid())
+  projectId     String
+  project       Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileType      FileTypeForMapping  // Which type of file this mapping applies to
+  columnName    String              // The header name in the user's file (e.g., "Part #")
+  semanticRole  String              // Our internal field name (e.g., "part_number", "line_code")
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@unique([projectId, fileType, semanticRole])
+  @@map("file_column_mappings")
+  @@index([projectId, fileType])
 }
