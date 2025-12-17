@@ -310,6 +310,22 @@ enum ReviewSource {
   EXCEL
 }
 
+/// Vendor Action Rules for automatic tagging
+model VendorActionRule {
+  id                  String       @id @default(cuid())
+  supplierLineCode    String       // Supplier line code (e.g., "GATES", "PICO")
+  categoryPattern     String       // Category pattern (* for wildcard)
+  subcategoryPattern  String       // Subcategory pattern (* for wildcard)
+  action              VendorAction // Action to apply
+  active              Boolean      @default(true)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@map("vendor_action_rules")
+  @@index([supplierLineCode])
+  @@index([active])
+}
+
 /// Data enrichment for matched parts
 model EnrichmentData {
   id          String   @id @default(cuid())

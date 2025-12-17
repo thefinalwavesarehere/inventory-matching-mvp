@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveVendorActionsBatch } from '@/app/lib/vendor-action-resolver';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/lib/auth';
 import prisma from '@/app/lib/db/prisma';
@@ -285,10 +286,54 @@ export async function POST(req: NextRequest) {
     console.log(`[MATCH] Breakdown: Interchange=${interchangeMatches}, Exact=${exactMatches}, Fuzzy=${fuzzyMatches}`);
     
     if (matches.length > 0) {
-      await prisma.matchCandidate.createMany({
-        data: matches,
+      // Resolve vendor actions before saving
+      console.log(`[MATCH] Resolving vendor actions for ${matches.length} matches...`);
+      
+      // Fetch all supplier items in one query for efficiency
+      const targetIds = matches.map(m => m.targetId);
+      const supplierItemsMap = new Map();
+      
+      if (targetIds.length > 0) {
+        const supplierItemsData = await prisma.supplierItem.findMany({
+          where: { id: { in: targetIds } },
+          select: {
+            id: true,
+            lineCode: true,
+            category: true,
+            subcategory: true,
+          },
+        });
+        
+        supplierItemsData.forEach(item => {
+          supplierItemsMap.set(item.id, item);
+        });
+      }
+      
+      // Build match data for vendor action resolution
+      const matchDataForResolution = matches.map((match) => {
+        const supplierItem = supplierItemsMap.get(match.targetId);
+        return {
+          supplierLineCode: supplierItem?.lineCode || null,
+          category: supplierItem?.category || null,
+          subcategory: supplierItem?.subcategory || null,
+        };
       });
-      console.log(`[MATCH] Saved ${matches.length} match candidates`);
+      
+      // Resolve vendor actions in batch
+      const vendorActions = await resolveVendorActionsBatch(matchDataForResolution);
+      
+      // Add vendor actions to matches
+      const matchesWithVendorActions = matches.map((match, index) => ({
+        ...match,
+        vendorAction: vendorActions[index],
+      }));
+      
+      console.log(`[MATCH] Vendor actions resolved`);
+      
+      await prisma.matchCandidate.createMany({
+        data: matchesWithVendorActions,
+      });
+      console.log(`[MATCH] Saved ${matches.length} match candidates with vendor actions`);
     }
 
     // Calculate batch progress
