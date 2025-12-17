@@ -210,6 +210,8 @@ export async function resolveVendorActionsBatch(matches: MatchData[]): Promise<V
         .filter(rule => ruleMatches(rule, match))
         .map(rule => ({
           action: rule.action,
+          categoryPattern: rule.categoryPattern,
+          subcategoryPattern: rule.subcategoryPattern,
           priority: calculatePriority(rule, match.category, match.subcategory),
         }));
 
