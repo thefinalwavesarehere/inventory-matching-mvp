@@ -4,7 +4,7 @@
  * Weighted scoring logic with hard filters and match history learning
  */
 
-import { prisma } from '@/app/lib/prisma';
+import prisma from '@/app/lib/db/prisma';
 
 export interface MatchCandidate {
   storePartNumber: string;

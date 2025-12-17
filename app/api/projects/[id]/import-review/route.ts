@@ -12,6 +12,7 @@ import { VendorAction, MatchStatus, ReviewSource } from '@prisma/client';
  * 
  * Logic:
  * - Parse uploaded CSV/XLSX
+ * - Batch-fetch all matches once for validation and history logging
  * - Validate: match_id exists and belongs to project_id
  * - Update based on review_decision:
  *   - 'ACCEPT' or 'ACCEPTED' -> status = CONFIRMED
@@ -111,6 +112,30 @@ export async function POST(
       }
     }
 
+    // Extract all match IDs from CSV
+    const matchIds = records
+      .map(row => row['match_id']?.trim())
+      .filter(id => id); // Remove empty/null IDs
+
+    console.log(`[IMPORT] Extracted ${matchIds.length} match IDs from CSV`);
+
+    // Batch-fetch all matches in one query (PERFORMANCE OPTIMIZATION)
+    const matches = await prisma.matchCandidate.findMany({
+      where: {
+        id: { in: matchIds },
+      },
+      include: {
+        storeItem: { select: { partNumber: true } },
+      },
+    });
+
+    console.log(`[IMPORT] Fetched ${matches.length} matches from database`);
+
+    // Build matchesMap for O(1) lookups
+    const matchesMap = new Map(
+      matches.map(match => [match.id, match])
+    );
+
     // Process updates
     const updates: UpdateData[] = [];
     const errors: ImportError[] = [];
@@ -121,7 +146,7 @@ export async function POST(
       const rowNumber = i + 2; // +2 because: +1 for 0-index, +1 for header row
       const matchId = row['match_id']?.trim();
       const rowProjectId = row['project_id']?.trim();
-      const reviewDecision = row['review_decision']?.trim().toUpperCase();
+      const reviewDecision = row['review_decision']?.trim();
       const vendorAction = row['vendor_action']?.trim().toUpperCase();
       const correctedSupplierPart = row['corrected_supplier_part']?.trim();
 
@@ -131,11 +156,8 @@ export async function POST(
         continue;
       }
 
-      // Validate match exists and belongs to project
-      const match = await prisma.matchCandidate.findUnique({
-        where: { id: matchId },
-        select: { id: true, projectId: true, status: true, vendorAction: true },
-      });
+      // Validate match exists (using map lookup - O(1))
+      const match = matchesMap.get(matchId);
 
       if (!match) {
         errors.push({
@@ -150,17 +172,16 @@ export async function POST(
         errors.push({
           row: rowNumber,
           matchId,
-          error: `Match belongs to different project (expected: ${projectId}, found: ${match.projectId})`,
+          error: `Match belongs to different project (expected: ${projectId}, got: ${match.projectId})`,
         });
         continue;
       }
 
-      // Validate project_id in CSV matches
       if (rowProjectId && rowProjectId !== projectId) {
         errors.push({
           row: rowNumber,
           matchId,
-          error: `Project ID mismatch in CSV (expected: ${projectId}, found: ${rowProjectId})`,
+          error: `Project ID mismatch in CSV row (expected: ${projectId}, got: ${rowProjectId})`,
         });
         continue;
       }
@@ -175,7 +196,7 @@ export async function POST(
       let hasChanges = false;
 
       // Process review_decision
-      if (reviewDecision && reviewDecision.trim() !== '') {
+      if (reviewDecision && reviewDecision !== '') {
         const normalizedDecision = reviewDecision.toUpperCase();
         
         // Skip if this looks like a vendor_action value (common mistake)
@@ -219,8 +240,8 @@ export async function POST(
       }
 
       // Process corrected_supplier_part
-      if (correctedSupplierPart !== undefined) {
-        updateData.correctedSupplierPartNumber = correctedSupplierPart || null;
+      if (correctedSupplierPart !== undefined && correctedSupplierPart !== '') {
+        updateData.correctedSupplierPartNumber = correctedSupplierPart;
         hasChanges = true;
       }
 
@@ -232,32 +253,32 @@ export async function POST(
       }
     }
 
-    console.log(`[IMPORT] Validation complete. Updates: ${updates.length}, Errors: ${errors.length}, Skipped: ${skippedRows}`);
+    console.log(`[IMPORT] Validation complete: ${updates.length} updates, ${errors.length} errors, ${skippedRows} skipped`);
 
-    // If there are errors, return them without applying updates
+    // If there are errors, return them without updating
     if (errors.length > 0) {
       return NextResponse.json({
         success: false,
         totalRows: records.length,
         updatedRows: 0,
         skippedRows,
-        errors,
-        message: `Found ${errors.length} error(s). No updates were applied.`,
-      }, { status: 400 });
+        parseErrors: errors.length,
+        errors: errors.slice(0, 10), // Return first 10 errors
+        message: `Found ${errors.length} validation errors. No updates were applied.`,
+      });
     }
 
-    // Apply updates in transaction
+    // Apply updates in a transaction
     let updatedCount = 0;
     if (updates.length > 0) {
       try {
         await prisma.$transaction(
-          updates.map(update => {
-            const { matchId, ...data } = update;
-            return prisma.matchCandidate.update({
+          updates.map(({ matchId, ...data }) =>
+            prisma.matchCandidate.update({
               where: { id: matchId },
               data,
-            });
-          })
+            })
+          )
         );
         updatedCount = updates.length;
         console.log(`[IMPORT] Successfully updated ${updatedCount} matches`);
@@ -273,13 +294,8 @@ export async function POST(
 
         for (const update of updates) {
           if (update.status === MatchStatus.CONFIRMED || update.status === MatchStatus.REJECTED) {
-            // Fetch match with related data
-            const match = await prisma.matchCandidate.findUnique({
-              where: { id: update.matchId },
-              include: {
-                storeItem: { select: { partNumber: true } },
-              },
-            });
+            // Use matchesMap for O(1) lookup (already fetched)
+            const match = matchesMap.get(update.matchId);
             
             if (match) {
               const supplierItem = await prisma.supplierItem.findUnique({
@@ -324,31 +340,26 @@ export async function POST(
         console.error('[IMPORT] Transaction error:', txError);
         return NextResponse.json({
           success: false,
-          error: 'Failed to apply updates to database',
-          details: txError.message,
+          error: `Database update failed: ${txError.message}`,
         }, { status: 500 });
       }
     }
 
-    // Return success response
     return NextResponse.json({
       success: true,
       totalRows: records.length,
       updatedRows: updatedCount,
       skippedRows,
+      parseErrors: 0,
       errors: [],
-      message: `Successfully updated ${updatedCount} match(es). Skipped ${skippedRows} row(s) with no changes.`,
+      message: `Successfully updated ${updatedCount} matches`,
     });
 
   } catch (error: any) {
-    console.error('[IMPORT] Error:', error);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: error.message || 'Failed to import CSV',
-        details: error.stack,
-      },
-      { status: 500 }
-    );
+    console.error('[IMPORT] Unexpected error:', error);
+    return NextResponse.json({
+      success: false,
+      error: error.message || 'Internal server error',
+    }, { status: 500 });
   }
 }
