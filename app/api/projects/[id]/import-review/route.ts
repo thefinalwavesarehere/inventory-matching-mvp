@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/app/lib/db/prisma';
 import { parse } from 'csv-parse/sync';
+import { VendorAction, MatchStatus, ReviewSource } from '@prisma/client';
 
 /**
  * Epic A1.3 - Excel Import & Apply Endpoint
@@ -32,10 +33,10 @@ interface ImportError {
 
 interface UpdateData {
   matchId: string;
-  status?: 'CONFIRMED' | 'REJECTED';
-  vendorAction?: string;
+  status?: MatchStatus;
+  vendorAction?: VendorAction;
   correctedSupplierPartNumber?: string | null;
-  reviewSource: 'EXCEL';
+  reviewSource: ReviewSource;
   reviewedAt: Date;
 }
 
@@ -167,7 +168,7 @@ export async function POST(
       // Build update data
       const updateData: UpdateData = {
         matchId,
-        reviewSource: 'EXCEL',
+        reviewSource: ReviewSource.EXCEL,
         reviewedAt: new Date(),
       };
 
@@ -183,10 +184,10 @@ export async function POST(
           // This is likely vendor_action in the wrong column, skip validation
           console.warn(`[IMPORT] Row ${rowNumber}: Skipping vendor_action value "${reviewDecision}" in review_decision column`);
         } else if (normalizedDecision === 'ACCEPT' || normalizedDecision === 'ACCEPTED') {
-          updateData.status = 'CONFIRMED';
+          updateData.status = MatchStatus.CONFIRMED;
           hasChanges = true;
         } else if (normalizedDecision === 'REJECT' || normalizedDecision === 'REJECTED') {
-          updateData.status = 'REJECTED';
+          updateData.status = MatchStatus.REJECTED;
           hasChanges = true;
         } else if (normalizedDecision !== 'PENDING') {
           errors.push({
@@ -204,7 +205,7 @@ export async function POST(
         if (validVendorActions.includes(vendorAction)) {
           // Only update if different from current value
           if (vendorAction !== match.vendorAction) {
-            updateData.vendorAction = vendorAction;
+            updateData.vendorAction = vendorAction as VendorAction;
             hasChanges = true;
           }
         } else {
