@@ -46,6 +46,8 @@ export default function ProjectDetailPage() {
   const [runningWebSearch, setRunningWebSearch] = useState(false);
   const [runningFuzzyMatch, setRunningFuzzyMatch] = useState(false);
   const [matchError, setMatchError] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
   const [batchProgress, setBatchProgress] = useState<{
     processed: number;
     total: number;
@@ -364,6 +366,47 @@ export default function ProjectDetailPage() {
     } catch (err: any) {
       console.error('Export error:', err);
       alert(`Export failed: ${err.message}`);
+    }
+  };
+
+  const handleImportReview = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setImporting(true);
+      setImportResult(null);
+      setMatchError('');
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`/api/projects/${projectId}/import-review`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Import failed');
+      }
+
+      setImportResult(result);
+      
+      // Show success message
+      alert(`Import successful!\n\n${result.message}\n\nUpdated: ${result.updatedRows}\nSkipped: ${result.skippedRows}`);
+      
+      // Reload project to refresh counts
+      await loadProject();
+    } catch (err: any) {
+      console.error('Import error:', err);
+      setMatchError(err.message);
+      alert(`Import failed: ${err.message}`);
+    } finally {
+      setImporting(false);
+      // Reset file input
+      event.target.value = '';
     }
   };
 
@@ -749,6 +792,23 @@ export default function ProjectDetailPage() {
             >
               📊 Export for Excel Review
             </button>
+            <label
+              className={`px-6 py-3 rounded font-semibold cursor-pointer ${
+                importing
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
+              title="Import reviewed CSV file to update matches"
+            >
+              {importing ? '⏳ Importing...' : '📥 Import Reviewed CSV'}
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleImportReview}
+                disabled={importing}
+                className="hidden"
+              />
+            </label>
           </div>
         </div>
       </div>

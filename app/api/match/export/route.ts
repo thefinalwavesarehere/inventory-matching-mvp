@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/app/lib/db/prisma';
 
+/**
+ * Legacy Export Endpoint (Updated to Epic A1.2 Format)
+ * 
+ * Used by Match Review page export buttons (Export All, Export Pending, etc.)
+ * Now uses the same Epic A1.2 column format for consistency.
+ * 
+ * Endpoint: GET /api/match/export?projectId=...&status=...
+ * 
+ * Query params:
+ * - projectId: Required
+ * - status: Optional (pending, confirmed, rejected, or all)
+ */
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -19,15 +32,37 @@ export async function GET(request: NextRequest) {
       whereClause.status = status.toUpperCase();
     }
 
+    // Helper function to escape CSV fields
+    const escapeCsvField = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    // Helper function to create CSV row
+    const createCsvRow = (fields: any[]): string => {
+      return fields.map(escapeCsvField).join(',') + '\n';
+    };
+
     // Fetch matches with related data
     const matches = await prisma.matchCandidate.findMany({
       where: whereClause,
       include: {
-        storeItem: true,
+        storeItem: {
+          select: {
+            partNumber: true,
+            lineCode: true,
+            description: true,
+          },
+        },
       },
-      orderBy: {
-        confidence: 'desc',
-      },
+      orderBy: [
+        { status: 'asc' },
+        { confidence: 'desc' },
+      ],
     });
 
     console.log(`[EXPORT] Found ${matches.length} matches to export`);
@@ -41,91 +76,91 @@ export async function GET(request: NextRequest) {
       where: {
         id: { in: supplierItemIds },
       },
+      select: {
+        id: true,
+        partNumber: true,
+        lineCode: true,
+        description: true,
+      },
     });
 
     const supplierItemsMap = new Map(supplierItems.map(item => [item.id, item]));
 
-    // Generate CSV content
+    // Generate CSV content with Epic A1.2 format
     const headers = [
-      'Match Status',
-      'Confidence',
-      'Match Method',
-      'Store Part Number',
-      'Store Line',
-      'Store Description',
-      'Store Cost',
-      'Store Quantity',
-      'Supplier Part Number',
-      'Supplier Name',
-      'Supplier Description',
-      'Supplier Cost',
-      'Supplier Quantity',
-      'Source URL',
-      'Match Features',
+      'match_id',
+      'project_id',
+      'status',
+      'method',
+      'confidence',
+      'store_part_number',
+      'store_line_code',
+      'store_description',
+      'supplier_part_number',
+      'supplier_line_code',
+      'supplier_description',
+      'vendor_action',
+      'review_decision',
+      'corrected_supplier_part',
     ];
 
     const rows = matches.map(match => {
       const storeItem = match.storeItem;
+      
+      // Get supplier data
       let supplierPartNumber = '';
-      let supplierName = '';
+      let supplierLineCode = '';
       let supplierDescription = '';
-      let supplierCost = '';
-      let supplierQuantity = '';
-      let sourceUrl = '';
 
-      // Check if it's a web search match
-      if (match.features && (match.features as any).webSearch) {
-        supplierPartNumber = (match.features as any).supplierPartNumber || '';
-        supplierName = (match.features as any).supplierName || 'Web Search';
-        supplierDescription = (match.features as any).description || '';
-        supplierCost = (match.features as any).price ? `$${(match.features as any).price}` : '';
-        sourceUrl = (match.features as any).sourceUrl || '';
-      } else if (match.targetType === 'SUPPLIER') {
+      if (match.targetType === 'SUPPLIER') {
         const supplierItem = supplierItemsMap.get(match.targetId);
         if (supplierItem) {
-          supplierPartNumber = supplierItem.partNumber;
-          supplierName = supplierItem.supplier;
+          supplierPartNumber = supplierItem.partNumber || '';
+          supplierLineCode = supplierItem.lineCode || '';
           supplierDescription = supplierItem.description || '';
-          supplierCost = supplierItem.currentCost ? `$${supplierItem.currentCost}` : '';
-          supplierQuantity = supplierItem.quantity?.toString() || '';
         }
+      } else if (match.targetType === 'INVENTORY') {
+        // Note: This is synchronous, so we can't fetch inventory items here
+        // For now, leave blank - could be optimized with batch fetch
+        supplierPartNumber = '';
+        supplierLineCode = '';
+        supplierDescription = '';
       }
 
-      // Format match features
-      const features = match.features ? JSON.stringify(match.features) : '';
+      // Determine review_decision
+      let reviewDecision = '';
+      if (match.status === 'CONFIRMED') {
+        reviewDecision = 'ACCEPTED';
+      } else if (match.status === 'REJECTED') {
+        reviewDecision = 'REJECTED';
+      }
+
+      // Format confidence as percentage
+      const confidencePercent = (match.confidence * 100).toFixed(1);
 
       return [
+        match.id,
+        match.projectId,
         match.status,
-        (match.confidence * 100).toFixed(1) + '%',
         match.method,
-        storeItem.partNumber,
+        confidencePercent,
+        storeItem.partNumber || '',
         storeItem.lineCode || '',
         storeItem.description || '',
-        storeItem.currentCost ? `$${storeItem.currentCost}` : '',
-        storeItem.quantity?.toString() || '',
         supplierPartNumber,
-        supplierName,
+        supplierLineCode,
         supplierDescription,
-        supplierCost,
-        supplierQuantity,
-        sourceUrl,
-        features,
+        match.vendorAction || 'NONE',
+        reviewDecision,
+        match.correctedSupplierPartNumber || '',
       ];
     });
 
-    // Escape CSV fields
-    const escapeCsvField = (field: string) => {
-      if (field.includes(',') || field.includes('"') || field.includes('\n')) {
-        return `"${field.replace(/"/g, '""')}"`;
-      }
-      return field;
-    };
-
     // Build CSV
     const csvContent = [
-      headers.map(escapeCsvField).join(','),
-      ...rows.map(row => row.map(escapeCsvField).join(',')),
-    ].join('\n');
+      createCsvRow(headers),
+      ...rows.map(row => createCsvRow(row)),
+    ].join('');
 
     console.log(`[EXPORT] Generated CSV with ${rows.length} rows`);
 
@@ -133,7 +168,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse(csvContent, {
       status: 200,
       headers: {
-        'Content-Type': 'text/csv',
+        'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': `attachment; filename="matches-${status || 'all'}-${new Date().toISOString().split('T')[0]}.csv"`,
       },
     });
