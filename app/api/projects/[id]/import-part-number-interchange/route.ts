@@ -59,7 +59,7 @@ export async function POST(
       'target_supplier_line_code',
       'target_part_number',
     ];
-    const firstRecord = records[0];
+    const firstRecord = records[0] as any;
     const missingColumns = requiredColumns.filter(col => !(col in firstRecord));
 
     if (missingColumns.length > 0) {

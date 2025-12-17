@@ -54,7 +54,7 @@ export async function POST(
 
     // Validate required columns
     const requiredColumns = ['source_line_code', 'target_line_code'];
-    const firstRecord = records[0];
+    const firstRecord = records[0] as any;
     const missingColumns = requiredColumns.filter(col => !(col in firstRecord));
 
     if (missingColumns.length > 0) {
