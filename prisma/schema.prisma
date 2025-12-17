@@ -170,6 +170,8 @@ model SupplierItem {
   mfrPartNumber  String?  // Manufacturer part number (after line code extraction)
   canonicalPartNumber String? // Punctuation removed
   brand          String?
+  category       String?  // Product category (e.g., "belts", "hoses", "wiring")
+  subcategory    String?  // Product subcategory (e.g., "V-belt", "coolant", "connectors")
   rawData        Json?    // Store original row data
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -181,6 +183,8 @@ model SupplierItem {
   @@index([projectId, partNumberNorm])
   @@index([lineCode])
   @@index([partFull])
+  @@index([category])
+  @@index([subcategory])
 }
 
 /// Store report items (store being purchased)
@@ -200,6 +204,8 @@ model StoreItem {
   mfrPartNumber  String?  // Manufacturer part number (after line code extraction)
   canonicalPartNumber String? // Punctuation removed
   brand          String?
+  category       String?  // Product category (e.g., "belts", "hoses", "wiring")
+  subcategory    String?  // Product subcategory (e.g., "V-belt", "coolant", "connectors")
   rawData        Json?    // Store original row data
   matchCandidates MatchCandidate[]
   createdAt      DateTime @default(now())
@@ -211,6 +217,8 @@ model StoreItem {
   @@index([projectId, partNumberNorm])
   @@index([lineCode])
   @@index([partFull])
+  @@index([category])
+  @@index([subcategory])
 }
 
 /// Interchange (deterministic hints)
@@ -324,6 +332,36 @@ model VendorActionRule {
   @@map("vendor_action_rules")
   @@index([supplierLineCode])
   @@index([active])
+}
+
+/// Match History: Accepted matches for learning
+model AcceptedMatchHistory {
+  id                  String   @id @default(cuid())
+  projectId           String
+  storePartNumber     String
+  supplierPartNumber  String
+  supplierLineCode    String?
+  createdAt           DateTime @default(now())
+
+  @@map("accepted_match_history")
+  @@index([projectId])
+  @@index([storePartNumber, supplierPartNumber])
+  @@index([supplierLineCode])
+}
+
+/// Match History: Rejected matches for learning
+model RejectedMatchHistory {
+  id                  String   @id @default(cuid())
+  projectId           String
+  storePartNumber     String
+  supplierPartNumber  String
+  supplierLineCode    String?
+  createdAt           DateTime @default(now())
+
+  @@map("rejected_match_history")
+  @@index([projectId])
+  @@index([storePartNumber, supplierPartNumber])
+  @@index([supplierLineCode])
 }
 
 /// Data enrichment for matched parts

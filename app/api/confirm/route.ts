@@ -61,6 +61,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'confirm') {
+      // Fetch supplier item for history logging
+      const supplierItem = await prisma.supplierItem.findUnique({
+        where: { id: match.targetId },
+        select: { partNumber: true, lineCode: true },
+      });
+
       // Update match status
       await prisma.matchCandidate.update({
         where: { id: matchId },
@@ -71,6 +77,18 @@ export async function POST(req: NextRequest) {
           note: notes || null,
         },
       });
+
+      // Log to accepted match history (Epic A3)
+      if (supplierItem) {
+        await prisma.acceptedMatchHistory.create({
+          data: {
+            projectId: match.projectId,
+            storePartNumber: match.storeItem.partNumber,
+            supplierPartNumber: supplierItem.partNumber,
+            supplierLineCode: supplierItem.lineCode,
+          },
+        });
+      }
 
       // Log audit
       await prisma.auditLog.create({
@@ -94,6 +112,12 @@ export async function POST(req: NextRequest) {
         message: 'Match confirmed',
       });
     } else if (action === 'reject') {
+      // Fetch supplier item for history logging
+      const supplierItem = await prisma.supplierItem.findUnique({
+        where: { id: match.targetId },
+        select: { partNumber: true, lineCode: true },
+      });
+
       // Update match status
       await prisma.matchCandidate.update({
         where: { id: matchId },
@@ -104,6 +128,18 @@ export async function POST(req: NextRequest) {
           note: notes || null,
         },
       });
+
+      // Log to rejected match history (Epic A3)
+      if (supplierItem) {
+        await prisma.rejectedMatchHistory.create({
+          data: {
+            projectId: match.projectId,
+            storePartNumber: match.storeItem.partNumber,
+            supplierPartNumber: supplierItem.partNumber,
+            supplierLineCode: supplierItem.lineCode,
+          },
+        });
+      }
 
       // Log audit
       await prisma.auditLog.create({

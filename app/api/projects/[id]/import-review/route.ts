@@ -260,6 +260,59 @@ export async function POST(
         );
         updatedCount = updates.length;
         console.log(`[IMPORT] Successfully updated ${updatedCount} matches`);
+
+        // Log to match history (Epic A3)
+        const historyRecords: Array<{
+          projectId: string;
+          storePartNumber: string;
+          supplierPartNumber: string;
+          supplierLineCode: string | null;
+        }> = [];
+        const acceptedRecords: typeof historyRecords = [];
+        const rejectedRecords: typeof historyRecords = [];
+
+        for (const update of updates) {
+          if (update.status === 'CONFIRMED' || update.status === 'REJECTED') {
+            const match = matchesMap.get(update.matchId);
+            if (match) {
+              const supplierItem = await prisma.supplierItem.findUnique({
+                where: { id: match.targetId },
+                select: { partNumber: true, lineCode: true },
+              });
+              
+              if (supplierItem) {
+                const record = {
+                  projectId,
+                  storePartNumber: match.storeItem.partNumber,
+                  supplierPartNumber: supplierItem.partNumber,
+                  supplierLineCode: supplierItem.lineCode,
+                };
+                
+                if (update.status === 'CONFIRMED') {
+                  acceptedRecords.push(record);
+                } else {
+                  rejectedRecords.push(record);
+                }
+              }
+            }
+          }
+        }
+
+        if (acceptedRecords.length > 0) {
+          await prisma.acceptedMatchHistory.createMany({
+            data: acceptedRecords,
+            skipDuplicates: true,
+          });
+          console.log(`[IMPORT] Logged ${acceptedRecords.length} accepted matches to history`);
+        }
+
+        if (rejectedRecords.length > 0) {
+          await prisma.rejectedMatchHistory.createMany({
+            data: rejectedRecords,
+            skipDuplicates: true,
+          });
+          console.log(`[IMPORT] Logged ${rejectedRecords.length} rejected matches to history`);
+        }
       } catch (txError: any) {
         console.error('[IMPORT] Transaction error:', txError);
         return NextResponse.json({
