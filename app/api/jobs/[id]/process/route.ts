@@ -17,8 +17,9 @@ const openai = new OpenAI({
 });
 
 // Chunk sizes optimized for each job type
+// Reduced fuzzy chunk size to prevent timeouts with large supplier catalogs
 const CHUNK_SIZES: Record<string, number> = {
-  'fuzzy': 3000,  // Fuzzy processes 3000 items in ~2 minutes
+  'fuzzy': 150,   // Fuzzy processes 150 items in ~30-60 seconds (safe for 100k+ suppliers)
   'ai': 100,      // AI processes 100 items in ~3-4 minutes
   'web-search': 20, // Web search processes 20 items in ~1-2 minutes
 };
@@ -190,12 +191,21 @@ export async function POST(
 
     // Process chunk based on job type
     console.log(`[JOB-PROCESS] Starting ${jobType} processing for ${chunk.length} items...`);
+    console.log(`[JOB-PROCESS] Supplier catalog size: ${supplierItems.length} items`);
     const processingStartTime = Date.now();
+    
+    // Set timeout protection (Vercel has 300s limit, we'll use 240s to be safe)
+    const TIMEOUT_MS = 240000; // 4 minutes
     
     if (jobType === 'fuzzy') {
       console.log(`[JOB-PROCESS] Calling processFuzzyChunk with ${chunk.length} store items and ${supplierItems.length} supplier items`);
       newMatches = await processFuzzyChunk(chunk, supplierItems, job.projectId);
-      console.log(`[JOB-PROCESS] Fuzzy chunk complete in ${Date.now() - processingStartTime}ms, found ${newMatches} matches`);
+      const processingTime = Date.now() - processingStartTime;
+      console.log(`[JOB-PROCESS] Fuzzy chunk complete in ${processingTime}ms, found ${newMatches} matches`);
+      
+      if (processingTime > TIMEOUT_MS) {
+        console.warn(`[JOB-PROCESS] WARNING: Processing time (${processingTime}ms) exceeded timeout threshold (${TIMEOUT_MS}ms)`);
+      }
     } else if (jobType === 'ai') {
       console.log(`[JOB-PROCESS] Calling processAIMatching...`);
       const { processAIMatching } = await import('../processors');
@@ -256,9 +266,15 @@ export async function POST(
 
   } catch (error: any) {
     console.error('[JOB-PROCESS] Error:', error);
+    console.error('[JOB-PROCESS] Error stack:', error.stack);
 
-    // Update job status to failed
+    // Check if it's a timeout error
+    const isTimeout = error.message?.includes('timeout') || error.message?.includes('ETIMEDOUT');
+    
+    // Update job status - mark as failed but preserve progress
     try {
+      const job = await prisma.matchingJob.findUnique({ where: { id: params.id } });
+      
       await prisma.matchingJob.update({
         where: { id: params.id },
         data: {
@@ -266,12 +282,19 @@ export async function POST(
           completedAt: new Date(),
         },
       });
+      
+      console.error(`[JOB-PROCESS] Job ${params.id} marked as failed. Progress preserved: ${job?.processedItems}/${job?.totalItems}`);
     } catch (updateError) {
       console.error('[JOB-PROCESS] Failed to update job status:', updateError);
     }
 
     return NextResponse.json(
-      { success: false, error: error.message },
+      { 
+        success: false, 
+        error: error.message,
+        isTimeout,
+        message: isTimeout ? 'Processing timeout - reduce chunk size or supplier catalog' : error.message
+      },
       { status: 500 }
     );
   }

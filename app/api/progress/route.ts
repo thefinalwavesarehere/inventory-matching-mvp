@@ -23,6 +23,32 @@ export async function GET(request: NextRequest) {
         },
       });
     }
+    
+    // Check for active jobs and merge their progress
+    const activeJob = await prisma.matchingJob.findFirst({
+      where: {
+        projectId,
+        status: { in: ['pending', 'processing'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    
+    // If there's an active job, use its real-time progress
+    if (activeJob) {
+      const config = activeJob.config as any || {};
+      const jobType = config.jobType || 'fuzzy';
+      
+      if (jobType === 'fuzzy') {
+        progress.standardProcessed = activeJob.processedItems;
+        progress.standardTotalItems = activeJob.totalItems || 0;
+      } else if (jobType === 'ai') {
+        progress.aiProcessed = activeJob.processedItems;
+        progress.aiTotalItems = activeJob.totalItems || 0;
+      } else if (jobType === 'web-search') {
+        progress.webSearchProcessed = activeJob.processedItems;
+        progress.webSearchTotalItems = activeJob.totalItems || 0;
+      }
+    }
 
     // Get match counts
     const matchCounts = await prisma.matchCandidate.groupBy({
