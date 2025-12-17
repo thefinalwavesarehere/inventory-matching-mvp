@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
     // Stage 1: Known Interchange Matching (only on first batch)
     if (batchOffset === 0) {
       console.log(`[MATCH] Stage 1: Interchange Matching`);
-      const matchedStoreIds = new Set(matches.map((m) => m.storeItemId));
+      let matchedStoreIds = new Set(matches.map((m) => m.storeItemId));
       
       for (const storeItem of storeItems) {
       if (matchedStoreIds.has(storeItem.id)) continue; // Skip Epic A4 matched items
@@ -222,7 +222,7 @@ export async function POST(req: NextRequest) {
 
       // Stage 2: Exact Normalized Part Number Match
       console.log(`[MATCH] Stage 2: Exact Normalized Matching`);
-      const matchedStoreIds = new Set(matches.map((m) => m.storeItemId));
+      // Update matchedStoreIds with current matches (already declared above)
       
       for (const storeItem of storeItems) {
       if (matchedStoreIds.has(storeItem.id)) continue;
