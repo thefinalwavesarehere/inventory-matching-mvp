@@ -110,12 +110,6 @@ async function handleUpdateStatus(
           partNumber: true,
         },
       },
-      supplierItem: {
-        select: {
-          partNumber: true,
-          lineCode: true,
-        },
-      },
     },
   });
 
@@ -125,6 +119,25 @@ async function handleUpdateStatus(
       { status: 404 }
     );
   }
+
+  // Fetch supplier items separately (polymorphic relation)
+  const supplierItemIds = matches
+    .filter(m => m.targetType === 'SUPPLIER')
+    .map(m => m.targetId);
+  
+  const supplierItems = await prisma.supplierItem.findMany({
+    where: { id: { in: supplierItemIds } },
+    select: {
+      id: true,
+      partNumber: true,
+      lineCode: true,
+    },
+  });
+  
+  // Create a map for quick lookup
+  const supplierItemMap = new Map(
+    supplierItems.map(item => [item.id, item])
+  );
 
   // Perform bulk update and history logging in a transaction
   await prisma.$transaction(async (tx) => {
@@ -143,29 +156,47 @@ async function handleUpdateStatus(
 
     // Log to history tables
     if (status === 'ACCEPTED') {
-      const historyRecords = matches.map((match) => ({
-        projectId,
-        storePartNumber: match.storeItem.partNumber,
-        supplierPartNumber: match.supplierItem.partNumber,
-        supplierLineCode: match.supplierItem.lineCode || null,
-      }));
+      const historyRecords = matches
+        .map((match) => {
+          const supplierItem = supplierItemMap.get(match.targetId);
+          if (!supplierItem) return null;
+          
+          return {
+            projectId,
+            storePartNumber: match.storeItem.partNumber,
+            supplierPartNumber: supplierItem.partNumber,
+            supplierLineCode: supplierItem.lineCode || null,
+          };
+        })
+        .filter((record): record is NonNullable<typeof record> => record !== null);
 
-      await tx.acceptedMatchHistory.createMany({
-        data: historyRecords,
-        skipDuplicates: true,
-      });
+      if (historyRecords.length > 0) {
+        await tx.acceptedMatchHistory.createMany({
+          data: historyRecords,
+          skipDuplicates: true,
+        });
+      }
     } else {
-      const historyRecords = matches.map((match) => ({
-        projectId,
-        storePartNumber: match.storeItem.partNumber,
-        supplierPartNumber: match.supplierItem.partNumber,
-        supplierLineCode: match.supplierItem.lineCode || null,
-      }));
+      const historyRecords = matches
+        .map((match) => {
+          const supplierItem = supplierItemMap.get(match.targetId);
+          if (!supplierItem) return null;
+          
+          return {
+            projectId,
+            storePartNumber: match.storeItem.partNumber,
+            supplierPartNumber: supplierItem.partNumber,
+            supplierLineCode: supplierItem.lineCode || null,
+          };
+        })
+        .filter((record): record is NonNullable<typeof record> => record !== null);
 
-      await tx.rejectedMatchHistory.createMany({
-        data: historyRecords,
-        skipDuplicates: true,
-      });
+      if (historyRecords.length > 0) {
+        await tx.rejectedMatchHistory.createMany({
+          data: historyRecords,
+          skipDuplicates: true,
+        });
+      }
     }
   });
 
