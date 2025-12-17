@@ -124,6 +124,7 @@ export async function resolveVendorAction(match: MatchData): Promise<VendorActio
         active: true,
       },
       select: {
+        supplierLineCode: true,
         categoryPattern: true,
         subcategoryPattern: true,
         action: true,
