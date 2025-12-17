@@ -263,18 +263,24 @@ export async function POST(
         console.log(`[IMPORT] Successfully updated ${updatedCount} matches`);
 
         // Log to match history (Epic A3)
-        const historyRecords: Array<{
+        const acceptedRecords: Array<{
           projectId: string;
           storePartNumber: string;
           supplierPartNumber: string;
           supplierLineCode: string | null;
         }> = [];
-        const acceptedRecords: typeof historyRecords = [];
-        const rejectedRecords: typeof historyRecords = [];
+        const rejectedRecords: typeof acceptedRecords = [];
 
         for (const update of updates) {
-          if (update.status === 'CONFIRMED' || update.status === 'REJECTED') {
-            const match = matchesMap.get(update.matchId);
+          if (update.status === MatchStatus.CONFIRMED || update.status === MatchStatus.REJECTED) {
+            // Fetch match with related data
+            const match = await prisma.matchCandidate.findUnique({
+              where: { id: update.matchId },
+              include: {
+                storeItem: { select: { partNumber: true } },
+              },
+            });
+            
             if (match) {
               const supplierItem = await prisma.supplierItem.findUnique({
                 where: { id: match.targetId },
@@ -289,7 +295,7 @@ export async function POST(
                   supplierLineCode: supplierItem.lineCode,
                 };
                 
-                if (update.status === 'CONFIRMED') {
+                if (update.status === MatchStatus.CONFIRMED) {
                   acceptedRecords.push(record);
                 } else {
                   rejectedRecords.push(record);
