@@ -299,8 +299,6 @@ export async function POST(req: NextRequest) {
           select: {
             id: true,
             lineCode: true,
-            category: true,
-            subcategory: true,
           },
         });
         
@@ -310,12 +308,14 @@ export async function POST(req: NextRequest) {
       }
       
       // Build match data for vendor action resolution
+      // Note: category/subcategory fields don't exist in SupplierItem yet,
+      // so we default to null (wildcards will match in rules)
       const matchDataForResolution = matches.map((match) => {
         const supplierItem = supplierItemsMap.get(match.targetId);
         return {
           supplierLineCode: supplierItem?.lineCode || null,
-          category: supplierItem?.category || null,
-          subcategory: supplierItem?.subcategory || null,
+          category: null,
+          subcategory: null,
         };
       });
       
