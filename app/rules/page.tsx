@@ -3,15 +3,15 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 
-interface MatchingRule {
+interface VendorActionRule {
   id: string;
-  name: string;
-  description: string;
-  ruleType: string;
-  conditions: any;
-  actions: any;
-  priority: number;
-  enabled: boolean;
+  projectId: string | null;
+  supplierLineCode: string;
+  categoryPattern: string;
+  subcategoryPattern: string;
+  action: 'NONE' | 'LIFT' | 'REBOX' | 'UNKNOWN' | 'CONTACT_VENDOR';
+  active: boolean;
+  scope: 'global' | 'project';
   createdAt: string;
   updatedAt: string;
 }
@@ -21,32 +21,98 @@ export default function RulesManagementPage() {
   const router = useRouter();
   const projectId = searchParams.get('projectId');
   
-  const [rules, setRules] = useState<MatchingRule[]>([]);
+  const [rules, setRules] = useState<VendorActionRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingRule, setEditingRule] = useState<VendorActionRule | null>(null);
 
   useEffect(() => {
-    if (projectId) {
-      loadRules();
-    }
+    loadRules();
   }, [projectId]);
 
   const loadRules = async () => {
     try {
       setLoading(true);
-      // TODO: Create API endpoint for rules
-      // const res = await fetch(`/api/projects/${projectId}/rules`);
-      // if (!res.ok) throw new Error('Failed to load rules');
-      // const data = await res.json();
-      // setRules(data.rules || []);
+      setError('');
       
-      // For now, show placeholder
-      setRules([]);
+      const url = projectId 
+        ? `/api/projects/${projectId}/rules`
+        : `/api/rules`;
+      
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to load rules');
+      
+      const data = await res.json();
+      setRules(data.rules || []);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateRule = () => {
+    setEditingRule(null);
+    setShowCreateModal(true);
+  };
+
+  const handleEditRule = (rule: VendorActionRule) => {
+    setEditingRule(rule);
+    setShowCreateModal(true);
+  };
+
+  const handleDeleteRule = async (ruleId: string) => {
+    if (!confirm('Are you sure you want to delete this rule?')) return;
+
+    try {
+      const res = await fetch(`/api/rules/${ruleId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) throw new Error('Failed to delete rule');
+
+      // Reload rules
+      await loadRules();
+    } catch (err: any) {
+      alert('Error deleting rule: ' + err.message);
+    }
+  };
+
+  const handleToggleActive = async (rule: VendorActionRule) => {
+    try {
+      const res = await fetch(`/api/rules/${rule.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !rule.active }),
+      });
+
+      if (!res.ok) throw new Error('Failed to update rule');
+
+      // Reload rules
+      await loadRules();
+    } catch (err: any) {
+      alert('Error updating rule: ' + err.message);
+    }
+  };
+
+  const getActionColor = (action: string) => {
+    switch (action) {
+      case 'LIFT': return 'bg-blue-100 text-blue-700';
+      case 'REBOX': return 'bg-purple-100 text-purple-700';
+      case 'UNKNOWN': return 'bg-yellow-100 text-yellow-700';
+      case 'CONTACT_VENDOR': return 'bg-pink-100 text-pink-700';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const getActionIcon = (action: string) => {
+    switch (action) {
+      case 'LIFT': return '🔵';
+      case 'REBOX': return '📦';
+      case 'UNKNOWN': return '❓';
+      case 'CONTACT_VENDOR': return '📞';
+      default: return '⊘';
     }
   };
 
@@ -57,24 +123,52 @@ export default function RulesManagementPage() {
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold">Matching Rules</h1>
+              <h1 className="text-2xl font-bold">Vendor Action Rules</h1>
               <p className="text-gray-600 text-sm mt-1">
-                Create and manage automated matching rules for this project
+                {projectId 
+                  ? 'Manage automated vendor action rules for this project' 
+                  : 'Manage global vendor action rules (apply to all projects)'}
               </p>
             </div>
             <div className="flex gap-3">
               <button
-                onClick={() => setShowCreateModal(true)}
+                onClick={handleCreateRule}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
               >
                 + Create Rule
               </button>
-              <button
-                onClick={() => router.push(`/match?projectId=${projectId}`)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium"
-              >
-                ← Back to Matches
-              </button>
+              {projectId && (
+                <button
+                  onClick={() => router.push(`/match?projectId=${projectId}`)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium"
+                >
+                  ← Back to Matches
+                </button>
+              )}
+              {!projectId && (
+                <button
+                  onClick={() => router.push('/')}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium"
+                >
+                  ← Back to Home
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Info Banner */}
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <div className="text-2xl">ℹ️</div>
+            <div className="text-sm text-blue-700">
+              <p className="font-medium mb-1">How Vendor Action Rules Work:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li><strong>Supplier Line Code:</strong> Must match exactly (e.g., "GATES", "PICO")</li>
+                <li><strong>Category/Subcategory:</strong> Use "*" for wildcard or exact text</li>
+                <li><strong>Priority:</strong> Project-specific rules override global rules</li>
+                <li><strong>Pattern Priority:</strong> Exact matches beat wildcards</li>
+              </ul>
             </div>
           </div>
         </div>
@@ -83,11 +177,12 @@ export default function RulesManagementPage() {
         <div className="bg-white rounded-lg shadow">
           {loading ? (
             <div className="p-12 text-center text-gray-500">
+              <div className="animate-spin text-4xl mb-4">⚙️</div>
               Loading rules...
             </div>
           ) : error ? (
             <div className="p-12 text-center">
-              <div className="text-red-600 mb-4">{error}</div>
+              <div className="text-red-600 mb-4">❌ {error}</div>
               <button
                 onClick={loadRules}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -102,10 +197,10 @@ export default function RulesManagementPage() {
                 No Rules Yet
               </h3>
               <p className="text-gray-500 mb-6">
-                Create your first matching rule to automate part number matching
+                Create your first vendor action rule to automate match tagging
               </p>
               <button
-                onClick={() => setShowCreateModal(true)}
+                onClick={handleCreateRule}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
               >
                 Create First Rule
@@ -116,105 +211,323 @@ export default function RulesManagementPage() {
                 <h4 className="font-semibold text-gray-700 mb-4">Example Rules:</h4>
                 <div className="space-y-3">
                   <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="font-medium text-blue-900">Auto-Accept High Confidence Interchange</div>
+                    <div className="font-medium text-blue-900">GATES Belts → LIFT</div>
                     <div className="text-sm text-blue-700 mt-1">
-                      If method = "INTERCHANGE" AND confidence ≥ 95% → Auto-accept
-                    </div>
-                  </div>
-                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                    <div className="font-medium text-green-900">Flag Price Discrepancies</div>
-                    <div className="text-sm text-green-700 mt-1">
-                      If cost_difference &gt; $50 → Set vendor_action = "CONTACT_VENDOR"
+                      Line Code: GATES | Category: belts | Subcategory: * → Action: LIFT
                     </div>
                   </div>
                   <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-                    <div className="font-medium text-purple-900">Pattern-Based Matching</div>
+                    <div className="font-medium text-purple-900">PICO Wiring → REBOX</div>
                     <div className="text-sm text-purple-700 mt-1">
-                      If part_number matches pattern "^[A-Z]{3}[0-9]{5}$" → Boost confidence by 10%
+                      Line Code: PICO | Category: wiring | Subcategory: * → Action: REBOX
                     </div>
                   </div>
                   <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                    <div className="font-medium text-yellow-900">Reject Low Confidence Fuzzy</div>
+                    <div className="font-medium text-yellow-900">Unknown Brands → UNKNOWN</div>
                     <div className="text-sm text-yellow-700 mt-1">
-                      If method = "FUZZY_SUBSTRING" AND confidence &lt; 60% → Auto-reject
+                      Line Code: GENERIC | Category: * | Subcategory: * → Action: UNKNOWN
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="divide-y">
-              {rules.map((rule) => (
-                <div key={rule.id} className="p-6 hover:bg-gray-50">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold">{rule.name}</h3>
-                        <span className={`px-2 py-1 text-xs rounded ${
-                          rule.enabled 
-                            ? 'bg-green-100 text-green-700' 
-                            : 'bg-gray-100 text-gray-600'
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Scope</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Line Code</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Subcategory</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {rules.map((rule) => (
+                    <tr key={rule.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 text-xs rounded font-medium ${
+                          rule.scope === 'project' 
+                            ? 'bg-indigo-100 text-indigo-700' 
+                            : 'bg-gray-100 text-gray-700'
                         }`}>
-                          {rule.enabled ? 'Enabled' : 'Disabled'}
+                          {rule.scope === 'project' ? '📁 Project' : '🌐 Global'}
                         </span>
-                        <span className="text-sm text-gray-500">
-                          Priority: {rule.priority}
+                      </td>
+                      <td className="px-6 py-4 font-mono text-sm">{rule.supplierLineCode}</td>
+                      <td className="px-6 py-4 text-sm">{rule.categoryPattern}</td>
+                      <td className="px-6 py-4 text-sm">{rule.subcategoryPattern}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 text-xs rounded font-medium ${getActionColor(rule.action)}`}>
+                          {getActionIcon(rule.action)} {rule.action}
                         </span>
-                      </div>
-                      <p className="text-gray-600 text-sm mb-3">
-                        {rule.description}
-                      </p>
-                      <div className="flex items-center gap-4 text-sm text-gray-500">
-                        <span>Type: {rule.ruleType}</span>
-                        <span>•</span>
-                        <span>Created: {new Date(rule.createdAt).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="px-3 py-1.5 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                      </td>
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => handleToggleActive(rule)}
+                          className={`px-2 py-1 text-xs rounded font-medium ${
+                            rule.active 
+                              ? 'bg-green-100 text-green-700 hover:bg-green-200' 
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {rule.active ? '✓ Active' : '✗ Inactive'}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => handleEditRule(rule)}
+                            className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRule(rule.id)}
+                            className="px-3 py-1.5 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
+      </div>
 
-        {/* Coming Soon Notice */}
-        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-6">
-          <div className="flex items-start gap-4">
-            <div className="text-3xl">🚧</div>
-            <div>
-              <h3 className="font-semibold text-blue-900 mb-2">
-                Rules Engine - Coming Soon
-              </h3>
-              <p className="text-blue-700 text-sm mb-3">
-                The advanced rules engine is currently under development. This feature will allow you to:
-              </p>
-              <ul className="text-sm text-blue-700 space-y-1 list-disc list-inside">
-                <li>Create custom matching rules with complex conditions</li>
-                <li>Auto-accept or auto-reject matches based on criteria</li>
-                <li>Set vendor actions automatically based on patterns</li>
-                <li>Boost or penalize confidence scores</li>
-                <li>Apply rules in priority order</li>
-                <li>Test rules before enabling them</li>
-              </ul>
-              <p className="text-blue-700 text-sm mt-3">
-                For now, use the <strong>batch selection</strong> and <strong>bulk actions</strong> features 
-                on the Match Review page to efficiently manage large volumes of matches.
-              </p>
-            </div>
-          </div>
+      {/* Create/Edit Modal */}
+      {showCreateModal && (
+        <RuleModal
+          rule={editingRule}
+          projectId={projectId}
+          onClose={() => {
+            setShowCreateModal(false);
+            setEditingRule(null);
+          }}
+          onSave={() => {
+            setShowCreateModal(false);
+            setEditingRule(null);
+            loadRules();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Rule Modal Component
+function RuleModal({ 
+  rule, 
+  projectId, 
+  onClose, 
+  onSave 
+}: { 
+  rule: VendorActionRule | null; 
+  projectId: string | null; 
+  onClose: () => void; 
+  onSave: () => void; 
+}) {
+  const [formData, setFormData] = useState({
+    supplierLineCode: rule?.supplierLineCode || '',
+    categoryPattern: rule?.categoryPattern || '*',
+    subcategoryPattern: rule?.subcategoryPattern || '*',
+    action: rule?.action || 'NONE',
+    active: rule?.active ?? true,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.supplierLineCode.trim()) {
+      setError('Supplier Line Code is required');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError('');
+
+      if (rule) {
+        // Update existing rule
+        const res = await fetch(`/api/rules/${rule.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+
+        if (!res.ok) throw new Error('Failed to update rule');
+      } else {
+        // Create new rule
+        const url = projectId 
+          ? `/api/projects/${projectId}/rules`
+          : `/api/rules`;
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+
+        if (!res.ok) throw new Error('Failed to create rule');
+      }
+
+      onSave();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b">
+          <h2 className="text-xl font-bold">
+            {rule ? 'Edit Rule' : 'Create New Rule'}
+          </h2>
+          <p className="text-sm text-gray-600 mt-1">
+            {projectId 
+              ? 'This rule will apply only to this project' 
+              : 'This rule will apply globally to all projects'}
+          </p>
         </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+              {error}
+            </div>
+          )}
+
+          {/* Supplier Line Code */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Supplier Line Code *
+            </label>
+            <input
+              type="text"
+              value={formData.supplierLineCode}
+              onChange={(e) => setFormData({ ...formData, supplierLineCode: e.target.value.toUpperCase() })}
+              placeholder="e.g., GATES, PICO, DAYCO"
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 font-mono"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Must match exactly (case-insensitive, will be converted to uppercase)
+            </p>
+          </div>
+
+          {/* Category Pattern */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Category Pattern *
+            </label>
+            <input
+              type="text"
+              value={formData.categoryPattern}
+              onChange={(e) => setFormData({ ...formData, categoryPattern: e.target.value })}
+              placeholder="e.g., belts, hoses, or * for any"
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Use "*" for wildcard (matches any category)
+            </p>
+          </div>
+
+          {/* Subcategory Pattern */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Subcategory Pattern *
+            </label>
+            <input
+              type="text"
+              value={formData.subcategoryPattern}
+              onChange={(e) => setFormData({ ...formData, subcategoryPattern: e.target.value })}
+              placeholder="e.g., V-belt, coolant, or * for any"
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Use "*" for wildcard (matches any subcategory)
+            </p>
+          </div>
+
+          {/* Vendor Action */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Vendor Action *
+            </label>
+            <select
+              value={formData.action}
+              onChange={(e) => setFormData({ ...formData, action: e.target.value as any })}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              required
+            >
+              <option value="NONE">⊘ None</option>
+              <option value="LIFT">🔵 Lift</option>
+              <option value="REBOX">📦 Rebox</option>
+              <option value="UNKNOWN">❓ Unknown</option>
+              <option value="CONTACT_VENDOR">📞 Contact Vendor</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Action to apply when this rule matches
+            </p>
+          </div>
+
+          {/* Active Toggle */}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="active"
+              checked={formData.active}
+              onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <label htmlFor="active" className="text-sm font-medium text-gray-700">
+              Active (rule will be applied immediately)
+            </label>
+          </div>
+
+          {/* Priority Info */}
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
+            <p className="font-medium mb-1">Rule Priority:</p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Project-specific rules override global rules</li>
+              <li>Exact patterns beat wildcards</li>
+              <li>More specific patterns have higher priority</li>
+            </ul>
+          </div>
+
+          {/* Buttons */}
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              disabled={saving}
+            >
+              {saving ? 'Saving...' : (rule ? 'Update Rule' : 'Create Rule')}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
