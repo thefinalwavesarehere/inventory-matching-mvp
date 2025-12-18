@@ -11,7 +11,7 @@ export async function POST(
 ) {
   try {
     // Verify admin role
-    const adminUser = await requireAdminRole();
+    const { profile: adminProfile } = await requireAdminRole();
     
     const userId = params.id;
 
@@ -36,12 +36,12 @@ export async function POST(
     // Log the approval action
     await logActivity({
       action: 'USER_APPROVED',
-      userId: adminUser.id,
+      userId: adminProfile.id,
       details: {
         targetUserId: userId,
         targetUserEmail: user.email,
         targetUserName: user.fullName,
-        approvedBy: adminUser.email,
+        approvedBy: adminProfile.email,
       },
     });
 
@@ -73,7 +73,7 @@ export async function DELETE(
 ) {
   try {
     // Verify admin role
-    const adminUser = await requireAdminRole();
+    const { profile: adminProfile } = await requireAdminRole();
     
     const userId = params.id;
 
@@ -106,12 +106,12 @@ export async function DELETE(
     // Log the unapproval action
     await logActivity({
       action: 'USER_UNAPPROVED',
-      userId: adminUser.id,
+      userId: adminProfile.id,
       details: {
         targetUserId: userId,
         targetUserEmail: user.email,
         targetUserName: user.fullName,
-        unapprovedBy: adminUser.email,
+        unapprovedBy: adminProfile.email,
       },
     });
 
