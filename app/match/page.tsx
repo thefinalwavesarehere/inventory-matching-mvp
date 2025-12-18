@@ -85,6 +85,54 @@ export default function MatchPageWithBulkActions() {
     }
   };
 
+  const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!projectId) {
+      alert('Project ID is missing');
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('projectId', projectId);
+
+      const res = await fetch('/api/match/import', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.details || error.error || 'Failed to import CSV');
+      }
+
+      const result = await res.json();
+      
+      // Show summary
+      alert(
+        `Import Complete!\n\n` +
+        `Total Rows: ${result.summary.totalRows}\n` +
+        `Successful Updates: ${result.summary.successfulUpdates}\n` +
+        `Failed Updates: ${result.summary.failedUpdates}\n` +
+        `Parse Errors: ${result.summary.parseErrors}\n\n` +
+        (result.errors.length > 0 ? `Errors:\n${result.errors.slice(0, 5).join('\n')}` : '')
+      );
+
+      // Reload matches to show updated statuses
+      loadMatches();
+      
+      // Reset file input
+      event.target.value = '';
+    } catch (err: any) {
+      console.error('Import error:', err);
+      alert(`Error importing CSV: ${err.message}`);
+      event.target.value = '';
+    }
+  };
+
   const toggleSelectAll = () => {
     if (selectedMatches.size === filteredMatches.length) {
       setSelectedMatches(new Set());
@@ -263,9 +311,32 @@ export default function MatchPageWithBulkActions() {
             <p className="text-gray-600 text-sm mt-1">Review and confirm inventory matches</p>
           </div>
           <div className="flex gap-3">
+            <a
+              href={`/api/match/export?projectId=${projectId}&status=confirmed`}
+              download
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium inline-flex items-center gap-2"
+            >
+              📥 Export Confirmed
+            </a>
+            <a
+              href={`/api/match/export?projectId=${projectId}&status=pending`}
+              download
+              className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 font-medium inline-flex items-center gap-2"
+            >
+              📥 Export Pending
+            </a>
+            <label className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium inline-flex items-center gap-2 cursor-pointer">
+              📄 Import CSV
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleImportCSV}
+                className="hidden"
+              />
+            </label>
             <button
               onClick={() => router.push(`/analytics?projectId=${projectId}`)}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium flex items-center gap-2"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2"
             >
               📊 Analytics
             </button>
@@ -295,6 +366,21 @@ export default function MatchPageWithBulkActions() {
               </select>
             </div>
             <div>
+              <label className="text-sm text-gray-600 mr-2">Method:</label>
+              <select
+                value={methodFilter}
+                onChange={(e) => setMethodFilter(e.target.value)}
+                className="border rounded px-3 py-1.5"
+              >
+                <option value="all">All Methods</option>
+                <option value="INTERCHANGE">Interchange</option>
+                <option value="EXACT_NORM">Exact Match</option>
+                <option value="FUZZY_SUBSTRING">Fuzzy Match</option>
+                <option value="AI">AI Match</option>
+                <option value="WEB_SEARCH">Web Search</option>
+              </select>
+            </div>
+            <div>
               <label className="text-sm text-gray-600 mr-2">Sort by:</label>
               <select
                 value={sortBy}
@@ -307,9 +393,13 @@ export default function MatchPageWithBulkActions() {
               <button
                 onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
                 className="ml-2 px-3 py-1.5 border rounded hover:bg-gray-50"
+                title={`Sort ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
               >
-                {sortOrder === 'asc' ? '↑' : '↓'}
+                {sortOrder === 'asc' ? '↑ Asc' : '↓ Desc'}
               </button>
+            </div>
+            <div className="ml-auto text-sm text-gray-500">
+              Showing {filteredMatches.length} of {matches.length} matches
             </div>
           </div>
         </div>
@@ -333,22 +423,85 @@ export default function MatchPageWithBulkActions() {
             {/* Select All Checkbox */}
             {filteredMatches.length > 0 && (
               <div className="bg-white rounded-lg shadow p-4 mb-4">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedMatches.size === filteredMatches.length && filteredMatches.length > 0}
-                    onChange={toggleSelectAll}
-                    className="w-5 h-5 rounded border-gray-300"
-                  />
-                  <span className="font-medium text-gray-700">
-                    Select All ({filteredMatches.length} matches)
-                  </span>
-                  {selectedMatches.size > 0 && selectedMatches.size < filteredMatches.length && (
-                    <span className="text-sm text-gray-500">
-                      ({selectedMatches.size} selected)
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedMatches.size === filteredMatches.length && filteredMatches.length > 0}
+                      onChange={toggleSelectAll}
+                      className="w-5 h-5 rounded border-gray-300"
+                    />
+                    <span className="font-medium text-gray-700">
+                      Select All ({filteredMatches.length} matches)
                     </span>
-                  )}
-                </label>
+                    {selectedMatches.size > 0 && selectedMatches.size < filteredMatches.length && (
+                      <span className="text-sm text-gray-500">
+                        ({selectedMatches.size} selected)
+                      </span>
+                    )}
+                  </label>
+                  
+                  {/* Batch Selection Dropdown */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Select by:</span>
+                    <select
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === 'none') return;
+                        
+                        let matchesToSelect: string[] = [];
+                        
+                        // Method-based selection
+                        if (value === 'INTERCHANGE') {
+                          matchesToSelect = filteredMatches.filter(m => m.method === 'INTERCHANGE').map(m => m.id);
+                        } else if (value === 'EXACT_NORM') {
+                          matchesToSelect = filteredMatches.filter(m => m.method === 'EXACT_NORM').map(m => m.id);
+                        } else if (value === 'FUZZY_SUBSTRING') {
+                          matchesToSelect = filteredMatches.filter(m => m.method === 'FUZZY_SUBSTRING').map(m => m.id);
+                        } else if (value === 'AI') {
+                          matchesToSelect = filteredMatches.filter(m => m.method === 'AI').map(m => m.id);
+                        } else if (value === 'WEB_SEARCH') {
+                          matchesToSelect = filteredMatches.filter(m => m.method === 'WEB_SEARCH').map(m => m.id);
+                        }
+                        // Confidence-based selection
+                        else if (value === 'conf_high') {
+                          matchesToSelect = filteredMatches.filter(m => m.confidence >= 0.9).map(m => m.id);
+                        } else if (value === 'conf_medium') {
+                          matchesToSelect = filteredMatches.filter(m => m.confidence >= 0.7 && m.confidence < 0.9).map(m => m.id);
+                        } else if (value === 'conf_low') {
+                          matchesToSelect = filteredMatches.filter(m => m.confidence < 0.7).map(m => m.id);
+                        }
+                        
+                        setSelectedMatches(new Set(matchesToSelect));
+                        e.target.value = 'none'; // Reset dropdown
+                      }}
+                      className="border rounded px-3 py-1.5 text-sm"
+                    >
+                      <option value="none">Choose...</option>
+                      <optgroup label="By Method">
+                        <option value="INTERCHANGE">Interchange Matches</option>
+                        <option value="EXACT_NORM">Exact Matches</option>
+                        <option value="FUZZY_SUBSTRING">Fuzzy Matches</option>
+                        <option value="AI">AI Matches</option>
+                        <option value="WEB_SEARCH">Web Search Matches</option>
+                      </optgroup>
+                      <optgroup label="By Confidence">
+                        <option value="conf_high">High Confidence (≥90%)</option>
+                        <option value="conf_medium">Medium Confidence (70-89%)</option>
+                        <option value="conf_low">Low Confidence (<70%)</option>
+                      </optgroup>
+                    </select>
+                    
+                    {/* Rules Management Button */}
+                    <button
+                      onClick={() => router.push(`/rules?projectId=${projectId}`)}
+                      className="px-3 py-1.5 bg-gray-100 border border-gray-300 rounded hover:bg-gray-200 text-sm font-medium flex items-center gap-2"
+                      title="Manage matching rules"
+                    >
+                      ⚙️ Rules
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
             
