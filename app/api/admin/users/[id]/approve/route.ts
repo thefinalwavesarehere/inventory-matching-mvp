@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { requireAdminRole } from '@/app/lib/auth-helpers';
-import { logActivity } from '@/app/lib/activity-logger';
+import { logActivity } from '@/app/lib/logger';
 
 const prisma = new PrismaClient();
 
