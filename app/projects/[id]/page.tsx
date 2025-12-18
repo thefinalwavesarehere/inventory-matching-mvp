@@ -536,6 +536,13 @@ export default function ProjectDetailPage() {
             {!editing && (
               <div className="flex gap-2 ml-4">
                 <button
+                  onClick={() => router.push(`/rules?projectId=${projectId}`)}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 flex items-center gap-2"
+                  title="Manage matching rules"
+                >
+                  ⚙️ Rules
+                </button>
+                <button
                   onClick={() => setEditing(true)}
                   className="px-4 py-2 border rounded hover:bg-gray-50"
                 >

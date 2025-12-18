@@ -76,7 +76,7 @@ export default function Home() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
           <button
             onClick={() => router.push('/upload')}
             className="bg-black text-white p-6 rounded-lg hover:bg-gray-800 transition-colors text-left"
@@ -118,6 +118,17 @@ export default function Home() {
             <h2 className="text-xl font-semibold mb-1">Manage Projects</h2>
             <p className="text-sm text-gray-300">
               View and manage your projects
+            </p>
+          </button>
+
+          <button
+            onClick={() => router.push('/rules')}
+            className="bg-indigo-600 text-white p-6 rounded-lg hover:bg-indigo-700 transition-colors text-left"
+          >
+            <div className="text-3xl mb-2">⚙️</div>
+            <h2 className="text-xl font-semibold mb-1">Rules Engine</h2>
+            <p className="text-sm text-indigo-100">
+              Manage automated matching rules
             </p>
           </button>
         </div>
