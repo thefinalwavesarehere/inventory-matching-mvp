@@ -10,6 +10,7 @@ export default function LoginPage() {
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
@@ -72,6 +73,7 @@ export default function LoginPage() {
           body: JSON.stringify({
             userId: data.user.id,
             email: data.user.email,
+            fullName: fullName || null,
           }),
         });
 
@@ -108,6 +110,25 @@ export default function LoginPage() {
             {error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
                 {error}
+              </div>
+            )}
+
+            {/* Full Name (Signup only) */}
+            {mode === 'signup' && (
+              <div>
+                <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
+                  Full Name
+                </label>
+                <input
+                  id="fullName"
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="John Doe"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                  disabled={loading}
+                />
               </div>
             )}
 

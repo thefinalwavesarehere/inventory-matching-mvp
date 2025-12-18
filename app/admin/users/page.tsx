@@ -13,9 +13,12 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showRoleModal, setShowRoleModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [newRole, setNewRole] = useState<'ADMIN' | 'EDITOR' | 'VIEWER'>('EDITOR');
   const [changingRole, setChangingRole] = useState(false);
+  const [editingUser, setEditingUser] = useState(false);
+  const [editForm, setEditForm] = useState({ fullName: '', email: '' });
 
   // Check if current user is admin
   useEffect(() => {
@@ -77,6 +80,38 @@ export default function AdminUsersPage() {
       setError(err.message);
     } finally {
       setChangingRole(false);
+    }
+  };
+
+  const handleEditUser = async () => {
+    if (!selectedUser) return;
+
+    setEditingUser(true);
+    setError('');
+
+    try {
+      const res = await fetch(`/api/admin/users/${selectedUser.id}/update`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: editForm.fullName,
+          email: editForm.email,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update user');
+      }
+
+      // Reload users
+      await loadUsers();
+      setShowEditModal(false);
+      setSelectedUser(null);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setEditingUser(false);
     }
   };
 
@@ -218,6 +253,19 @@ export default function AdminUsersPage() {
                           <button
                             onClick={() => {
                               setSelectedUser(user);
+                              setEditForm({
+                                fullName: user.fullName || '',
+                                email: user.email,
+                              });
+                              setShowEditModal(true);
+                            }}
+                            className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                          >
+                            Edit Details
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedUser(user);
                               setNewRole(user.role);
                               setShowRoleModal(true);
                             }}
@@ -264,6 +312,71 @@ export default function AdminUsersPage() {
           </div>
         </div>
       </div>
+
+      {/* Edit User Modal */}
+      {showEditModal && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h2 className="text-xl font-bold mb-4">Edit User Details</h2>
+            
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                Editing: <strong>{selectedUser.email}</strong>
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Full Name
+              </label>
+              <input
+                type="text"
+                value={editForm.fullName}
+                onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter full name"
+              />
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter email address"
+              />
+            </div>
+
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-700 mb-6">
+              ⚠️ This action will be logged in the activity log
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setSelectedUser(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                disabled={editingUser}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditUser}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                disabled={editingUser || (!editForm.fullName && !editForm.email)}
+              >
+                {editingUser ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Change Role Modal */}
       {showRoleModal && selectedUser && (
