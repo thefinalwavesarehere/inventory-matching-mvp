@@ -10,6 +10,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient, MatchStatus, VendorAction } from '@prisma/client';
+import { requireAuth } from '@/app/lib/auth-helpers';
+import { logActivity, ActivityType } from '@/app/lib/logger';
 
 const prisma = new PrismaClient();
 
@@ -34,6 +36,9 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Require authentication
+    const { profile } = await requireAuth();
+    
     const projectId = params.id;
     const body: BulkOperationRequest = await request.json();
 
@@ -59,9 +64,9 @@ export async function POST(
     }
 
     if (operation === 'update_status') {
-      return await handleUpdateStatus(projectId, body as BulkUpdateStatusRequest);
+      return await handleUpdateStatus(projectId, body as BulkUpdateStatusRequest, profile.id, request);
     } else if (operation === 'update_vendor_action') {
-      return await handleUpdateVendorAction(projectId, body as BulkUpdateVendorActionRequest);
+      return await handleUpdateVendorAction(projectId, body as BulkUpdateVendorActionRequest, profile.id, request);
     } else {
       return NextResponse.json(
         { error: `Unknown operation: ${operation}` },
@@ -83,7 +88,9 @@ export async function POST(
  */
 async function handleUpdateStatus(
   projectId: string,
-  request: BulkUpdateStatusRequest
+  request: BulkUpdateStatusRequest,
+  userId: string,
+  httpRequest: NextRequest
 ): Promise<NextResponse> {
   const { matchIds, status } = request;
 
@@ -204,6 +211,19 @@ async function handleUpdateStatus(
     `[BULK_OPERATIONS] Updated ${matches.length} matches to ${status} for project ${projectId}`
   );
 
+  // Log activity
+  await logActivity({
+    userId,
+    projectId,
+    action: status === 'ACCEPTED' ? ActivityType.BULK_ACCEPT : ActivityType.BULK_REJECT,
+    details: {
+      matchIds,
+      count: matches.length,
+      status,
+    },
+    ipAddress: httpRequest.headers.get('x-forwarded-for') || httpRequest.headers.get('x-real-ip'),
+  });
+
   return NextResponse.json({
     success: true,
     operation: 'update_status',
@@ -218,7 +238,9 @@ async function handleUpdateStatus(
  */
 async function handleUpdateVendorAction(
   projectId: string,
-  request: BulkUpdateVendorActionRequest
+  request: BulkUpdateVendorActionRequest,
+  userId: string,
+  httpRequest: NextRequest
 ): Promise<NextResponse> {
   const { matchIds, vendorAction } = request;
 
@@ -246,6 +268,19 @@ async function handleUpdateVendorAction(
   console.log(
     `[BULK_OPERATIONS] Updated ${result.count} matches with vendor action ${vendorAction} for project ${projectId}`
   );
+
+  // Log activity
+  await logActivity({
+    userId,
+    projectId,
+    action: ActivityType.BULK_SET_VENDOR_ACTION,
+    details: {
+      matchIds,
+      count: result.count,
+      vendorAction,
+    },
+    ipAddress: httpRequest.headers.get('x-forwarded-for') || httpRequest.headers.get('x-real-ip'),
+  });
 
   return NextResponse.json({
     success: true,

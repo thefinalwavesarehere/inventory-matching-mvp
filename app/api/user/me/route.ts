@@ -1,40 +1,51 @@
-/**
- * User Profile API
- * 
- * GET /api/user/me - Get current user profile
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions, getCurrentUser } from '@/app/lib/auth';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+/**
+ * GET /api/user/me
+ * Get current user's profile
+ */
+export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
+    const supabase = createRouteHandlerClient({ cookies });
+    
+    // Get current session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session) {
       return NextResponse.json(
-        { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+        { success: false, error: 'Not authenticated' },
         { status: 401 }
       );
     }
 
-    const user = await getCurrentUser(session);
+    // Fetch user profile
+    const profile = await prisma.userProfile.findUnique({
+      where: { id: session.user.id },
+    });
 
-    if (!user) {
+    if (!profile) {
       return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: 'User not found' } },
+        { success: false, error: 'Profile not found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ user });
-  } catch (error) {
-    console.error('Error fetching user profile:', error);
+    return NextResponse.json({
+      success: true,
+      profile,
+      user: session.user,
+    });
+  } catch (error: any) {
+    console.error('[API] Error fetching user profile:', error);
     return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch user profile' } },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }

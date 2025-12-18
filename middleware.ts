@@ -1,40 +1,66 @@
-/**
- * Next.js Middleware for Protected Routes
- * 
- * Redirects unauthenticated users to login page
- */
-
-import { withAuth } from 'next-auth/middleware';
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
-export default withAuth(
-  function middleware(req) {
-    // Allow request to proceed
-    return NextResponse.next();
-  },
-  {
-    callbacks: {
-      authorized: ({ token }) => !!token,
-    },
-    // Use NextAuth default signin page at /api/auth/signin
-    // pages: {
-    //   signIn: '/login',
-    // },
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next();
+  const supabase = createMiddlewareClient({ req, res });
+
+  // Refresh session if expired - required for Server Components
+  const { data: { session } } = await supabase.auth.getSession();
+
+  const { pathname } = req.nextUrl;
+
+  // Public routes that don't require authentication
+  const publicRoutes = [
+    '/login',
+    '/auth/callback',
+    '/auth/reset-password',
+  ];
+
+  // Public API routes
+  const publicApiRoutes = [
+    '/api/auth/create-profile',
+    '/api/auth/callback',
+    '/api/cron',
+    '/api/jobs',
+    '/api/progress',
+  ];
+
+  // Static assets
+  const isPublicAsset = pathname.startsWith('/_next') || 
+                        pathname.includes('.') ||
+                        pathname === '/favicon.ico' ||
+                        pathname === '/robots.txt';
+
+  // Check if API route is public
+  const isPublicApi = publicApiRoutes.some(route => pathname.startsWith(route));
+
+  // Allow public routes, assets, and public API routes
+  if (publicRoutes.includes(pathname) || isPublicAsset || isPublicApi) {
+    return res;
   }
-);
 
-// Protect all routes except API auth and static files
+  // Redirect to login if no session
+  if (!session) {
+    const redirectUrl = req.nextUrl.clone();
+    redirectUrl.pathname = '/login';
+    redirectUrl.searchParams.set('redirectTo', pathname);
+    return NextResponse.redirect(redirectUrl);
+  }
+
+  return res;
+}
+
 export const config = {
   matcher: [
     /*
      * Match all request paths except:
-     * - /api/auth (NextAuth API routes - includes signin page)
-     * - /api/cron (Vercel Cron jobs - has own CRON_SECRET auth)
-     * - /api/jobs (Background job processing - has own auth)
-     * - /api/progress (Progress tracking - public read access)
-     * - /_next (Next.js internals)
-     * - /favicon.ico, /robots.txt (static files)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
      */
-    '/((?!api/auth|api/cron|api/jobs|api/progress|_next|favicon.ico|robots.txt).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

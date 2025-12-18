@@ -62,6 +62,7 @@ model Project {
   auditLogs    AuditLog[]
   columnMappings FileColumnMapping[]
   vendorActionRules VendorActionRule[]
+  activityLogs ActivityLog[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -637,4 +638,47 @@ model FileColumnMapping {
   @@unique([projectId, fileType, semanticRole])
   @@map("file_column_mappings")
   @@index([projectId, fileType])
+}
+
+/// Epic B2: User Accounts, Authentication & Activity Logging
+/// UserProfile syncs with Supabase auth.users table
+
+enum UserRole {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+model UserProfile {
+  id                  String        @id // Must match Supabase auth.users.id (UUID)
+  email               String        @unique
+  fullName            String?       @map("full_name")
+  role                UserRole      @default(EDITOR)
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  
+  // Relations
+  activityLogs        ActivityLog[]
+  
+  @@map("user_profiles")
+  @@index([email])
+  @@index([role])
+}
+
+model ActivityLog {
+  id          String    @id @default(cuid())
+  projectId   String?   @map("project_id")
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  userId      String    @map("user_id")
+  user        UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action      String    // e.g., "USER_PROMOTED", "BULK_REJECT", "RULE_CREATED"
+  details     Json      // Additional context (e.g., { matchIds: [...], status: "ACCEPTED" })
+  ipAddress   String?   @map("ip_address")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  
+  @@map("activity_logs")
+  @@index([userId])
+  @@index([projectId])
+  @@index([action])
+  @@index([createdAt])
 }
