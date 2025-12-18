@@ -17,7 +17,7 @@ export async function PUT(
 ) {
   try {
     // Require admin role
-    const profile = await requireAdminRole(request);
+    const { profile } = await requireAdminRole();
 
     const body = await request.json();
     const { fullName, email } = body;
