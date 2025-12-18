@@ -6,7 +6,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function Header() {
   const router = useRouter();
-  const { profile, isLoading } = useCurrentUser();
+  const { profile, loading } = useCurrentUser();
   const supabase = createClientComponentClient();
 
   const handleSignOut = async () => {
@@ -20,7 +20,7 @@ export default function Header() {
     }
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-4">
@@ -86,13 +86,13 @@ export default function Header() {
             <div className="flex items-center space-x-3">
               {/* Avatar */}
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
-                {getInitials(profile.full_name, profile.email)}
+                {getInitials(profile.fullName, profile.email)}
               </div>
 
               {/* Name & Role */}
               <div className="hidden md:block text-right">
                 <div className="text-sm font-medium text-gray-900">
-                  {profile.full_name || 'No name'}
+                  {profile.fullName || 'No name'}
                 </div>
                 <div className="flex items-center space-x-2">
                   <span
