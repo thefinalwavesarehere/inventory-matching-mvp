@@ -601,7 +601,8 @@ export default function MatchPageWithBulkActions() {
                 <select
                   value={rowsPerPage}
                   onChange={(e) => {
-                    setRowsPerPage(Number(e.target.value));
+                    const value = e.target.value;
+                    setRowsPerPage(value === 'all' ? totalCount : Number(value));
                     setCurrentPage(1);
                   }}
                   className="border rounded px-2 py-1 text-sm"
@@ -609,6 +610,7 @@ export default function MatchPageWithBulkActions() {
                   <option value="25">25</option>
                   <option value="50">50</option>
                   <option value="100">100</option>
+                  <option value="all">ALL</option>
                 </select>
               </div>
             </div>

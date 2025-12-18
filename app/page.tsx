@@ -30,6 +30,7 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [latestProject, setLatestProject] = useState<Project | null>(null);
 
   // Show pending approval message if user is not approved
   if (!userLoading && currentUser && !currentUser.isApproved) {
@@ -74,7 +75,16 @@ export default function Home() {
       const response = await fetch('/api/projects');
       if (!response.ok) throw new Error('Failed to fetch projects');
       const data = await response.json();
-      setProjects(data.projects || []);
+      const projectList = data.projects || [];
+      setProjects(projectList);
+      
+      // Find the most recently updated project
+      if (projectList.length > 0) {
+        const sorted = [...projectList].sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        setLatestProject(sorted[0]);
+      }
     } catch (err: any) {
       console.error('Failed to fetch projects:', err);
       setError(err.message);
@@ -101,21 +111,37 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            Inventory Matching System
-          </h1>
-          <p className="text-gray-600">
-            AI-powered inventory matching for Arnold Motor Supply
-          </p>
+        {/* Hero Section */}
+        <div className="mb-8 bg-gradient-to-r from-indigo-600 to-blue-600 rounded-2xl shadow-xl p-8 text-white">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-4xl font-bold mb-2">
+                Inventory Matching System
+              </h1>
+              <p className="text-indigo-100 text-lg">
+                AI-powered inventory matching for Arnold Motor Supply
+              </p>
+            </div>
+            {latestProject && (
+              <button
+                onClick={() => router.push(`/match?projectId=${latestProject.id}`)}
+                className="px-6 py-3 bg-white text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors font-semibold shadow-lg flex items-center gap-2"
+              >
+                <span>▶</span>
+                <div className="text-left">
+                  <div className="text-xs text-indigo-500">Resume Latest</div>
+                  <div className="font-bold">{latestProject.name}</div>
+                </div>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Quick Actions */}
-        <div className={`grid grid-cols-1 gap-4 mb-8 ${currentUser?.role === 'ADMIN' ? 'md:grid-cols-4 lg:grid-cols-7' : 'md:grid-cols-5'}`}>
+        <div className={`grid grid-cols-1 gap-4 mb-8 ${currentUser?.role === 'ADMIN' ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-2 lg:grid-cols-3'}`}>
           <button
             onClick={() => router.push('/upload')}
-            className="bg-black text-white p-6 rounded-lg hover:bg-gray-800 transition-colors text-left"
+            className="bg-black text-white p-6 rounded-lg hover:bg-gray-800 transition-colors text-left shadow-lg"
           >
             <div className="text-3xl mb-2">📤</div>
             <h2 className="text-xl font-semibold mb-1">Upload Files</h2>
@@ -125,41 +151,8 @@ export default function Home() {
           </button>
 
           <button
-            onClick={() => router.push('/match')}
-            className="bg-blue-600 text-white p-6 rounded-lg hover:bg-blue-700 transition-colors text-left"
-          >
-            <div className="text-3xl mb-2">🔍</div>
-            <h2 className="text-xl font-semibold mb-1">View Matches</h2>
-            <p className="text-sm text-blue-100">
-              Review and confirm part matches
-            </p>
-          </button>
-
-          <button
-            onClick={() => router.push('/analytics')}
-            className="bg-purple-600 text-white p-6 rounded-lg hover:bg-purple-700 transition-colors text-left"
-          >
-            <div className="text-3xl mb-2">📊</div>
-            <h2 className="text-xl font-semibold mb-1">Analytics</h2>
-            <p className="text-sm text-purple-100">
-              View matching performance and metrics
-            </p>
-          </button>
-
-          <button
-            onClick={() => router.push('/projects')}
-            className="bg-gray-600 text-white p-6 rounded-lg hover:bg-gray-700 transition-colors text-left"
-          >
-            <div className="text-3xl mb-2">📁</div>
-            <h2 className="text-xl font-semibold mb-1">Manage Projects</h2>
-            <p className="text-sm text-gray-300">
-              View and manage your projects
-            </p>
-          </button>
-
-          <button
             onClick={() => router.push('/rules')}
-            className="bg-indigo-600 text-white p-6 rounded-lg hover:bg-indigo-700 transition-colors text-left"
+            className="bg-indigo-600 text-white p-6 rounded-lg hover:bg-indigo-700 transition-colors text-left shadow-lg"
           >
             <div className="text-3xl mb-2">⚙️</div>
             <h2 className="text-xl font-semibold mb-1">Rules Engine</h2>
