@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useCurrentUser } from './hooks/useCurrentUser';
 
 interface Project {
   id: string;
@@ -25,6 +26,7 @@ interface Project {
 
 export default function Home() {
   const router = useRouter();
+  const { profile: currentUser } = useCurrentUser();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -76,7 +78,7 @@ export default function Home() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+        <div className={`grid grid-cols-1 gap-4 mb-8 ${currentUser?.role === 'ADMIN' ? 'md:grid-cols-4 lg:grid-cols-7' : 'md:grid-cols-5'}`}>
           <button
             onClick={() => router.push('/upload')}
             className="bg-black text-white p-6 rounded-lg hover:bg-gray-800 transition-colors text-left"
@@ -131,6 +133,33 @@ export default function Home() {
               Manage automated matching rules
             </p>
           </button>
+
+          {/* Admin-Only Quick Actions */}
+          {currentUser?.role === 'ADMIN' && (
+            <>
+              <button
+                onClick={() => router.push('/admin/users')}
+                className="bg-emerald-600 text-white p-6 rounded-lg hover:bg-emerald-700 transition-colors text-left"
+              >
+                <div className="text-3xl mb-2">👥</div>
+                <h2 className="text-xl font-semibold mb-1">User Management</h2>
+                <p className="text-sm text-emerald-100">
+                  Manage users and roles
+                </p>
+              </button>
+
+              <button
+                onClick={() => router.push('/admin/activity')}
+                className="bg-amber-600 text-white p-6 rounded-lg hover:bg-amber-700 transition-colors text-left"
+              >
+                <div className="text-3xl mb-2">📋</div>
+                <h2 className="text-xl font-semibold mb-1">Activity Log</h2>
+                <p className="text-sm text-amber-100">
+                  View audit trail
+                </p>
+              </button>
+            </>
+          )}
         </div>
 
         {/* Projects Section */}
