@@ -488,7 +488,7 @@ export default function MatchPageWithBulkActions() {
                       <optgroup label="By Confidence">
                         <option value="conf_high">High Confidence (≥90%)</option>
                         <option value="conf_medium">Medium Confidence (70-89%)</option>
-                        <option value="conf_low">Low Confidence (<70%)</option>
+                        <option value="conf_low">Low Confidence (&lt;70%)</option>
                       </optgroup>
                     </select>
                     
