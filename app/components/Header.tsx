@@ -63,7 +63,7 @@ export default function Header() {
   };
 
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+    <header className="bg-gradient-to-r from-indigo-600 to-blue-600 shadow-lg sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 py-3">
         <div className="flex justify-between items-center">
           {/* Left: Logo/Title */}
@@ -73,10 +73,10 @@ export default function Header() {
           >
             <div className="text-2xl">📦</div>
             <div>
-              <h1 className="text-lg font-bold text-gray-900">
+              <h1 className="text-lg font-bold text-white">
                 Inventory Matching
               </h1>
-              <p className="text-xs text-gray-500">Arnold Motor Supply</p>
+              <p className="text-xs text-indigo-100">Arnold Motor Supply</p>
             </div>
           </button>
 
@@ -91,8 +91,8 @@ export default function Header() {
 
               {/* Name & Role */}
               <div className="hidden md:block text-right">
-                <div className="text-sm font-medium text-gray-900">
-                  {profile.fullName || 'No name'}
+                <div className="text-sm font-medium text-white">
+                  {profile.fullName || profile.email}
                 </div>
                 <div className="flex items-center space-x-2">
                   <span
@@ -109,7 +109,7 @@ export default function Header() {
             {/* Profile Button */}
             <button
               onClick={() => router.push('/profile')}
-              className="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+              className="px-3 py-2 text-sm font-medium text-white bg-white/10 hover:bg-white/20 rounded-md transition-colors backdrop-blur-md"
             >
               Profile
             </button>
@@ -118,7 +118,7 @@ export default function Header() {
             {profile.role === 'ADMIN' && (
               <button
                 onClick={() => router.push('/admin/users')}
-                className="px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50 rounded-md transition-colors"
+                className="px-3 py-2 text-sm font-medium text-white bg-white/10 hover:bg-white/20 rounded-md transition-colors backdrop-blur-md"
               >
                 Admin
               </button>
@@ -127,7 +127,7 @@ export default function Header() {
             {/* Sign Out Button */}
             <button
               onClick={handleSignOut}
-              className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+              className="px-4 py-2 text-sm font-medium text-white bg-red-500/90 hover:bg-red-600 rounded-md transition-colors shadow-lg"
             >
               Sign Out
             </button>

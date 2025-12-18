@@ -31,6 +31,9 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get('projectId');
     const status = searchParams.get('status');
+    const method = searchParams.get('method');
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
 
     if (!projectId) {
       return NextResponse.json(
@@ -39,18 +42,33 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Get match candidates
+    // Build where clause with filters
     const whereClause: any = { projectId };
     if (status && status !== 'all') {
       whereClause.status = status.toUpperCase();
     }
+    if (method && method !== 'all') {
+      whereClause.method = method.toUpperCase();
+    }
 
+    // Get total count for pagination metadata
+    const totalCount = await prisma.matchCandidate.count({
+      where: whereClause,
+    });
+
+    // Calculate pagination
+    const skip = (page - 1) * limit;
+    const totalPages = Math.ceil(totalCount / limit);
+
+    // Get match candidates with pagination
     const matches = await prisma.matchCandidate.findMany({
       where: whereClause,
       include: {
         storeItem: true,
       },
       orderBy: { confidence: 'desc' },
+      skip,
+      take: limit,
     });
 
     // Fetch target items (supplier or inventory)
@@ -83,6 +101,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       matches: matchesWithTargets,
+      metadata: {
+        total: totalCount,
+        page,
+        limit,
+        totalPages,
+      },
     });
   } catch (error) {
     console.error('Error fetching matches:', error);

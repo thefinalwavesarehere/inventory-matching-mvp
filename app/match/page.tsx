@@ -64,20 +64,34 @@ export default function MatchPageWithBulkActions() {
   const [bulkSuggestion, setBulkSuggestion] = useState<any>(null);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkModalLoading, setBulkModalLoading] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
   useEffect(() => {
     if (projectId) {
       loadMatches();
     }
-  }, [projectId, filter]);
+  }, [projectId, filter, methodFilter, currentPage, rowsPerPage]);
 
   const loadMatches = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/match?projectId=${projectId}&status=${filter === 'all' ? '' : filter.toUpperCase()}`);
+      const statusParam = filter === 'all' ? 'all' : filter.toUpperCase();
+      const methodParam = methodFilter === 'all' ? 'all' : methodFilter.toUpperCase();
+      const res = await fetch(
+        `/api/match?projectId=${projectId}&status=${statusParam}&method=${methodParam}&page=${currentPage}&limit=${rowsPerPage}`
+      );
       if (!res.ok) throw new Error('Failed to load matches');
       const data = await res.json();
       setMatches(data.matches || []);
+      setTotalCount(data.metadata?.total || 0);
+      setTotalPages(data.metadata?.totalPages || 0);
+      // Clear selection when page changes
+      setSelectedMatches(new Set());
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -266,25 +280,9 @@ export default function MatchPageWithBulkActions() {
     setSelectedMatches(new Set());
   };
 
-  // Filter and sort matches
-  const filteredMatches = matches
-    .filter(m => {
-      if (methodFilter === 'all') return true;
-      return m.method === methodFilter;
-    })
-    .sort((a, b) => {
-      let comparison = 0;
-      
-      if (sortBy === 'confidence') {
-        comparison = a.confidence - b.confidence;
-      } else if (sortBy === 'method') {
-        comparison = a.method.localeCompare(b.method);
-      } else if (sortBy === 'date') {
-        comparison = 0;
-      }
-      
-      return sortOrder === 'asc' ? comparison : -comparison;
-    });
+  // Server now handles filtering and sorting via pagination
+  // filteredMatches is just matches from current page
+  const filteredMatches = matches;
 
   if (!projectId) {
     return (
@@ -399,7 +397,7 @@ export default function MatchPageWithBulkActions() {
               </button>
             </div>
             <div className="ml-auto text-sm text-gray-500">
-              Showing {filteredMatches.length} of {matches.length} matches
+              Total: {totalCount} matches
             </div>
           </div>
         </div>
@@ -589,6 +587,53 @@ export default function MatchPageWithBulkActions() {
           </>
         )}
       </div>
+
+      {/* Pagination Control Bar */}
+      {totalCount > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-gray-600">
+                Showing {((currentPage - 1) * rowsPerPage) + 1} to {Math.min(currentPage * rowsPerPage, totalCount)} of {totalCount}
+              </span>
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600">Rows per page:</label>
+                <select
+                  value={rowsPerPage}
+                  onChange={(e) => {
+                    setRowsPerPage(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="border rounded px-2 py-1 text-sm"
+                >
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+              >
+                ← Previous
+              </button>
+              <span className="text-sm text-gray-700 font-medium">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Epic B1: Floating Bulk Action Bar */}
       <BulkActionBar
