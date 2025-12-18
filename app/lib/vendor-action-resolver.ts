@@ -27,6 +27,7 @@ interface RuleWithPriority {
   categoryPattern: string;
   subcategoryPattern: string;
   priority: number;
+  isProjectSpecific: boolean; // True if rule has projectId, false if global
 }
 
 /**
@@ -104,13 +105,15 @@ function ruleMatches(
  * 1. Find all active rules where supplier_line_code matches
  * 2. Filter rules where category and subcategory match (exact or wildcard)
  * 3. Rank by priority (exact > partial wildcard > full wildcard)
- * 4. Return the action from the highest priority rule
- * 5. If no rules match, return NONE
+ * 4. Project-specific rules override global rules
+ * 5. Return the action from the highest priority rule
+ * 6. If no rules match, return NONE
  * 
  * @param match Match data (supplierLineCode, category, subcategory)
+ * @param projectId Optional project ID for project-specific rules
  * @returns VendorAction (LIFT, REBOX, UNKNOWN, CONTACT_VENDOR, or NONE)
  */
-export async function resolveVendorAction(match: MatchData): Promise<VendorAction> {
+export async function resolveVendorAction(match: MatchData, projectId?: string | null): Promise<VendorAction> {
   // If no supplier line code, return NONE immediately
   if (!match.supplierLineCode) {
     return 'NONE';
@@ -118,12 +121,18 @@ export async function resolveVendorAction(match: MatchData): Promise<VendorActio
 
   try {
     // Fetch all active rules for this supplier line code
+    // Include both project-specific rules (if projectId provided) and global rules (projectId = null)
     const rules = await prisma.vendorActionRule.findMany({
       where: {
         supplierLineCode: match.supplierLineCode,
         active: true,
+        OR: [
+          { projectId: projectId || null }, // Project-specific rules
+          { projectId: null },               // Global rules
+        ],
       },
       select: {
+        projectId: true,
         supplierLineCode: true,
         categoryPattern: true,
         subcategoryPattern: true,
@@ -144,6 +153,7 @@ export async function resolveVendorAction(match: MatchData): Promise<VendorActio
         categoryPattern: rule.categoryPattern,
         subcategoryPattern: rule.subcategoryPattern,
         priority: calculatePriority(rule, match.category, match.subcategory),
+        isProjectSpecific: rule.projectId !== null,
       }));
 
     // If no matching rules, return NONE
@@ -151,8 +161,18 @@ export async function resolveVendorAction(match: MatchData): Promise<VendorActio
       return 'NONE';
     }
 
-    // Sort by priority (descending) and return the highest priority action
-    matchingRules.sort((a, b) => b.priority - a.priority);
+    // Sort by:
+    // 1. Project-specific rules first (isProjectSpecific = true)
+    // 2. Then by pattern priority (exact > wildcard)
+    matchingRules.sort((a, b) => {
+      // Project-specific rules always win over global rules
+      if (a.isProjectSpecific !== b.isProjectSpecific) {
+        return a.isProjectSpecific ? -1 : 1;
+      }
+      // If both are same type (both project or both global), sort by priority
+      return b.priority - a.priority;
+    });
+    
     return matchingRules[0].action;
 
   } catch (error) {
@@ -167,9 +187,10 @@ export async function resolveVendorAction(match: MatchData): Promise<VendorActio
  * More efficient than calling resolveVendorAction multiple times
  * 
  * @param matches Array of match data
+ * @param projectId Optional project ID for project-specific rules
  * @returns Array of VendorActions in the same order as input
  */
-export async function resolveVendorActionsBatch(matches: MatchData[]): Promise<VendorAction[]> {
+export async function resolveVendorActionsBatch(matches: MatchData[], projectId?: string | null): Promise<VendorAction[]> {
   // Get unique supplier line codes
   const uniqueLineCode = [...new Set(matches.map(m => m.supplierLineCode).filter(Boolean))];
 
@@ -179,12 +200,18 @@ export async function resolveVendorActionsBatch(matches: MatchData[]): Promise<V
 
   try {
     // Fetch all relevant rules in one query
+    // Include both project-specific and global rules
     const rules = await prisma.vendorActionRule.findMany({
       where: {
         supplierLineCode: { in: uniqueLineCode as string[] },
         active: true,
+        OR: [
+          { projectId: projectId || null }, // Project-specific rules
+          { projectId: null },               // Global rules
+        ],
       },
       select: {
+        projectId: true,
         supplierLineCode: true,
         categoryPattern: true,
         subcategoryPattern: true,
@@ -213,14 +240,21 @@ export async function resolveVendorActionsBatch(matches: MatchData[]): Promise<V
           categoryPattern: rule.categoryPattern,
           subcategoryPattern: rule.subcategoryPattern,
           priority: calculatePriority(rule, match.category, match.subcategory),
+          isProjectSpecific: rule.projectId !== null,
         }));
 
       if (matchingRules.length === 0) {
         return 'NONE';
       }
 
-      // Return highest priority action
-      matchingRules.sort((a, b) => b.priority - a.priority);
+      // Sort by project-specific first, then by priority
+      matchingRules.sort((a, b) => {
+        if (a.isProjectSpecific !== b.isProjectSpecific) {
+          return a.isProjectSpecific ? -1 : 1;
+        }
+        return b.priority - a.priority;
+      });
+      
       return matchingRules[0].action;
     });
 

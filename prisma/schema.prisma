@@ -61,6 +61,7 @@ model Project {
   matchCandidates MatchCandidate[]
   auditLogs    AuditLog[]
   columnMappings FileColumnMapping[]
+  vendorActionRules VendorActionRule[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -329,6 +330,8 @@ enum ReviewSource {
 /// Vendor Action Rules for automatic tagging
 model VendorActionRule {
   id                  String       @id @default(cuid())
+  projectId           String?      // Null = Global rule, Present = Project-specific rule
+  project             Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   supplierLineCode    String       // Supplier line code (e.g., "GATES", "PICO")
   categoryPattern     String       // Category pattern (* for wildcard)
   subcategoryPattern  String       // Subcategory pattern (* for wildcard)
@@ -340,6 +343,7 @@ model VendorActionRule {
   @@map("vendor_action_rules")
   @@index([supplierLineCode])
   @@index([active])
+  @@index([projectId])
 }
 
 /// Match History: Accepted matches for learning
