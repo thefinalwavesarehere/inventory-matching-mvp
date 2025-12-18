@@ -115,6 +115,46 @@ export default function AdminUsersPage() {
     }
   };
 
+  const handleApproveUser = async (user: UserProfile) => {
+    if (!confirm(`Approve user ${user.fullName || user.email}? They will be able to access projects.`)) return;
+
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}/approve`, {
+        method: 'POST',
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to approve user');
+      }
+
+      alert(`User ${user.fullName || user.email} has been approved`);
+      await loadUsers();
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    }
+  };
+
+  const handleUnapproveUser = async (user: UserProfile) => {
+    if (!confirm(`Revoke approval for ${user.fullName || user.email}? They will lose access to projects.`)) return;
+
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}/approve`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to revoke approval');
+      }
+
+      alert(`Approval revoked for ${user.fullName || user.email}`);
+      await loadUsers();
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    }
+  };
+
   const handleSendPasswordReset = async (user: UserProfile) => {
     if (!confirm(`Send password reset email to ${user.email}?`)) return;
 
@@ -205,6 +245,9 @@ export default function AdminUsersPage() {
                     Role
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Created At
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -215,7 +258,7 @@ export default function AdminUsersPage() {
               <tbody className="divide-y divide-gray-200">
                 {users.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                       No users found
                     </td>
                   </tr>
@@ -245,6 +288,15 @@ export default function AdminUsersPage() {
                           {getRoleIcon(user.role)} {user.role}
                         </span>
                       </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 text-xs rounded-full font-medium ${
+                          user.isApproved 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {user.isApproved ? '✓ Approved' : '⏳ Pending'}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
                         {new Date(user.createdAt).toLocaleDateString()}
                       </td>
@@ -263,6 +315,21 @@ export default function AdminUsersPage() {
                           >
                             Edit Details
                           </button>
+                          {!user.isApproved ? (
+                            <button
+                              onClick={() => handleApproveUser(user)}
+                              className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                            >
+                              Approve
+                            </button>
+                          ) : user.role !== 'ADMIN' && (
+                            <button
+                              onClick={() => handleUnapproveUser(user)}
+                              className="px-3 py-1.5 text-sm bg-yellow-600 text-white rounded hover:bg-yellow-700"
+                            >
+                              Revoke
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               setSelectedUser(user);

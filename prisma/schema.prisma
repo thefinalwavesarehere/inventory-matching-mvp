@@ -654,6 +654,7 @@ model UserProfile {
   email               String        @unique
   fullName            String?       @map("full_name")
   role                UserRole      @default(EDITOR)
+  isApproved          Boolean       @default(false) @map("is_approved")
   createdAt           DateTime      @default(now()) @map("created_at")
   updatedAt           DateTime      @updatedAt @map("updated_at")
   
@@ -663,6 +664,7 @@ model UserProfile {
   @@map("user_profiles")
   @@index([email])
   @@index([role])
+  @@index([isApproved])
 }
 
 model ActivityLog {
