@@ -144,7 +144,7 @@ export default function AnalyticsPage() {
         ) : summary ? (
           <div className="space-y-6">
             {/* Overall Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="text-sm text-gray-600 mb-1">Total Items</div>
                 <div className="text-3xl font-bold text-gray-900">
@@ -172,6 +172,13 @@ export default function AnalyticsPage() {
                   {summary.totalMatchCandidates.toLocaleString()}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">All potential matches</div>
+              </div>
+              <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg shadow p-6 text-white">
+                <div className="text-sm mb-1 opacity-90">⏱️ Time Saved</div>
+                <div className="text-3xl font-bold">
+                  {Math.round((summary.totalMatchCandidates * 2) / 60)} hrs
+                </div>
+                <div className="text-xs mt-1 opacity-90">~2 min per match</div>
               </div>
             </div>
 
