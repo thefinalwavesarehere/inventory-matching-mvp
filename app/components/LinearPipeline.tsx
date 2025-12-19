@@ -30,6 +30,7 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
   const router = useRouter();
   const [activeJobs, setActiveJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedJobType, setSelectedJobType] = useState<'fuzzy' | 'ai' | 'web-search'>('fuzzy');
 
   useEffect(() => {
     loadActiveJobs();
@@ -48,13 +49,13 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
     }
   };
 
-  const startJob = async (jobType: 'fuzzy' | 'ai' | 'web-search') => {
+  const startJob = async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/jobs/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, jobType, config: { jobType } }),
+        body: JSON.stringify({ projectId, jobType: selectedJobType, config: { jobType: selectedJobType } }),
       });
       
       if (!res.ok) {
@@ -68,6 +69,19 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
       alert(`Error: ${err.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const cancelJob = async (jobId: string) => {
+    try {
+      await fetch(`/api/jobs/${jobId}/cancel`, {
+        method: 'POST',
+      });
+      await loadActiveJobs();
+      onRefresh();
+    } catch (err) {
+      console.error('Failed to cancel job:', err);
+      alert('Failed to cancel job');
     }
   };
 
@@ -144,7 +158,15 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
                 <div key={job.id} className="border-2 border-blue-500 rounded-lg p-4 bg-blue-50">
                   <div className="flex justify-between items-center mb-2">
                     <span className="font-semibold text-blue-900">{job.currentStageName}</span>
-                    <span className="text-sm text-blue-700">{job.status}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-blue-700">{job.status}</span>
+                      <button
+                        onClick={() => cancelJob(job.id)}
+                        className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 font-medium"
+                      >
+                        ✕ Cancel
+                      </button>
+                    </div>
                   </div>
                   <div className="w-full bg-blue-200 rounded-full h-3 mb-2">
                     <div
@@ -160,17 +182,28 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
               ))}
             </div>
           ) : (
-            <button
-              onClick={() => startJob('fuzzy')}
-              disabled={!hasData || loading}
-              className={`w-full py-4 rounded-lg font-semibold text-lg transition-all ${
-                !hasData || loading
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 shadow-lg'
-              }`}
-            >
-              {loading ? '⚙️ Starting...' : '▶️ Start Matching Pipeline'}
-            </button>
+            <div className="space-y-3">
+              <select
+                value={selectedJobType}
+                onChange={(e) => setSelectedJobType(e.target.value as 'fuzzy' | 'ai' | 'web-search')}
+                className="w-full py-3 px-4 rounded-lg border-2 border-gray-300 font-medium text-gray-900 bg-white"
+              >
+                <option value="fuzzy">🔍 Fuzzy Matching (Fast, Free)</option>
+                <option value="ai">🤖 AI Matching (100 items/batch, ~$0.50)</option>
+                <option value="web-search">🌐 Web Search (20 items/batch, ~$2.00)</option>
+              </select>
+              <button
+                onClick={startJob}
+                disabled={!hasData || loading}
+                className={`w-full py-4 rounded-lg font-semibold text-lg transition-all ${
+                  !hasData || loading
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 shadow-lg'
+                }`}
+              >
+                {loading ? '⚙️ Starting...' : '▶️ Start Matching'}
+              </button>
+            </div>
           )}
           {!hasData && (
             <p className="mt-2 text-sm text-gray-600">
@@ -232,28 +265,7 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
         </div>
       </div>
 
-      {/* Advanced Options (Collapsed) */}
-      <details className="mt-6 ml-11">
-        <summary className="cursor-pointer text-sm text-gray-600 hover:text-gray-900 font-medium">
-          ⚙️ Advanced Matching Options
-        </summary>
-        <div className="mt-4 space-y-3 pl-4 border-l-2 border-gray-200">
-          <button
-            onClick={() => startJob('ai')}
-            disabled={!hasData || loading || isRunning}
-            className="w-full py-3 px-4 rounded-lg font-medium text-left border-2 border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100 disabled:bg-gray-100 disabled:text-gray-500 disabled:border-gray-300"
-          >
-            🤖 AI Matching (100 items/batch, ~$0.50/batch)
-          </button>
-          <button
-            onClick={() => startJob('web-search')}
-            disabled={!hasData || loading || isRunning}
-            className="w-full py-3 px-4 rounded-lg font-medium text-left border-2 border-purple-300 bg-purple-50 text-purple-900 hover:bg-purple-100 disabled:bg-gray-100 disabled:text-gray-500 disabled:border-gray-300"
-          >
-            🌐 Web Search (20 items/batch, ~$2.00/batch)
-          </button>
-        </div>
-      </details>
+
     </div>
   );
 }
