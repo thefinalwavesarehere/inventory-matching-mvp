@@ -272,7 +272,7 @@ export default function AdminUsersPage() {
                           </div>
                           <div>
                             <div className="font-medium text-gray-900">
-                              {user.fullName || 'No name'}
+                              {user.fullName || user.email}
                             </div>
                             {user.id === currentUser.id && (
                               <span className="text-xs text-blue-600">(You)</span>
