@@ -289,6 +289,7 @@ export default function RulesManagementPage() {
                 </div>
               </div>
             </div>
+            )
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
