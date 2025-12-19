@@ -355,7 +355,7 @@ async function processExactMatching(
   for (const storeItem of storeItems) {
     try {
       let matchedSupplier: any = null;
-      let matchMethod = 'EXACT';
+      let matchMethod: 'EXACT_NORMALIZED' | 'INTERCHANGE' = 'EXACT_NORMALIZED';
 
       // Strategy 1: Exact normalized match
       if (storeItem.partNumberNorm) {
@@ -369,7 +369,7 @@ async function processExactMatching(
       if (!matchedSupplier && storeItem.partFull) {
         matchedSupplier = supplierByFull.get(storeItem.partFull);
         if (matchedSupplier) {
-          matchMethod = 'EXACT_FULL';
+          matchMethod = 'EXACT_NORMALIZED';
         }
       }
 
@@ -393,7 +393,7 @@ async function processExactMatching(
             storeItemId: storeItem.id,
             targetType: 'SUPPLIER',
             targetId: matchedSupplier.id,
-            method: matchMethod,
+            method: matchMethod as any,
             confidence: 1.0, // Exact matches have 100% confidence
             matchStage: 1, // Stage 1 = Exact matching
             status: 'PENDING',
