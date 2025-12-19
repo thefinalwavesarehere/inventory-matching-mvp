@@ -43,25 +43,23 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Get unique matched items for each project
+    // Get unique matched items for all projects in a single query
     const matchRates = await Promise.all(
       projects.map(async (project) => {
         if (project._count.storeItems === 0) {
           return { projectId: project.id, matchRate: 0, uniqueMatchedItems: 0 };
         }
         
-        const matchedItems = await prisma.matchCandidate.findMany({
+        // Use groupBy to count distinct store items more efficiently
+        const uniqueMatchedCount = await prisma.matchCandidate.groupBy({
+          by: ['storeItemId'],
           where: {
             projectId: project.id,
             status: { in: ['PENDING', 'CONFIRMED'] },
           },
-          select: {
-            storeItemId: true,
-          },
-          distinct: ['storeItemId'],
-        });
+          _count: true,
+        }).then(results => results.length);
         
-        const uniqueMatchedCount = matchedItems.length;
         const matchRate = uniqueMatchedCount / project._count.storeItems;
         
         return { projectId: project.id, matchRate, uniqueMatchedItems: uniqueMatchedCount };
@@ -99,10 +97,19 @@ export async function GET(req: NextRequest) {
         };
       }),
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching projects:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch projects' },
+      { 
+        success: false, 
+        error: 'Failed to fetch projects',
+        details: error.message 
+      },
       { status: 500 }
     );
   }
