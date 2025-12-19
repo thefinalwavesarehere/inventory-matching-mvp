@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import FileUploader from '@/app/components/FileUploader';
 import WorkflowStatus from '@/app/components/WorkflowStatus';
-import BackgroundJobControls from '@/app/components/BackgroundJobControls';
+import LinearPipeline from '@/app/components/LinearPipeline';
 
 interface Project {
   id: string;
@@ -662,162 +662,13 @@ export default function ProjectDetailPage() {
           </div>
         </div>
 
-        {/* Background Jobs */}
-        <BackgroundJobControls 
-          projectId={projectId} 
-          onJobComplete={() => loadProject()}
+        {/* Linear Pipeline */}
+        <LinearPipeline 
+          projectId={projectId}
+          project={project}
+          onRefresh={() => loadProject()}
         />
 
-        {/* Actions */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Manual Matching (Click-by-Click)</h2>
-          <div className="flex gap-4">
-            <button
-              onClick={handleRunMatch}
-              disabled={runningMatch || project._count.storeItems === 0 || project._count.supplierItems === 0}
-              className={`px-6 py-3 rounded font-semibold ${
-                runningMatch || project._count.storeItems === 0 || project._count.supplierItems === 0
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : batchProgress?.hasMore
-                  ? 'bg-orange-600 text-white hover:bg-orange-700'
-                  : 'bg-green-600 text-white hover:bg-green-700'
-              }`}
-            >
-              {runningMatch 
-                ? 'Running...' 
-                : batchProgress?.hasMore 
-                ? `Continue Matching (${batchProgress.processed}/${batchProgress.total} done)`
-                : 'Run Matching Algorithm'
-              }
-            </button>
-            {batchProgress && batchProgress.hasMore && (
-              <div className="text-sm text-gray-600 mt-2">
-                Progress: {batchProgress.processed}/{batchProgress.total} items processed
-                ({batchProgress.remaining} remaining)
-              </div>
-            )}
-            <button
-              onClick={handleRunFuzzyMatch}
-              disabled={runningFuzzyMatch || project._count.storeItems === 0 || project._count.supplierItems === 0}
-              className={`px-6 py-3 rounded font-semibold ${
-                runningFuzzyMatch || project._count.storeItems === 0 || project._count.supplierItems === 0
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : fuzzyBatchProgress?.hasMore
-                  ? 'bg-purple-600 text-white hover:bg-purple-700'
-                  : 'bg-green-600 text-white hover:bg-green-700'
-              }`}
-              title="Run fuzzy matching on unmatched items (slower but finds more matches)"
-            >
-              {runningFuzzyMatch 
-                ? 'Fuzzy Matching...'
-                : fuzzyBatchProgress?.hasMore 
-                ? `Continue Fuzzy Matching (${fuzzyBatchProgress.processed}/${fuzzyBatchProgress.total})`
-                : 'Run Fuzzy Matching (3000 items/batch)'
-              }
-            </button>
-            {fuzzyBatchProgress && fuzzyBatchProgress.hasMore && (
-              <div className="text-sm text-gray-600 mt-2">
-                Progress: {fuzzyBatchProgress.processed}/{fuzzyBatchProgress.total} items
-                ({fuzzyBatchProgress.remaining} remaining)
-              </div>
-            )}
-            <button
-              onClick={handleRunAiMatch}
-              disabled={runningAiMatch || project._count.storeItems === 0 || project._count.supplierItems === 0}
-              className={`px-6 py-3 rounded font-semibold ${
-                runningAiMatch || project._count.storeItems === 0 || project._count.supplierItems === 0
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : aiBatchProgress?.hasMore
-                  ? 'bg-purple-600 text-white hover:bg-purple-700'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-              title="Uses AI to find matches for items that the standard algorithm couldn't match"
-            >
-              {runningAiMatch 
-                ? 'AI Matching...' 
-                : aiBatchProgress?.hasMore 
-                ? `Continue AI Matching (${aiBatchProgress.processed}/${aiBatchProgress.total} done, ~$${aiBatchProgress.estimatedCost})`
-                : 'Run AI Matching (100 items/batch)'
-              }
-            </button>
-            {aiBatchProgress && aiBatchProgress.hasMore && (
-              <div className="text-sm text-gray-600 mt-2">
-                AI Progress: {aiBatchProgress.processed}/{aiBatchProgress.total} items processed
-                ({aiBatchProgress.remaining} remaining, ~${aiBatchProgress.estimatedCost} per batch)
-              </div>
-            )}
-            <button
-              onClick={handleRunWebSearch}
-              disabled={runningWebSearch || project._count.storeItems === 0}
-              className={`px-6 py-3 rounded font-semibold ${
-                runningWebSearch || project._count.storeItems === 0
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : webSearchBatchProgress?.hasMore
-                  ? 'bg-purple-600 text-white hover:bg-purple-700'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
-              }`}
-              title="Uses Perplexity AI to search the entire web for matching parts from any supplier"
-            >
-              {runningWebSearch 
-                ? '🌐 Searching Web...' 
-                : webSearchBatchProgress?.hasMore 
-                ? `Continue Web Search (${webSearchBatchProgress.processed}/${webSearchBatchProgress.total} done, ~$${webSearchBatchProgress.estimatedCost})`
-                : '🌐 Run Web Search Matching (20 items/batch)'
-              }
-            </button>
-            {webSearchBatchProgress && webSearchBatchProgress.hasMore && (
-              <div className="text-sm text-gray-600 mt-2">
-                Web Search Progress: {webSearchBatchProgress.processed}/{webSearchBatchProgress.total} items processed
-                ({webSearchBatchProgress.remaining} remaining, ~${webSearchBatchProgress.estimatedCost} per batch)
-              </div>
-            )}
-            {matchError && (
-              <div className="text-red-600 text-sm mt-2">
-                Error: {matchError}
-              </div>
-            )}
-            <button
-              onClick={() => router.push(`/match?projectId=${projectId}`)}
-              disabled={project._count.matchCandidates === 0}
-              className={`px-6 py-3 rounded font-semibold ${
-                project._count.matchCandidates === 0
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              Review Matches ({project._count.matchCandidates})
-            </button>
-            <button
-              onClick={handleExportMatches}
-              disabled={project._count.matchCandidates === 0}
-              className={`px-6 py-3 rounded font-semibold ${
-                project._count.matchCandidates === 0
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
-              }`}
-              title="Export matches to CSV for Excel review"
-            >
-              📊 Export for Excel Review
-            </button>
-            <label
-              className={`px-6 py-3 rounded font-semibold cursor-pointer ${
-                importing
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-green-600 text-white hover:bg-green-700'
-              }`}
-              title="Import reviewed CSV file to update matches"
-            >
-              {importing ? '⏳ Importing...' : '📥 Import Reviewed CSV'}
-              <input
-                type="file"
-                accept=".csv"
-                onChange={handleImportReview}
-                disabled={importing}
-                className="hidden"
-              />
-            </label>
-          </div>
-        </div>
       </div>
     </div>
   );
