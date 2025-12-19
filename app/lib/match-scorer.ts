@@ -174,27 +174,50 @@ async function checkMatchHistory(
 }
 
 /**
+ * Aggressive normalization: remove ALL non-alphanumeric characters
+ * Handles cases like K06-0485 vs K060485, AC-DELCO vs ACDELCO
+ */
+function normalizePartNumber(input: string): string {
+  return input.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
+/**
  * Calculate part number similarity using Levenshtein distance
+ * with aggressive normalization and partial match boost
  */
 function calculatePartNumberSimilarity(pn1: string, pn2: string): number {
   if (!pn1 || !pn2) return 0;
 
-  // Normalize: remove spaces, hyphens, convert to uppercase
-  const normalize = (s: string) =>
-    s.replace(/[\s\-]/g, '').toUpperCase();
+  // Aggressive normalization: remove ALL non-alphanumeric
+  const a = normalizePartNumber(pn1);
+  const b = normalizePartNumber(pn2);
 
-  const a = normalize(pn1);
-  const b = normalize(pn2);
-
+  // Exact match after normalization
   if (a === b) return 1.0;
 
-  // Levenshtein distance
+  // Partial match boost: if one is substring of the other
+  if (a.includes(b) || b.includes(a)) {
+    const shorter = a.length < b.length ? a : b;
+    const longer = a.length < b.length ? b : a;
+    // Score based on how much of the longer string is covered
+    return 0.85 + (shorter.length / longer.length) * 0.15;
+  }
+
+  // Levenshtein distance for fuzzy matching
   const distance = levenshteinDistance(a, b);
   const maxLength = Math.max(a.length, b.length);
 
   if (maxLength === 0) return 0;
 
-  return 1 - distance / maxLength;
+  // Base similarity from Levenshtein
+  const baseSimilarity = 1 - distance / maxLength;
+
+  // Boost if first N characters match (common prefix)
+  const prefixLength = Math.min(4, Math.min(a.length, b.length));
+  const prefixMatch = a.substring(0, prefixLength) === b.substring(0, prefixLength);
+  const prefixBoost = prefixMatch ? 0.1 : 0;
+
+  return Math.min(1.0, baseSimilarity + prefixBoost);
 }
 
 /**

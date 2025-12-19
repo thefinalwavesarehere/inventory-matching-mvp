@@ -126,11 +126,44 @@ async function trySupplierCatalogMatch(storeItem: any, supplierItems: any[]): Pr
 }
 
 /**
- * Search the web for a part number using AI
+ * Multi-strategy search queries
+ */
+function generateSearchQueries(storeItem: any): string[] {
+  const sourceBrand = storeItem.lineCode || '';
+  const sourcePart = storeItem.partNumber || '';
+  const mfrPart = storeItem.mfrPartNumber || '';
+  
+  const queries = [];
+  
+  // Strategy A: Brand + Part + interchange
+  if (sourceBrand && sourcePart) {
+    queries.push(`${sourceBrand} ${sourcePart} interchange automotive`);
+  }
+  
+  // Strategy B: Part + cross reference
+  queries.push(`${sourcePart} cross reference automotive parts`);
+  
+  // Strategy C: Part + replacement
+  queries.push(`${sourcePart} replacement part automotive`);
+  
+  // Strategy D: Manufacturer part if available
+  if (mfrPart && mfrPart !== sourcePart) {
+    queries.push(`${mfrPart} interchange cross reference`);
+  }
+  
+  return queries.filter(q => q.trim().length > 5);
+}
+
+/**
+ * Search the web for a part number using AI with multi-strategy approach
  */
 async function searchWebForPart(storeItem: any): Promise<any | null> {
+  const searchQueries = generateSearchQueries(storeItem);
+  
+  console.log(`[WEB-SEARCH] Generated queries for ${storeItem.partNumber}:`, searchQueries);
+  
   try {
-    const prompt = `Find a matching automotive part number for this part. Search the web and return the BEST match you can find.
+    const prompt = `You are an automotive parts expert. Your job is to find matching/interchange part numbers.
 
 Store Part Information:
 - Part Number: ${storeItem.partNumber}
@@ -138,15 +171,16 @@ Store Part Information:
 - Line Code: ${storeItem.lineCode || 'N/A'}
 - Manufacturer Part: ${storeItem.mfrPartNumber || 'N/A'}
 
-Instructions:
-1. Search for this part number on the internet
-2. Look for:
-   - Exact matches on automotive parts websites
-   - Cross-references or interchange numbers
-   - Manufacturer part numbers
-   - OEM equivalents
-3. Return the MOST COMMON or WIDELY AVAILABLE matching part number
-4. Include the source (website/manufacturer) where you found it
+Search Queries to Consider:
+${searchQueries.map((q, i) => `${i + 1}. "${q}"`).join('\n')}
+
+IMPORTANT INSTRUCTIONS:
+1. Data from the web is messy - be FLEXIBLE with brand name variations
+2. Accept matches even if brand names are slightly different (e.g., 'AC Delco' = 'ACDELCO' = 'AC-DELCO')
+3. Look for keywords: 'Replaces', 'Compatible with', 'Interchange', 'Cross reference', 'Equivalent'
+4. If you find a part number that matches the line code pattern, ACCEPT IT
+5. Partial matches are OK if the core part number is the same
+6. Be GENEROUS with matching - false positives are better than missed matches
 
 Respond with ONLY valid JSON:
 {
@@ -155,28 +189,33 @@ Respond with ONLY valid JSON:
   "description": "Part description" or null,
   "source": "Website or manufacturer name" or null,
   "price": null,
-  "confidence": 0.7-1.0,
-  "notes": "How you found this match"
+  "confidence": 0.5-1.0,
+  "reasoning": "Explain why this is a match or why no match was found"
 }`;
+
+    console.log(`[WEB-SEARCH] LLM Query for ${storeItem.partNumber}`);
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4.1-mini',
       messages: [
         {
           role: 'system',
-          content: 'You are an automotive parts expert with access to the internet. Search for parts and return accurate matches. Always respond with valid JSON only.',
+          content: 'You are an automotive parts expert specializing in part number interchange and cross-referencing. Be GENEROUS with matches - it is better to suggest a potential match than to miss one. Accept brand name variations and partial matches. Always respond with valid JSON only.',
         },
         {
           role: 'user',
           content: prompt,
         },
       ],
-      temperature: 0.2,
-      max_tokens: 300,
+      temperature: 0.3,
+      max_tokens: 400,
     });
 
     let responseText = response.choices[0]?.message?.content?.trim();
-    if (!responseText) return null;
+    if (!responseText) {
+      console.log(`[WEB-SEARCH] No response from LLM for ${storeItem.partNumber}`);
+      return null;
+    }
 
     // Remove markdown code blocks
     responseText = responseText
@@ -186,18 +225,23 @@ Respond with ONLY valid JSON:
       .trim();
 
     const result = JSON.parse(responseText);
+    
+    console.log(`[WEB-SEARCH] LLM Reasoning for ${storeItem.partNumber}: ${result.reasoning || 'No reasoning provided'}`);
 
-    if (result.found && result.partNumber && result.confidence >= 0.7) {
+    // Lower confidence threshold to 0.5 for more matches
+    if (result.found && result.partNumber && result.confidence >= 0.5) {
+      console.log(`[WEB-SEARCH] Match accepted: ${storeItem.partNumber} -> ${result.partNumber} (confidence: ${result.confidence})`);
       return {
         partNumber: result.partNumber,
         description: result.description,
         source: result.source,
         price: result.price,
         confidence: result.confidence,
-        notes: result.notes,
+        notes: result.reasoning,
       };
     }
 
+    console.log(`[WEB-SEARCH] No match accepted for ${storeItem.partNumber} (found: ${result.found}, confidence: ${result.confidence})`);
     return null;
   } catch (error) {
     console.error('[WEB-SEARCH] AI search error:', error);
