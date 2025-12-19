@@ -343,7 +343,7 @@ async function processExactMatching(
   const interchangeMap = new Map<string, string>();
   for (const mapping of interchangeMappings) {
     interchangeMap.set(mapping.competitorFullSku, mapping.arnoldFullSku);
-    if (mapping.competitorPartNumber) {
+    if (mapping.competitorPartNumber && mapping.arnoldPartNumber) {
       interchangeMap.set(mapping.competitorPartNumber, mapping.arnoldPartNumber);
     }
   }
