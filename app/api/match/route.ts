@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
     const projectId = searchParams.get('projectId');
     const status = searchParams.get('status');
     const method = searchParams.get('method');
+    const search = searchParams.get('search');
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
 
@@ -49,6 +50,40 @@ export async function GET(req: NextRequest) {
     }
     if (method && method !== 'all') {
       whereClause.method = method.toUpperCase();
+    }
+    
+    // Add search filter if provided
+    if (search && search.trim()) {
+      const searchTerm = search.trim();
+      whereClause.OR = [
+        // Search in store item part number
+        {
+          storeItem: {
+            partNumber: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+        },
+        // Search in store item description
+        {
+          storeItem: {
+            description: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+        },
+        // Search in store item line code
+        {
+          storeItem: {
+            lineCode: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+        },
+      ];
     }
 
     // Get total count for pagination metadata

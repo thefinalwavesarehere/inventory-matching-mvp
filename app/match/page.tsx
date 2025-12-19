@@ -70,20 +70,22 @@ export default function MatchPageWithBulkActions() {
   const [rowsPerPage, setRowsPerPage] = useState(50);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     if (projectId) {
       loadMatches();
     }
-  }, [projectId, filter, methodFilter, currentPage, rowsPerPage]);
+  }, [projectId, filter, methodFilter, currentPage, rowsPerPage, searchQuery]);
 
   const loadMatches = async () => {
     try {
       setLoading(true);
       const statusParam = filter === 'all' ? 'all' : filter.toUpperCase();
       const methodParam = methodFilter === 'all' ? 'all' : methodFilter.toUpperCase();
+      const searchParam = searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : '';
       const res = await fetch(
-        `/api/match?projectId=${projectId}&status=${statusParam}&method=${methodParam}&page=${currentPage}&limit=${rowsPerPage}`
+        `/api/match?projectId=${projectId}&status=${statusParam}&method=${methodParam}&page=${currentPage}&limit=${rowsPerPage}${searchParam}`
       );
       if (!res.ok) throw new Error('Failed to load matches');
       const data = await res.json();
@@ -349,6 +351,30 @@ export default function MatchPageWithBulkActions() {
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <div className="flex flex-wrap gap-4 items-center mb-4">
+            <div className="flex-1 min-w-[300px]">
+              <label className="text-sm text-gray-600 mr-2">🔍 Search:</label>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1); // Reset to first page on search
+                }}
+                placeholder="Search by part number, description..."
+                className="border rounded px-3 py-1.5 w-full max-w-md"
+              />
+            </div>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                title="Clear search"
+              >
+                ✕ Clear
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap gap-4 items-center">
             <div>
               <label className="text-sm text-gray-600 mr-2">Status:</label>

@@ -26,6 +26,19 @@ export default function RulesManagementPage() {
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingRule, setEditingRule] = useState<VendorActionRule | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Filter rules based on search query
+  const filteredRules = rules.filter(rule => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      rule.supplierLineCode.toLowerCase().includes(query) ||
+      rule.categoryPattern.toLowerCase().includes(query) ||
+      rule.subcategoryPattern.toLowerCase().includes(query) ||
+      rule.action.toLowerCase().includes(query)
+    );
+  });
 
   useEffect(() => {
     loadRules();
@@ -157,6 +170,34 @@ export default function RulesManagementPage() {
           </div>
         </div>
 
+        {/* Search Bar */}
+        <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <label className="text-sm text-gray-600 mr-2">🔍 Search:</label>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by line code, category, subcategory, or action..."
+                className="border rounded px-3 py-1.5 w-full max-w-2xl"
+              />
+            </div>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                title="Clear search"
+              >
+                ✕ Clear
+              </button>
+            )}
+            <div className="text-sm text-gray-500">
+              {filteredRules.length} of {rules.length} rules
+            </div>
+          </div>
+        </div>
+
         {/* Info Banner */}
         <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-start gap-3">
@@ -190,7 +231,24 @@ export default function RulesManagementPage() {
                 Retry
               </button>
             </div>
-          ) : rules.length === 0 ? (
+          ) : filteredRules.length === 0 ? (
+            searchQuery ? (
+              <div className="p-12 text-center">
+                <div className="text-6xl mb-4">🔍</div>
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                  No Matching Rules
+                </h3>
+                <p className="text-gray-500 mb-6">
+                  No rules match your search query: "{searchQuery}"
+                </p>
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                >
+                  Clear Search
+                </button>
+              </div>
+            ) : rules.length === 0 ? (
             <div className="p-12 text-center">
               <div className="text-6xl mb-4">⚙️</div>
               <h3 className="text-lg font-semibold text-gray-700 mb-2">
@@ -246,7 +304,7 @@ export default function RulesManagementPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {rules.map((rule) => (
+                  {filteredRules.map((rule) => (
                     <tr key={rule.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 text-xs rounded font-medium ${
