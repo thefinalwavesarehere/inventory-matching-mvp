@@ -323,10 +323,8 @@ async function processExactMatching(
 ): Promise<number> {
   let matchCount = 0;
 
-  // Get interchange mappings for this project
-  const interchangeMappings = await prisma.interchangeMapping.findMany({
-    where: { projectId },
-  });
+  // Get interchange mappings (global table, no projectId)
+  const interchangeMappings = await prisma.interchangeMapping.findMany();
 
   // Create lookup maps for fast matching
   const supplierByNorm = new Map<string, any>();
