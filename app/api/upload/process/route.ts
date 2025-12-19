@@ -12,6 +12,7 @@ import { authOptions } from '@/app/lib/auth';
 import prisma from '@/app/lib/db/prisma';
 import * as XLSX from 'xlsx';
 import { normalizePartNumber, extractLineCode, excelLeft, excelMid } from '@/app/lib/normalization';
+import { extractRulesFromInterchange, deduplicateRules } from '@/app/lib/interchange-rule-extractor';
 
 // Legacy normalization (kept for backward compatibility)
 function legacyNormalizePartNumber(partNumber: string): string {
@@ -367,6 +368,27 @@ export async function POST(req: NextRequest) {
         });
       }
       
+      // Extract and create matching rules from interchange data
+      console.log(`[UPLOAD] Extracting rules from interchange mappings...`);
+      const extractedRules = extractRulesFromInterchange(
+        interchangeMappings,
+        project.id,
+        fileName || 'interchange.xlsx'
+      );
+      
+      const uniqueRules = deduplicateRules(extractedRules);
+      console.log(`[UPLOAD] Creating ${uniqueRules.length} unique rules...`);
+      
+      // Create rules in batches
+      for (let i = 0; i < uniqueRules.length; i += BATCH_SIZE) {
+        const batch = uniqueRules.slice(i, i + BATCH_SIZE);
+        await prisma.matchingRule.createMany({
+          data: batch,
+          skipDuplicates: true,
+        });
+      }
+      
+      console.log(`[UPLOAD] Successfully created ${uniqueRules.length} interchange rules`);
       importedCount = interchanges.length;
     }
 

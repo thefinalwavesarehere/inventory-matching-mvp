@@ -543,9 +543,14 @@ model MatchingRule {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   active          Boolean  @default(true)
+  // Source tracking for auto-imported rules
+  source          String?  // 'manual', 'interchange', 'learned'
+  sourceFileId    String?  // ID of the interchange file that created this rule
+  sourceFileName  String?  // Original filename for display
 
   @@map("matching_rules")
   @@index([ruleType, active])
+  @@index([source])
   @@index([scope, scopeId])
 }
 
