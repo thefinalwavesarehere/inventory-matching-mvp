@@ -248,7 +248,7 @@ export default function RulesManagementPage() {
                   Clear Search
                 </button>
               </div>
-            ) : rules.length === 0 ? (
+            ) : (
             <div className="p-12 text-center">
               <div className="text-6xl mb-4">⚙️</div>
               <h3 className="text-lg font-semibold text-gray-700 mb-2">
