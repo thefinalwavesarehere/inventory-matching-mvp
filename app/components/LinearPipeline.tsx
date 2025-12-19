@@ -30,7 +30,7 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
   const router = useRouter();
   const [activeJobs, setActiveJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedJobType, setSelectedJobType] = useState<'fuzzy' | 'ai' | 'web-search'>('fuzzy');
+  const [selectedJobType, setSelectedJobType] = useState<'exact' | 'fuzzy' | 'ai' | 'web-search'>('exact');
 
   useEffect(() => {
     loadActiveJobs();
@@ -185,9 +185,10 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
             <div className="space-y-3">
               <select
                 value={selectedJobType}
-                onChange={(e) => setSelectedJobType(e.target.value as 'fuzzy' | 'ai' | 'web-search')}
+                onChange={(e) => setSelectedJobType(e.target.value as 'exact' | 'fuzzy' | 'ai' | 'web-search')}
                 className="w-full py-3 px-4 rounded-lg border-2 border-gray-300 font-medium text-gray-900 bg-white"
               >
+                <option value="exact">✅ Exact Matching (Instant, Free)</option>
                 <option value="fuzzy">🔍 Fuzzy Matching (Fast, Free)</option>
                 <option value="ai">🤖 AI Matching (100 items/batch, ~$0.50)</option>
                 <option value="web-search">🌐 Web Search (20 items/batch, ~$2.00)</option>
