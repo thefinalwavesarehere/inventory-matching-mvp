@@ -314,105 +314,105 @@ export async function POST(
 
 /**
  * Process a chunk of items using exact matching
- * Matches based on normalized part numbers and interchange rules
+ * Uses the original matching-engine stage1DeterministicMatching
  */
 async function processExactMatching(
   storeItems: any[],
   supplierItems: any[],
   projectId: string
 ): Promise<number> {
-  let matchCount = 0;
-
-  // Get interchange mappings (global table, no projectId)
-  const interchangeMappings = await prisma.interchangeMapping.findMany();
-
-  // Create lookup maps for fast matching
-  const supplierByNorm = new Map<string, any>();
-  const supplierByFull = new Map<string, any>();
+  // Import matching engine
+  const { stage1DeterministicMatching, MatchingIndexes } = await import('@/app/lib/matching-engine');
   
-  for (const supplier of supplierItems) {
-    if (supplier.partNumberNorm) {
-      supplierByNorm.set(supplier.partNumberNorm, supplier);
-    }
-    if (supplier.partFull) {
-      supplierByFull.set(supplier.partFull, supplier);
-    }
-  }
+  // Get interchange mappings and rules
+  const interchangeMappings = await prisma.interchangeMapping.findMany();
+  const rules = await prisma.matchingRule.findMany({
+    where: { active: true },
+  });
 
-  // Create interchange lookup: competitor -> arnold
-  const interchangeMap = new Map<string, string>();
-  for (const mapping of interchangeMappings) {
-    interchangeMap.set(mapping.competitorFullSku, mapping.arnoldFullSku);
-    if (mapping.competitorPartNumber && mapping.arnoldPartNumber) {
-      interchangeMap.set(mapping.competitorPartNumber, mapping.arnoldPartNumber);
-    }
-  }
+  // Convert to engine format
+  const engineStoreItems = storeItems.map((item) => ({
+    id: item.id,
+    partNumber: item.partNumber,
+    partNumberNorm: item.partNumberNorm,
+    canonicalPartNumber: (item as any).canonicalPartNumber || null,
+    lineCode: item.lineCode,
+    mfrPartNumber: item.mfrPartNumber,
+    description: item.description,
+    currentCost: item.currentCost ? Number(item.currentCost) : null,
+  }));
+
+  const engineSupplierItems = supplierItems.map((item) => ({
+    id: item.id,
+    partNumber: item.partNumber,
+    partNumberNorm: item.partNumberNorm,
+    canonicalPartNumber: (item as any).canonicalPartNumber || null,
+    lineCode: item.lineCode,
+    mfrPartNumber: item.mfrPartNumber,
+    description: item.description,
+    currentCost: item.currentCost ? Number(item.currentCost) : null,
+  }));
+
+  const engineInterchanges = interchangeMappings.map((m) => ({
+    competitorFullSku: m.competitorFullSku,
+    arnoldFullSku: m.arnoldFullSku,
+    confidence: m.confidence,
+  }));
+
+  const engineRules = rules.map((r) => ({
+    id: r.id,
+    ruleType: r.ruleType,
+    pattern: r.pattern,
+    transformation: r.transformation,
+    scope: r.scope,
+    scopeId: r.scopeId,
+    confidence: r.confidence,
+  }));
 
   console.log(`[EXACT-MATCH] Processing ${storeItems.length} store items`);
   console.log(`[EXACT-MATCH] Supplier catalog: ${supplierItems.length} items`);
   console.log(`[EXACT-MATCH] Interchange mappings: ${interchangeMappings.length}`);
+  console.log(`[EXACT-MATCH] Active rules: ${rules.length}`);
 
-  for (const storeItem of storeItems) {
-    try {
-      let matchedSupplier: any = null;
-      let matchMethod: 'EXACT_NORMALIZED' | 'INTERCHANGE' = 'EXACT_NORMALIZED';
+  // Build indexes
+  const indexes = new MatchingIndexes(engineSupplierItems, engineInterchanges, engineRules);
 
-      // Strategy 1: Exact normalized match
-      if (storeItem.partNumberNorm) {
-        matchedSupplier = supplierByNorm.get(storeItem.partNumberNorm);
-        if (matchedSupplier) {
-          matchMethod = 'EXACT_NORMALIZED';
-        }
-      }
+  // Run stage 1 matching
+  const result = stage1DeterministicMatching(engineStoreItems, indexes, {
+    costTolerancePercent: 10,
+  });
 
-      // Strategy 2: Exact full SKU match
-      if (!matchedSupplier && storeItem.partFull) {
-        matchedSupplier = supplierByFull.get(storeItem.partFull);
-        if (matchedSupplier) {
-          matchMethod = 'EXACT_NORMALIZED';
-        }
-      }
+  console.log(`[EXACT-MATCH] Found ${result.matches.length} matches (${result.metrics.matchRate.toFixed(1)}% match rate)`);
 
-      // Strategy 3: Interchange mapping
-      if (!matchedSupplier) {
-        const arnoldPart = interchangeMap.get(storeItem.partFull) || 
-                          interchangeMap.get(storeItem.partNumber);
-        if (arnoldPart) {
-          matchedSupplier = supplierByFull.get(arnoldPart) || supplierByNorm.get(arnoldPart.replace(/[^A-Z0-9]/gi, '').toUpperCase());
-          if (matchedSupplier) {
-            matchMethod = 'INTERCHANGE';
-          }
-        }
-      }
-
-      // Create match candidate if found
-      if (matchedSupplier) {
-        await prisma.matchCandidate.create({
-          data: {
-            projectId,
-            storeItemId: storeItem.id,
-            targetType: 'SUPPLIER',
-            targetId: matchedSupplier.id,
-            method: matchMethod as any,
-            confidence: 1.0, // Exact matches have 100% confidence
-            matchStage: 1, // Stage 1 = Exact matching
-            status: 'PENDING',
-            features: {
-              matchType: matchMethod,
-              storePartNumber: storeItem.partNumber,
-              supplierPartNumber: matchedSupplier.partNumber,
-            },
-          },
-        });
-        matchCount++;
-      }
-    } catch (error) {
-      console.error(`[EXACT-MATCH] Error matching ${storeItem.partNumber}:`, error);
-    }
+  // Save matches to database
+  let savedCount = 0;
+  for (let i = 0; i < result.matches.length; i += 100) {
+    const batch = result.matches.slice(i, i + 100);
+    
+    await prisma.matchCandidate.createMany({
+      data: batch.map((match) => ({
+        projectId,
+        storeItemId: match.storeItemId,
+        targetType: 'SUPPLIER' as const,
+        targetId: match.supplierItemId,
+        method: match.method as any,
+        confidence: match.confidence,
+        matchStage: match.matchStage,
+        status: 'PENDING' as const,
+        features: match.features || {},
+        costDifference: match.costDifference,
+        costSimilarity: match.costSimilarity,
+        transformationSignature: match.transformationSignature,
+        rulesApplied: match.rulesApplied,
+      })),
+      skipDuplicates: true,
+    });
+    
+    savedCount += batch.length;
   }
 
-  console.log(`[EXACT-MATCH] Found ${matchCount} exact matches`);
-  return matchCount;
+  console.log(`[EXACT-MATCH] Saved ${savedCount} matches to database`);
+  return savedCount;
 }
 
 /**
