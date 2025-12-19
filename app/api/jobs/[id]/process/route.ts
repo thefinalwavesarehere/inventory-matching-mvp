@@ -19,6 +19,7 @@ const openai = new OpenAI({
 // Chunk sizes optimized for each job type
 // Reduced fuzzy chunk size to prevent timeouts with large supplier catalogs
 const CHUNK_SIZES: Record<string, number> = {
+  'exact': 500,   // Exact matching is very fast, can process 500 items quickly
   'fuzzy': 150,   // Fuzzy processes 150 items in ~30-60 seconds (safe for 100k+ suppliers)
   'ai': 100,      // AI processes 100 items in ~3-4 minutes
   'web-search': 20, // Web search processes 20 items in ~1-2 minutes
@@ -137,7 +138,13 @@ export async function POST(
 
       // Update matchingProgress based on job type
       const progressUpdate: any = {};
-      if (jobType === 'fuzzy') {
+      if (jobType === 'exact') {
+        progressUpdate.standardCompleted = true;
+        progressUpdate.standardProcessed = job.totalItems || 0;
+        progressUpdate.standardTotalItems = job.totalItems || 0;
+        progressUpdate.standardLastRun = new Date();
+        progressUpdate.currentStage = 'FUZZY'; // Move to next stage
+      } else if (jobType === 'fuzzy') {
         progressUpdate.standardCompleted = true;
         progressUpdate.standardProcessed = job.totalItems || 0;
         progressUpdate.standardTotalItems = job.totalItems || 0;
@@ -197,7 +204,12 @@ export async function POST(
     // Set timeout protection (Vercel has 300s limit, we'll use 240s to be safe)
     const TIMEOUT_MS = 240000; // 4 minutes
     
-    if (jobType === 'fuzzy') {
+    if (jobType === 'exact') {
+      console.log(`[JOB-PROCESS] Calling processExactMatching with ${chunk.length} store items and ${supplierItems.length} supplier items`);
+      newMatches = await processExactMatching(chunk, supplierItems, job.projectId);
+      const processingTime = Date.now() - processingStartTime;
+      console.log(`[JOB-PROCESS] Exact matching complete in ${processingTime}ms, found ${newMatches} matches`);
+    } else if (jobType === 'fuzzy') {
       console.log(`[JOB-PROCESS] Calling processFuzzyChunk with ${chunk.length} store items and ${supplierItems.length} supplier items`);
       newMatches = await processFuzzyChunk(chunk, supplierItems, job.projectId);
       const processingTime = Date.now() - processingStartTime;
@@ -298,6 +310,111 @@ export async function POST(
       { status: 500 }
     );
   }
+}
+
+/**
+ * Process a chunk of items using exact matching
+ * Matches based on normalized part numbers and interchange rules
+ */
+async function processExactMatching(
+  storeItems: any[],
+  supplierItems: any[],
+  projectId: string
+): Promise<number> {
+  let matchCount = 0;
+
+  // Get interchange mappings for this project
+  const interchangeMappings = await prisma.interchangeMapping.findMany({
+    where: { projectId },
+  });
+
+  // Create lookup maps for fast matching
+  const supplierByNorm = new Map<string, any>();
+  const supplierByFull = new Map<string, any>();
+  
+  for (const supplier of supplierItems) {
+    if (supplier.partNumberNorm) {
+      supplierByNorm.set(supplier.partNumberNorm, supplier);
+    }
+    if (supplier.partFull) {
+      supplierByFull.set(supplier.partFull, supplier);
+    }
+  }
+
+  // Create interchange lookup: competitor -> arnold
+  const interchangeMap = new Map<string, string>();
+  for (const mapping of interchangeMappings) {
+    interchangeMap.set(mapping.competitorFullSku, mapping.arnoldFullSku);
+    if (mapping.competitorPartNumber) {
+      interchangeMap.set(mapping.competitorPartNumber, mapping.arnoldPartNumber);
+    }
+  }
+
+  console.log(`[EXACT-MATCH] Processing ${storeItems.length} store items`);
+  console.log(`[EXACT-MATCH] Supplier catalog: ${supplierItems.length} items`);
+  console.log(`[EXACT-MATCH] Interchange mappings: ${interchangeMappings.length}`);
+
+  for (const storeItem of storeItems) {
+    try {
+      let matchedSupplier: any = null;
+      let matchMethod = 'EXACT';
+
+      // Strategy 1: Exact normalized match
+      if (storeItem.partNumberNorm) {
+        matchedSupplier = supplierByNorm.get(storeItem.partNumberNorm);
+        if (matchedSupplier) {
+          matchMethod = 'EXACT_NORMALIZED';
+        }
+      }
+
+      // Strategy 2: Exact full SKU match
+      if (!matchedSupplier && storeItem.partFull) {
+        matchedSupplier = supplierByFull.get(storeItem.partFull);
+        if (matchedSupplier) {
+          matchMethod = 'EXACT_FULL';
+        }
+      }
+
+      // Strategy 3: Interchange mapping
+      if (!matchedSupplier) {
+        const arnoldPart = interchangeMap.get(storeItem.partFull) || 
+                          interchangeMap.get(storeItem.partNumber);
+        if (arnoldPart) {
+          matchedSupplier = supplierByFull.get(arnoldPart) || supplierByNorm.get(arnoldPart.replace(/[^A-Z0-9]/gi, '').toUpperCase());
+          if (matchedSupplier) {
+            matchMethod = 'INTERCHANGE';
+          }
+        }
+      }
+
+      // Create match candidate if found
+      if (matchedSupplier) {
+        await prisma.matchCandidate.create({
+          data: {
+            projectId,
+            storeItemId: storeItem.id,
+            targetType: 'SUPPLIER',
+            targetId: matchedSupplier.id,
+            method: matchMethod,
+            confidence: 1.0, // Exact matches have 100% confidence
+            matchStage: 1, // Stage 1 = Exact matching
+            status: 'PENDING',
+            features: {
+              matchType: matchMethod,
+              storePartNumber: storeItem.partNumber,
+              supplierPartNumber: matchedSupplier.partNumber,
+            },
+          },
+        });
+        matchCount++;
+      }
+    } catch (error) {
+      console.error(`[EXACT-MATCH] Error matching ${storeItem.partNumber}:`, error);
+    }
+  }
+
+  console.log(`[EXACT-MATCH] Found ${matchCount} exact matches`);
+  return matchCount;
 }
 
 /**

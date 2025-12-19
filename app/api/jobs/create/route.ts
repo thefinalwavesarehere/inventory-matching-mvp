@@ -49,7 +49,12 @@ export async function POST(req: NextRequest) {
         createdBy: session.user?.email || null,
         status: 'pending',
         currentStage: 0,
-        currentStageName: jobType === 'ai' ? 'AI Matching' : jobType === 'fuzzy' ? 'Fuzzy Matching' : 'Web Search',
+        currentStageName: 
+          jobType === 'exact' ? 'Exact Matching' :
+          jobType === 'fuzzy' ? 'Fuzzy Matching' :
+          jobType === 'ai' ? 'AI Matching' :
+          jobType === 'web-search' ? 'Web Search' :
+          'Unknown',
         totalItems: totalUnmatched,
         processedItems: 0,
         progressPercentage: 0,
