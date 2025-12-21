@@ -1,7 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient, VendorAction } from '@prisma/client';
+/**
+ * @security Protected: Requires ADMIN role for write operations (POST)
+ * GET operations are available to all authenticated users
+ */
 
-const prisma = new PrismaClient();
+import { NextRequest, NextResponse } from 'next/server';
+import { VendorAction } from '@prisma/client';
+import { requireAdminRole } from '@/app/lib/auth-helpers';
+import { prisma } from '@/app/lib/db/prisma';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +34,6 @@ export async function GET(request: NextRequest) {
       })),
     });
   } catch (error: any) {
-    console.error('[API] Error fetching global rules:', error);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
@@ -43,6 +47,9 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    // Require admin role for creating global rules
+    await requireAdminRole();
+    
     const body = await request.json();
 
     const {
@@ -90,7 +97,6 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error('[API] Error creating global rule:', error);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

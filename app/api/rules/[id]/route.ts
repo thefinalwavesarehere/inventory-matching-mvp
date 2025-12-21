@@ -1,7 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient, VendorAction } from '@prisma/client';
+/**
+ * @security Protected: Requires ADMIN role for all operations (PUT, DELETE)
+ */
 
-const prisma = new PrismaClient();
+import { NextRequest, NextResponse } from 'next/server';
+import { VendorAction } from '@prisma/client';
+import { requireAdminRole } from '@/app/lib/auth-helpers';
+import { prisma } from '@/app/lib/db/prisma';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +18,9 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Require admin role for updating rules
+    await requireAdminRole();
+    
     const ruleId = params.id;
     const body = await request.json();
 
@@ -66,8 +73,6 @@ export async function PUT(
       },
     });
   } catch (error: any) {
-    console.error('[API] Error updating rule:', error);
-    
     if (error.code === 'P2025') {
       return NextResponse.json(
         { success: false, error: 'Rule not found' },
@@ -91,6 +96,9 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Require admin role for deleting rules
+    await requireAdminRole();
+    
     const ruleId = params.id;
 
     await prisma.vendorActionRule.delete({
@@ -102,8 +110,6 @@ export async function DELETE(
       message: 'Rule deleted successfully',
     });
   } catch (error: any) {
-    console.error('[API] Error deleting rule:', error);
-    
     if (error.code === 'P2025') {
       return NextResponse.json(
         { success: false, error: 'Rule not found' },

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { useCurrentUser } from '@/app/hooks/useCurrentUser';
 
 interface VendorActionRule {
   id: string;
@@ -20,6 +21,7 @@ export default function RulesManagementPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const projectId = searchParams.get('projectId');
+  const { profile, loading: userLoading, isAdmin } = useCurrentUser();
   
   const [rules, setRules] = useState<VendorActionRule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,12 +146,14 @@ export default function RulesManagementPage() {
               </p>
             </div>
             <div className="flex gap-3">
-              <button
-                onClick={handleCreateRule}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
-              >
-                + Create Rule
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={handleCreateRule}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                >
+                  + Create Rule
+                </button>
+              )}
               {projectId && (
                 <button
                   onClick={() => router.push(`/match?projectId=${projectId}`)}
@@ -338,18 +342,25 @@ export default function RulesManagementPage() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => handleEditRule(rule)}
-                            className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDeleteRule(rule.id)}
-                            className="px-3 py-1.5 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
+                          {isAdmin && (
+                            <>
+                              <button
+                                onClick={() => handleEditRule(rule)}
+                                className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteRule(rule.id)}
+                                className="px-3 py-1.5 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
+                              >
+                                Delete
+                              </button>
+                            </>
+                          )}
+                          {!isAdmin && (
+                            <span className="text-sm text-gray-400 italic">Admin only</span>
+                          )}
                         </div>
                       </td>
                     </tr>

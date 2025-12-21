@@ -9,11 +9,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient, MatchStatus, VendorAction } from '@prisma/client';
+import { MatchStatus, VendorAction } from '@prisma/client';
+import { prisma } from '@/app/lib/db/prisma';
 import { requireAuth } from '@/app/lib/auth-helpers';
 import { logActivity, ActivityType } from '@/app/lib/logger';
 
-const prisma = new PrismaClient();
 
 export const dynamic = 'force-dynamic';
 

@@ -12,9 +12,8 @@
  * 3. Return interchange match with 100% confidence, or null if no match
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/app/lib/db/prisma';
 
-const prisma = new PrismaClient();
 
 /**
  * Interchange match result

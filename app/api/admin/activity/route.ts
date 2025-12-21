@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/app/lib/db/prisma';
 import { requireAdminRole } from '@/app/lib/auth-helpers';
 
-const prisma = new PrismaClient();
 
 export const dynamic = 'force-dynamic';
 

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/app/lib/db/prisma';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { requireAdminRole } from '@/app/lib/auth-helpers';
 import { logActivity } from '@/app/lib/logger';
 
-const prisma = new PrismaClient();
 
 export const dynamic = 'force-dynamic';
 

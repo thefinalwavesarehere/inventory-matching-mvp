@@ -6,9 +6,9 @@
  * 2. Default column name patterns (fallback)
  */
 
-import { PrismaClient, FileTypeForMapping } from '@prisma/client';
+import { FileTypeForMapping } from '@prisma/client';
+import { prisma } from '@/app/lib/db/prisma';
 
-const prisma = new PrismaClient();
 
 /**
  * Default column name patterns for each semantic role

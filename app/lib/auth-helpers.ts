@@ -1,9 +1,8 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-import { PrismaClient, UserProfile } from '@prisma/client';
+import { UserProfile } from '@prisma/client';
 import type { Session } from '@supabase/supabase-js';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/app/lib/db/prisma';
 
 /**
  * Get current session and user profile (server-side)

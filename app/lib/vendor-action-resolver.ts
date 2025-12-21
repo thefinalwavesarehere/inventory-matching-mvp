@@ -6,9 +6,9 @@
  * based on configurable rules.
  */
 
-import { PrismaClient, VendorAction } from '@prisma/client';
+import { VendorAction } from '@prisma/client';
+import { prisma } from '@/app/lib/db/prisma';
 
-const prisma = new PrismaClient();
 
 /**
  * Match data required for vendor action resolution
