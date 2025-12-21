@@ -193,7 +193,7 @@ export default function Home() {
         </div>
 
         {/* Projects Section */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-200/50">
+        <div className="glass-panel-strong p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900">Recent Projects</h2>
             <button
@@ -231,7 +231,7 @@ export default function Home() {
               {projects.map((project) => (
                 <div
                   key={project.id}
-                  className="border border-gray-200/50 rounded-lg p-5 hover:shadow-2xl transition-all cursor-pointer bg-white/80 backdrop-blur-sm hover:border-indigo-300"
+                  className="glass-panel p-5 hover:shadow-2xl transition-all cursor-pointer hover:border-indigo-400"
                   onClick={() => router.push(`/projects/${project.id}`)}
                 >
                   <h3 className="font-bold text-lg text-gray-900 mb-2">

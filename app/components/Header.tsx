@@ -63,7 +63,10 @@ export default function Header() {
   };
 
   return (
-    <header className="bg-gradient-to-r from-indigo-600 to-blue-600 shadow-lg sticky top-0 z-50">
+    <header 
+      className="bg-gradient-to-r from-indigo-600 to-blue-600 shadow-lg sticky top-0 z-50 indigo-gradient-header"
+      style={{ background: 'linear-gradient(to right, #4f46e5, #2563eb)' }}
+    >
       <div className="max-w-7xl mx-auto px-4 py-3">
         <div className="flex justify-between items-center">
           {/* Left: Logo/Title */}

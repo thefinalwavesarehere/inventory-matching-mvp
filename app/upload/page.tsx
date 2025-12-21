@@ -186,7 +186,7 @@ export default function UploadPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-4xl mx-auto px-4">
-        <div className="bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-200/50">
+        <div className="glass-panel p-6">
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-bold">Upload Files</h1>
             <button

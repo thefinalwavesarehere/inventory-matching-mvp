@@ -279,45 +279,48 @@ export async function POST(req: NextRequest) {
       }
       console.log(`[MATCH] Stage 1 complete: ${interchangeMatches} matches`);
 
-      // Stage 2: Waterfall Exact Matching (3-Tier Strategy)
-      console.log(`[MATCH] Stage 2: Waterfall Exact Matching (Strict → Normalized → Brand Alias)`);
+      // Stage 2: Postgres Native Exact Matching (SQL-based normalization)
+      console.log(`[MATCH] Stage 2: Postgres Native Exact Matching (REGEXP_REPLACE)`);
       
-      // Import waterfall matcher
-      const { findExactMatches, getMatchingStats } = await import('@/app/lib/matching/waterfall-exact-matcher');
+      // Import Postgres native matcher
+      const { findHybridExactMatches } = await import('@/app/lib/matching/postgres-exact-matcher');
       
-      // Get unmatched store items
-      const unmatchedStoreItems = storeItems.filter(s => !matchedStoreIds.has(s.id));
+      // Run SQL-based matching (normalizes in database)
+      const sqlMatches = await findHybridExactMatches(projectId);
       
-      // Run waterfall matching
-      const waterfallMatches = findExactMatches(unmatchedStoreItems, supplierItems);
+      console.log(`[MATCH] Postgres matcher found ${sqlMatches.length} exact matches`);
       
       // Convert to match candidates
-      for (const match of waterfallMatches) {
+      for (const match of sqlMatches) {
+        // Skip if already matched in Stage 1
+        if (matchedStoreIds.has(match.storeItemId)) {
+          continue;
+        }
+        
         exactMatches++;
-        matchedStoreIds.add(match.storeItem.id);
+        matchedStoreIds.add(match.storeItemId);
         matches.push({
           projectId,
-          storeItemId: match.storeItem.id,
+          storeItemId: match.storeItemId,
           targetType: 'SUPPLIER',
-          targetId: match.supplierItem.id,
-          method: match.tier === 'strict' ? 'EXACT_STRICT' : match.tier === 'normalized' ? 'EXACT_NORM' : 'EXACT_ALIAS',
+          targetId: match.supplierItemId,
+          method: match.matchMethod,
           confidence: match.confidence,
           features: { 
-            reason: match.reason,
-            tier: match.tier,
-            storePartNumber: match.storeItem.partNumber,
-            supplierPartNumber: match.supplierItem.partNumber,
-            storeLineCode: match.storeItem.lineCode,
-            supplierLineCode: match.supplierItem.lineCode,
+            reason: 'Postgres native exact match with REGEXP_REPLACE normalization',
+            matchMethod: match.matchMethod,
+            storePartNumber: match.storePartNumber,
+            supplierPartNumber: match.supplierPartNumber,
+            storeLineCode: match.storeLineCode,
+            supplierLineCode: match.supplierLineCode,
           },
           status: 'PENDING',
         });
       }
       
-      // Log statistics
-      const stats = getMatchingStats(waterfallMatches);
-      console.log(`[MATCH] Stage 2 complete: ${exactMatches} matches`);
-      console.log(`[MATCH] Breakdown: Strict=${stats.strict}, Normalized=${stats.normalized}, Brand Alias=${stats.brand_alias}`);
+      console.log(`[MATCH] Stage 2 complete: ${exactMatches} exact matches (${sqlMatches.length} from SQL)`);
+      console.log(`[MATCH] Perfect matches: ${sqlMatches.filter(m => m.confidence === 1.0).length}`);
+      console.log(`[MATCH] Normalized matches: ${sqlMatches.filter(m => m.confidence < 1.0).length}`);
     } else {
       // For subsequent batches, get already matched store IDs from database
       console.log(`[MATCH] Skipping Stage 1 & 2 (not first batch)`);

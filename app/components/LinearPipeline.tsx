@@ -90,7 +90,7 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
   const isRunning = activeJobs.length > 0;
 
   return (
-    <div className="bg-white/90 backdrop-blur border border-white/20 rounded-2xl shadow-xl p-8 mb-6">
+    <div className="glass-panel-strong p-8 mb-6">
       <h2 className="text-2xl font-bold mb-6 text-gray-900">Matching Pipeline</h2>
       
       {/* Step 1: Data Status */}
