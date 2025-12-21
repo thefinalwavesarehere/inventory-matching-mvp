@@ -490,7 +490,7 @@ export default function ProjectDetailPage() {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-6xl mx-auto px-4">
         {/* Header */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-6 mb-6 border border-gray-200/50">
           <div className="flex justify-between items-start mb-4">
             <div className="flex-1">
               {editing ? (
@@ -589,7 +589,7 @@ export default function ProjectDetailPage() {
         <WorkflowStatus projectId={projectId} />
 
         {/* Uploaded Files Section */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-6 mb-6 border border-gray-200/50">
           <h2 className="text-xl font-bold mb-4">Uploaded Files</h2>
           {loadingFiles ? (
             <div className="text-gray-500">Loading files...</div>
@@ -632,7 +632,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* File Upload Section */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-6 mb-6 border border-gray-200/50">
           <h2 className="text-xl font-bold mb-4">Upload New Files</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <FileUploader

@@ -279,33 +279,45 @@ export async function POST(req: NextRequest) {
       }
       console.log(`[MATCH] Stage 1 complete: ${interchangeMatches} matches`);
 
-      // Stage 2: Exact Normalized Part Number Match
-      console.log(`[MATCH] Stage 2: Exact Normalized Matching`);
-      // Update matchedStoreIds with current matches (already declared above)
+      // Stage 2: Waterfall Exact Matching (3-Tier Strategy)
+      console.log(`[MATCH] Stage 2: Waterfall Exact Matching (Strict → Normalized → Brand Alias)`);
       
-      for (const storeItem of storeItems) {
-      if (matchedStoreIds.has(storeItem.id)) continue;
+      // Import waterfall matcher
+      const { findExactMatches, getMatchingStats } = await import('@/app/lib/matching/waterfall-exact-matcher');
       
-      const exactMatch = supplierItems.find(
-        (s) => s.partNumberNorm === storeItem.partNumberNorm
-      );
+      // Get unmatched store items
+      const unmatchedStoreItems = storeItems.filter(s => !matchedStoreIds.has(s.id));
       
-      if (exactMatch) {
+      // Run waterfall matching
+      const waterfallMatches = findExactMatches(unmatchedStoreItems, supplierItems);
+      
+      // Convert to match candidates
+      for (const match of waterfallMatches) {
         exactMatches++;
-        matchedStoreIds.add(storeItem.id);
+        matchedStoreIds.add(match.storeItem.id);
         matches.push({
           projectId,
-          storeItemId: storeItem.id,
+          storeItemId: match.storeItem.id,
           targetType: 'SUPPLIER',
-          targetId: exactMatch.id,
-          method: 'EXACT_NORM',
-          confidence: 0.95,
-          features: { reason: 'Exact normalized part number match' },
+          targetId: match.supplierItem.id,
+          method: match.tier === 'strict' ? 'EXACT_STRICT' : match.tier === 'normalized' ? 'EXACT_NORM' : 'EXACT_ALIAS',
+          confidence: match.confidence,
+          features: { 
+            reason: match.reason,
+            tier: match.tier,
+            storePartNumber: match.storeItem.partNumber,
+            supplierPartNumber: match.supplierItem.partNumber,
+            storeLineCode: match.storeItem.lineCode,
+            supplierLineCode: match.supplierItem.lineCode,
+          },
           status: 'PENDING',
         });
       }
-      }
+      
+      // Log statistics
+      const stats = getMatchingStats(waterfallMatches);
       console.log(`[MATCH] Stage 2 complete: ${exactMatches} matches`);
+      console.log(`[MATCH] Breakdown: Strict=${stats.strict}, Normalized=${stats.normalized}, Brand Alias=${stats.brand_alias}`);
     } else {
       // For subsequent batches, get already matched store IDs from database
       console.log(`[MATCH] Skipping Stage 1 & 2 (not first batch)`);

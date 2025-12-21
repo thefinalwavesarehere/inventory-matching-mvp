@@ -135,7 +135,7 @@ export default function RulesManagementPage() {
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-6 mb-6 border border-gray-200/50">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold">Vendor Action Rules</h1>
@@ -175,7 +175,7 @@ export default function RulesManagementPage() {
         </div>
 
         {/* Search Bar */}
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
+        <div className="bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-4 mb-6 border border-gray-200/50">
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <label className="text-sm text-gray-600 mr-2">🔍 Search:</label>
@@ -219,7 +219,7 @@ export default function RulesManagementPage() {
         </div>
 
         {/* Rules List */}
-        <div className="bg-white rounded-lg shadow">
+        <div className="bg-white/90 backdrop-blur-sm rounded-lg shadow-xl border border-gray-200/50">
           {loading ? (
             <div className="p-12 text-center text-gray-500">
               <div className="animate-spin text-4xl mb-4">⚙️</div>
