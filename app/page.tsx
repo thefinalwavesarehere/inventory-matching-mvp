@@ -144,7 +144,7 @@ export default function Home() {
         <div className={`grid grid-cols-1 gap-4 mb-8 ${currentUser?.role === 'ADMIN' ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-2 lg:grid-cols-3'}`}>
           <button
             onClick={() => router.push('/upload')}
-            className="bg-black text-white p-6 rounded-lg hover:bg-gray-800 transition-colors text-left shadow-lg"
+            className="bg-gradient-to-br from-gray-900 to-black text-white p-6 rounded-lg hover:shadow-2xl transition-all text-left shadow-lg border border-gray-700/50"
           >
             <div className="text-3xl mb-2">📤</div>
             <h2 className="text-xl font-semibold mb-1">Upload Files</h2>
@@ -155,7 +155,7 @@ export default function Home() {
 
           <button
             onClick={() => router.push('/rules')}
-            className="bg-indigo-600 text-white p-6 rounded-lg hover:bg-indigo-700 transition-colors text-left shadow-lg"
+            className="bg-gradient-to-br from-indigo-600 to-blue-600 text-white p-6 rounded-lg hover:shadow-2xl transition-all text-left shadow-lg border border-indigo-400/30"
           >
             <div className="text-3xl mb-2">⚙️</div>
             <h2 className="text-xl font-semibold mb-1">Rules Engine</h2>
@@ -169,7 +169,7 @@ export default function Home() {
             <>
               <button
                 onClick={() => router.push('/admin/users')}
-                className="bg-emerald-600 text-white p-6 rounded-lg hover:bg-emerald-700 transition-colors text-left"
+                className="bg-gradient-to-br from-emerald-600 to-green-600 text-white p-6 rounded-lg hover:shadow-2xl transition-all text-left shadow-lg border border-emerald-400/30"
               >
                 <div className="text-3xl mb-2">👥</div>
                 <h2 className="text-xl font-semibold mb-1">User Management</h2>
@@ -180,7 +180,7 @@ export default function Home() {
 
               <button
                 onClick={() => router.push('/admin/activity')}
-                className="bg-amber-600 text-white p-6 rounded-lg hover:bg-amber-700 transition-colors text-left"
+                className="bg-gradient-to-br from-amber-600 to-orange-600 text-white p-6 rounded-lg hover:shadow-2xl transition-all text-left shadow-lg border border-amber-400/30"
               >
                 <div className="text-3xl mb-2">📋</div>
                 <h2 className="text-xl font-semibold mb-1">Activity Log</h2>
@@ -193,7 +193,7 @@ export default function Home() {
         </div>
 
         {/* Projects Section */}
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-200/50">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900">Recent Projects</h2>
             <button
@@ -211,15 +211,27 @@ export default function Home() {
           )}
 
           {isLoading ? (
-            <div className="flex justify-center items-center h-64">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-black"></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="border border-gray-200 rounded-lg p-5 animate-pulse">
+                  <div className="h-6 bg-gray-200 rounded w-3/4 mb-4"></div>
+                  <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-2/3 mb-4"></div>
+                  <div className="space-y-2 mb-4">
+                    <div className="h-3 bg-gray-200 rounded"></div>
+                    <div className="h-3 bg-gray-200 rounded"></div>
+                    <div className="h-3 bg-gray-200 rounded"></div>
+                  </div>
+                  <div className="h-10 bg-gray-200 rounded"></div>
+                </div>
+              ))}
             </div>
           ) : projects.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {projects.map((project) => (
                 <div
                   key={project.id}
-                  className="border border-gray-200 rounded-lg p-5 hover:shadow-lg transition-shadow cursor-pointer"
+                  className="border border-gray-200/50 rounded-lg p-5 hover:shadow-2xl transition-all cursor-pointer bg-white/80 backdrop-blur-sm hover:border-indigo-300"
                   onClick={() => router.push(`/projects/${project.id}`)}
                 >
                   <h3 className="font-bold text-lg text-gray-900 mb-2">
