@@ -52,7 +52,7 @@ export async function processExactMatching(
   
   // 🚨 PHASE 2: EXACT MATCHING (Only for items not matched by Interchange)
   console.log(`[EXACT-MATCH-V3.0] === PHASE 2: EXACT MATCHING ===`);
-  let exactMatches = [];
+  let exactMatches: any[] = [];
   if (remainingStoreIds.length > 0) {
     // Call Postgres Exact Matcher V2.1
     // This uses SQL-based matching with:
