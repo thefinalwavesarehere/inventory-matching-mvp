@@ -12,6 +12,7 @@
 
 import { prisma } from '@/app/lib/db/prisma';
 import { findHybridExactMatches } from '@/app/lib/matching/postgres-exact-matcher-v2';
+import { MatchMethod, MatchStatus } from '@prisma/client';
 
 /**
  * Process exact matching for a batch of store items
@@ -63,16 +64,16 @@ export async function processExactMatching(
   for (let i = 0; i < matches.length; i += 100) {
     const batch = matches.slice(i, i + 100);
     
-    await prisma.matchCandidate.createMany({
-      data: batch.map((match) => ({
+    try {
+      const dataToInsert = batch.map((match) => ({
         projectId,
         storeItemId: match.storeItemId,
         targetType: 'SUPPLIER' as const,
         targetId: match.supplierItemId,
-        method: 'EXACT' as any, // Match method
+        method: MatchMethod.EXACT_NORMALIZED,
         confidence: match.confidence,
-        matchStage: 'STAGE_1' as any,
-        status: 'PENDING' as const,
+        matchStage: 1, // Stage 1: Exact matching
+        status: MatchStatus.PENDING,
         features: {
           matchMethod: match.matchMethod,
           matchReason: match.matchReason || 'exact_match',
@@ -81,11 +82,20 @@ export async function processExactMatching(
           storeLineCode: match.storeLineCode || 'N/A',
           supplierLineCode: match.supplierLineCode || 'N/A',
         },
-      })),
-      skipDuplicates: true,
-    });
-    
-    savedCount += batch.length;
+      }));
+      
+      await prisma.matchCandidate.createMany({
+        data: dataToInsert,
+        skipDuplicates: true,
+      });
+      
+      savedCount += batch.length;
+    } catch (error) {
+      console.error(`[EXACT-MATCH-V2.1] ERROR: Failed to save batch ${i / 100 + 1}`);
+      console.error(`[EXACT-MATCH-V2.1] Error details:`, error);
+      console.error(`[EXACT-MATCH-V2.1] Sample data that failed:`, JSON.stringify(batch[0], null, 2));
+      throw error; // Re-throw to stop processing
+    }
   }
   
   console.log(`[EXACT-MATCH-V2.1] Saved ${savedCount} matches to database`);
