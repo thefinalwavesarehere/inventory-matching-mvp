@@ -71,7 +71,7 @@ export async function findHybridExactMatches(
         LTRIM(UPPER(REGEXP_REPLACE(s."partNumber", '[^a-zA-Z0-9]', '', 'g')), '0') as normalized_part,
         UPPER(REGEXP_REPLACE(COALESCE(s."lineCode", ''), '[^a-zA-Z0-9]', '', 'g')) as normalized_line,
         LENGTH(REGEXP_REPLACE(s."partNumber", '[^0-9]', '', 'g')) > 0 AND LENGTH(s."partNumber") > 5 as is_complex
-      FROM "StoreItem" s
+      FROM "store_items" s
       WHERE s."projectId" = $1
       ${storeIdFilter}
     ),
@@ -82,7 +82,7 @@ export async function findHybridExactMatches(
         sup."lineCode" as supplier_line,
         LTRIM(UPPER(REGEXP_REPLACE(sup."partNumber", '[^a-zA-Z0-9]', '', 'g')), '0') as normalized_part,
         UPPER(REGEXP_REPLACE(COALESCE(sup."lineCode", ''), '[^a-zA-Z0-9]', '', 'g')) as normalized_line
-      FROM "SupplierItem" sup
+      FROM "supplier_items" sup
       WHERE sup."projectId" = $1
     ),
     -- Brand alias mappings (15 families, 30+ aliases)
