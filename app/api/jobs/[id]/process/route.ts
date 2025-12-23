@@ -11,7 +11,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/lib/auth';
 import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
-import { processExactMatching } from './processExactMatching-v2';
+// processExactMatching is defined locally in this file
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
