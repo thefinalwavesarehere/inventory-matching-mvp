@@ -122,6 +122,7 @@ export async function findHybridExactMatches(
     )
     
     -- Main query: JOIN on part number ONLY, SCORE line codes
+    SELECT * FROM (
     SELECT 
       ns.store_id as "storeItemId",
       nsup.supplier_id as "supplierItemId",
@@ -192,10 +193,9 @@ export async function findHybridExactMatches(
     INNER JOIN normalized_supplier nsup
       ON ns.normalized_part = nsup.normalized_part  -- JOIN on part ONLY!
     
-    -- Filter by confidence threshold (keep brand mismatches!)
-    HAVING confidence >= 0.80
-    
-    ORDER BY confidence DESC, ns.store_id;
+    ) matches
+    WHERE confidence >= 0.80
+    ORDER BY confidence DESC, "storeItemId";
   `;
 
   const params = storeIds && storeIds.length > 0
