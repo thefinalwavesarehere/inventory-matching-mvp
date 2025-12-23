@@ -322,20 +322,52 @@ async function processExactMatching(
   supplierItems: any[],
   projectId: string
 ): Promise<number> {
-  // Import V3.0 Postgres Native Matcher (Part-First, Brand-Second strategy)
-  const { findHybridExactMatches } = await import('@/app/lib/matching/postgres-exact-matcher-v3');
+  // Import V3.1 Postgres Native Matcher (Part-First + Interchange)
+  const { findHybridExactMatches, findInterchangeMatches } = await import('@/app/lib/matching/postgres-exact-matcher-v3');
   const { MatchMethod, MatchStatus } = await import('@prisma/client');
   
-  console.log(`[EXACT-MATCH-V3.0] Processing ${storeItems.length} store items (Part-First strategy)`);
-  console.log(`[EXACT-MATCH-V3.0] Using Part-First, Brand-Second strategy (broad net + confidence scoring)`);
+  console.log(`[EXACT-MATCH-V3.1] Processing ${storeItems.length} store items`);
+  console.log(`[EXACT-MATCH-V3.1] Using WATERFALL strategy: Interchange -> Exact`);
+  
+  // 🔍 DATA VERIFICATION: Check if Interchange table has data
+  const interchangeCount = await prisma.interchange.count({ where: { projectId } });
+  console.log(`[DATA-CHECK] Project has ${interchangeCount} interchange records.`);
+  if (interchangeCount === 0) {
+    console.warn(`[DATA-CHECK] ⚠️  WARNING: Interchange table is empty! Match rate will be low. Did the import finish?`);
+  }
 
   // Extract store item IDs for batch processing
   const storeIds = storeItems.map(item => item.id);
   
-  // Call V3.0 Postgres matcher with batch IDs
-  const matches = await findHybridExactMatches(projectId, storeIds);
+  // 🚨 PHASE 1: INTERCHANGE MATCHING (The "Missing 25%")
+  console.log(`[EXACT-MATCH-V3.1] === PHASE 1: INTERCHANGE MATCHING ===`);
+  const interchangeMatches = await findInterchangeMatches(projectId, storeIds);
+  console.log(`[EXACT-MATCH-V3.1] Found ${interchangeMatches.length} interchange matches`);
   
-  console.log(`[EXACT-MATCH-V3.0] Found ${matches.length} matches`);
+  // Save interchange matches
+  let interchangeSavedCount = 0;
+  if (interchangeMatches.length > 0) {
+    interchangeSavedCount = await saveMatches(interchangeMatches, projectId, 'INTERCHANGE');
+    console.log(`[EXACT-MATCH-V3.1] Saved ${interchangeSavedCount} interchange matches`);
+  }
+  
+  // Filter out matched store items to prevent duplicates
+  const matchedStoreIds = new Set(interchangeMatches.map(m => m.storeItemId));
+  const remainingStoreIds = storeIds.filter(id => !matchedStoreIds.has(id));
+  console.log(`[EXACT-MATCH-V3.1] Remaining items for exact match: ${remainingStoreIds.length}/${storeIds.length}`);
+  
+  // 🚨 PHASE 2: EXACT MATCHING (Only for items not matched by Interchange)
+  console.log(`[EXACT-MATCH-V3.1] === PHASE 2: EXACT MATCHING ===`);
+  let exactMatches: any[] = [];
+  if (remainingStoreIds.length > 0) {
+    exactMatches = await findHybridExactMatches(projectId, remainingStoreIds);
+  }
+  
+  // Combine all matches for reporting
+  const matches = [...interchangeMatches, ...exactMatches];
+  
+  console.log(`[EXACT-MATCH-V3.1] Found ${exactMatches.length} exact matches`);
+  console.log(`[EXACT-MATCH-V3.1] TOTAL matches: ${matches.length} (${interchangeMatches.length} interchange + ${exactMatches.length} exact)`);
   
   // Calculate confidence distribution
   const confidenceDistribution = matches.reduce((acc, match) => {
@@ -346,26 +378,52 @@ async function processExactMatching(
     return acc;
   }, {} as Record<string, number>);
   
-  console.log(`[EXACT-MATCH-V3.0] Confidence distribution:`, confidenceDistribution);
+  console.log(`[EXACT-MATCH-V3.1] Confidence distribution:`, confidenceDistribution);
 
-  // Save matches to database in batches
+  // Save exact matches (interchange already saved)
+  let exactSavedCount = 0;
+  if (exactMatches.length > 0) {
+    exactSavedCount = await saveMatches(exactMatches, projectId, 'EXACT');
+    console.log(`[EXACT-MATCH-V3.1] Saved ${exactSavedCount} exact matches`);
+  }
+  
+  const totalSavedCount = interchangeSavedCount + exactSavedCount;
+  console.log(`[EXACT-MATCH-V3.1] TOTAL saved: ${totalSavedCount} matches (${interchangeSavedCount} interchange + ${exactSavedCount} exact)`);
+  
+  // Calculate and log match rate
+  const matchRate = (totalSavedCount / storeItems.length) * 100;
+  console.log(`[EXACT-MATCH-V3.1] Batch match rate: ${matchRate.toFixed(1)}% (${totalSavedCount}/${storeItems.length})`);
+  
+  return totalSavedCount;
+}
+
+/**
+ * Helper function to save matches to database
+ */
+async function saveMatches(
+  matches: any[],
+  projectId: string,
+  matchType: 'INTERCHANGE' | 'EXACT'
+): Promise<number> {
+  const { MatchMethod, MatchStatus } = await import('@prisma/client');
   let savedCount = 0;
+  
   for (let i = 0; i < matches.length; i += 100) {
     const batch = matches.slice(i, i + 100);
     
     try {
-      const dataToInsert = batch.map((match) => ({
+      const dataToInsert = batch.map((match: any) => ({
         projectId,
         storeItemId: match.storeItemId,
         targetType: 'SUPPLIER' as const,
         targetId: match.supplierItemId,
-        method: MatchMethod.EXACT_NORMALIZED,
+        method: matchType === 'INTERCHANGE' ? MatchMethod.INTERCHANGE : MatchMethod.EXACT_NORMALIZED,
         confidence: match.confidence,
-        matchStage: 1, // Stage 1: Exact matching
+        matchStage: 1,
         status: MatchStatus.PENDING,
         features: {
           matchMethod: match.matchMethod,
-          matchReason: match.matchReason || 'exact_match',
+          matchReason: match.matchReason || (matchType === 'INTERCHANGE' ? 'interchange_match' : 'exact_match'),
           storePartNumber: match.storePartNumber,
           supplierPartNumber: match.supplierPartNumber,
           storeLineCode: match.storeLineCode || 'N/A',
@@ -380,18 +438,12 @@ async function processExactMatching(
       
       savedCount += batch.length;
     } catch (error) {
-      console.error(`[EXACT-MATCH-V3.0] ERROR: Failed to save batch`);
-      console.error(`[EXACT-MATCH-V3.0] Error details:`, error);
-      console.error(`[EXACT-MATCH-V3.0] Sample data:`, JSON.stringify(batch[0], null, 2));
+      console.error(`[EXACT-MATCH-V3.1] ERROR: Failed to save ${matchType} batch`);
+      console.error(`[EXACT-MATCH-V3.1] Error details:`, error);
+      console.error(`[EXACT-MATCH-V3.1] Sample data:`, JSON.stringify(batch[0], null, 2));
       throw error;
     }
   }
-
-  console.log(`[EXACT-MATCH-V3.0] Saved ${savedCount} matches to database`);
-  
-  // Calculate and log match rate
-  const matchRate = (matches.length / storeItems.length) * 100;
-  console.log(`[EXACT-MATCH-V3.0] Batch match rate: ${matchRate.toFixed(1)}% (${matches.length}/${storeItems.length})`);
   
   return savedCount;
 }
