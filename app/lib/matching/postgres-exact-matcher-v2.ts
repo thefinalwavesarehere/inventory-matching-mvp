@@ -90,8 +90,9 @@ export async function findPostgresExactMatches(
   const isComplexStore = IS_COMPLEX_PART_SQL.replace(/{field}/g, 's."partNumber"');
   
   // Build WHERE clause for batch processing
+  // Using unnest() for robust array handling in Prisma raw queries
   const batchFilter = storeIds && storeIds.length > 0 
-    ? `AND s."id" = ANY($2::text[])`
+    ? `AND s."id" IN (SELECT unnest($2::text[]))`
     : '';
   
   const sql = `
@@ -308,8 +309,9 @@ export async function findInterchangeMatches(
   const normalizeTheirs = NORMALIZE_PART_SQL.replace(/{field}/g, 'i."theirsPartNumber"');
   
   // Build WHERE clause for batch processing
+  // Using unnest() for robust array handling in Prisma raw queries
   const batchFilter = storeIds && storeIds.length > 0 
-    ? `AND s."id" = ANY($2::text[])`
+    ? `AND s."id" IN (SELECT unnest($2::text[]))`
     : '';
   
   const sql = `

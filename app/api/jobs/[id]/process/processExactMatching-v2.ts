@@ -30,6 +30,13 @@ export async function processExactMatching(
   console.log(`[EXACT-MATCH-V3.0] Processing ${storeItems.length} store items`);
   console.log(`[EXACT-MATCH-V3.0] Using WATERFALL strategy: Interchange -> Exact`);
   
+  // 🔍 DATA VERIFICATION: Check if Interchange table has data
+  const interchangeCount = await prisma.interchange.count({ where: { projectId } });
+  console.log(`[DATA-CHECK] Project has ${interchangeCount} interchange records.`);
+  if (interchangeCount === 0) {
+    console.warn(`[DATA-CHECK] ⚠️  WARNING: Interchange table is empty! Match rate will be low. Did the import finish?`);
+  }
+  
   // Extract store item IDs for batch processing
   const storeItemIds = storeItems.map(item => item.id);
   
