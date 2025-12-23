@@ -73,6 +73,15 @@ export async function findPostgresExactMatches(
   storeIds?: string[]
 ): Promise<PostgresExactMatch[]> {
   
+  // 🚨 EMERGENCY DIAGNOSTIC LOGGING
+  console.log('[POSTGRES_MATCHER_V2.1] === DIAGNOSTIC TRACE START ===');
+  console.log('[POSTGRES_MATCHER_V2.1] projectId:', projectId);
+  console.log('[POSTGRES_MATCHER_V2.1] storeIds type:', typeof storeIds);
+  console.log('[POSTGRES_MATCHER_V2.1] storeIds length:', storeIds?.length || 'N/A');
+  console.log('[POSTGRES_MATCHER_V2.1] storeIds[0] (first ID):', storeIds?.[0] || 'N/A');
+  console.log('[POSTGRES_MATCHER_V2.1] storeIds[0] type:', typeof storeIds?.[0]);
+  console.log('[POSTGRES_MATCHER_V2.1] === DIAGNOSTIC TRACE END ===');
+  
   // Build normalization expressions
   const normalizeStore = NORMALIZE_PART_SQL.replace(/{field}/g, 's."partNumber"');
   const normalizeSupplier = NORMALIZE_PART_SQL.replace(/{field}/g, 'sup."partNumber"');
@@ -140,6 +149,13 @@ export async function findPostgresExactMatches(
   try {
     // Pass storeIds as array parameter if provided
     const params = storeIds && storeIds.length > 0 ? [projectId, storeIds] : [projectId];
+    
+    // 🚨 EMERGENCY: Log the actual SQL and params
+    console.log('[POSTGRES_MATCHER_V2.1] === SQL EXECUTION TRACE ===');
+    console.log('[POSTGRES_MATCHER_V2.1] SQL Query:', sql.substring(0, 500) + '...');
+    console.log('[POSTGRES_MATCHER_V2.1] Params:', JSON.stringify(params, null, 2));
+    console.log('[POSTGRES_MATCHER_V2.1] === SQL EXECUTION TRACE END ===');
+    
     const results = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
     
     const batchInfo = storeIds && storeIds.length > 0 ? ` (batch: ${storeIds.length} items)` : ' (all items)';
@@ -260,6 +276,115 @@ function normalizeString(str: string): string {
     .replace(/[^a-zA-Z0-9]/g, '')
     .toUpperCase()
     .replace(/^0+/, ''); // Strip leading zeros
+}
+
+/**
+ * Find Interchange matches (Cross-Reference matching)
+ * 
+ * Matches Store items to Supplier items via the Interchange table:
+ * - Store.partNumber -> Interchange.oursPartNumber -> Interchange.theirsPartNumber -> Supplier.partNumber
+ * 
+ * This is the "Missing 25%" that Legacy engine had but V2/V3 deleted.
+ * 
+ * @param projectId - The project ID to match items for
+ * @param storeIds - Optional array of store item IDs to filter by (for batch processing)
+ * @returns Array of interchange matches with metadata
+ */
+export async function findInterchangeMatches(
+  projectId: string,
+  storeIds?: string[]
+): Promise<PostgresExactMatch[]> {
+  
+  // 🚨 EMERGENCY DIAGNOSTIC LOGGING
+  console.log('[INTERCHANGE_MATCHER] === DIAGNOSTIC TRACE START ===');
+  console.log('[INTERCHANGE_MATCHER] projectId:', projectId);
+  console.log('[INTERCHANGE_MATCHER] storeIds length:', storeIds?.length || 'N/A');
+  console.log('[INTERCHANGE_MATCHER] === DIAGNOSTIC TRACE END ===');
+  
+  // Build normalization expressions (same as exact matcher)
+  const normalizeStore = NORMALIZE_PART_SQL.replace(/{field}/g, 's."partNumber"');
+  const normalizeSupplier = NORMALIZE_PART_SQL.replace(/{field}/g, 'sup."partNumber"');
+  const normalizeOurs = NORMALIZE_PART_SQL.replace(/{field}/g, 'i."oursPartNumber"');
+  const normalizeTheirs = NORMALIZE_PART_SQL.replace(/{field}/g, 'i."theirsPartNumber"');
+  
+  // Build WHERE clause for batch processing
+  const batchFilter = storeIds && storeIds.length > 0 
+    ? `AND s."id" = ANY($2::text[])`
+    : '';
+  
+  const sql = `
+    SELECT 
+      s."id" as "storeItemId",
+      sup."id" as "supplierItemId",
+      s."partNumber" as "storePartNumber",
+      sup."partNumber" as "supplierPartNumber",
+      s."lineCode" as "storeLineCode",
+      sup."lineCode" as "supplierLineCode",
+      -- Add metadata for debugging
+      i."oursPartNumber" as "interchangeOurs",
+      i."theirsPartNumber" as "interchangeTheirs",
+      i."confidence" as "interchangeConfidence"
+    FROM 
+      "store_items" s
+    INNER JOIN 
+      "interchanges" i
+    ON
+      -- Match Store part to "ours" side of interchange (normalized)
+      ${normalizeStore} = ${normalizeOurs}
+      AND i."projectId" = $1
+    INNER JOIN 
+      "supplier_items" sup
+    ON
+      -- Match "theirs" side of interchange to Supplier part (normalized)
+      ${normalizeTheirs} = ${normalizeSupplier}
+      AND sup."projectId" = $1
+    WHERE
+      s."projectId" = $1
+      
+      -- BATCH PROCESSING: Filter by specific store IDs if provided
+      ${batchFilter}
+      
+      -- Ensure part numbers are not empty after normalization
+      AND ${normalizeStore} != ''
+      AND ${normalizeSupplier} != ''
+      AND ${normalizeOurs} != ''
+      AND ${normalizeTheirs} != ''
+    
+    ORDER BY s."id", sup."id"
+  `;
+
+  try {
+    // Pass storeIds as array parameter if provided
+    const params = storeIds && storeIds.length > 0 ? [projectId, storeIds] : [projectId];
+    
+    // 🚨 EMERGENCY: Log the actual SQL and params
+    console.log('[INTERCHANGE_MATCHER] === SQL EXECUTION TRACE ===');
+    console.log('[INTERCHANGE_MATCHER] SQL Query:', sql.substring(0, 500) + '...');
+    console.log('[INTERCHANGE_MATCHER] Params:', JSON.stringify(params, null, 2));
+    console.log('[INTERCHANGE_MATCHER] === SQL EXECUTION TRACE END ===');
+    
+    const results = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
+    
+    const batchInfo = storeIds && storeIds.length > 0 ? ` (batch: ${storeIds.length} items)` : ' (all items)';
+    console.log(`[INTERCHANGE_MATCHER] Found ${results.length} interchange matches${batchInfo}`);
+    
+    // Map results to typed interface with confidence scores
+    return results.map(row => ({
+      storeItemId: row.storeItemId,
+      supplierItemId: row.supplierItemId,
+      storePartNumber: row.storePartNumber,
+      supplierPartNumber: row.supplierPartNumber,
+      storeLineCode: row.storeLineCode,
+      supplierLineCode: row.supplierLineCode,
+      confidence: row.interchangeConfidence || 0.85, // Use interchange confidence or default to 0.85
+      matchMethod: 'POSTGRES_INTERCHANGE_V3.0',
+      matchReason: `Interchange match: ${row.storePartNumber} -> ${row.interchangeOurs} <-> ${row.interchangeTheirs} -> ${row.supplierPartNumber}`,
+    }));
+    
+  } catch (error) {
+    console.error('[INTERCHANGE_MATCHER] Error executing SQL:', error);
+    throw error;
+  }
 }
 
 /**
