@@ -315,7 +315,89 @@ export async function POST(
 
 /**
  * Process a chunk of items using exact matching
- * Uses the original matching-engine stage1DeterministicMatching
+ * Uses V3.0 Postgres Native Matcher (Part-First, Brand-Second strategy)
+ */
+async function processExactMatching(
+  storeItems: any[],
+  supplierItems: any[],
+  projectId: string
+): Promise<number> {
+  // Import V3.0 Postgres Native Matcher (Part-First, Brand-Second strategy)
+  const { findHybridExactMatches } = await import('@/app/lib/matching/postgres-exact-matcher-v3');
+  const { MatchMethod, MatchStatus } = await import('@prisma/client');
+  
+  console.log(`[EXACT-MATCH-V3.0] Processing ${storeItems.length} store items (Part-First strategy)`);
+  console.log(`[EXACT-MATCH-V3.0] Using Part-First, Brand-Second strategy (broad net + confidence scoring)`);
+
+  // Extract store item IDs for batch processing
+  const storeIds = storeItems.map(item => item.id);
+  
+  // Call V3.0 Postgres matcher with batch IDs
+  const matches = await findHybridExactMatches(projectId, storeIds);
+  
+  console.log(`[EXACT-MATCH-V3.0] Found ${matches.length} matches`);
+  
+  // Calculate confidence distribution
+  const confidenceDistribution = matches.reduce((acc, match) => {
+    const bucket = match.confidence >= 1.0 ? 'perfect' :
+                   match.confidence >= 0.98 ? 'high' :
+                   match.confidence >= 0.90 ? 'medium' : 'low';
+    acc[bucket] = (acc[bucket] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  
+  console.log(`[EXACT-MATCH-V3.0] Confidence distribution:`, confidenceDistribution);
+
+  // Save matches to database in batches
+  let savedCount = 0;
+  for (let i = 0; i < matches.length; i += 100) {
+    const batch = matches.slice(i, i + 100);
+    
+    try {
+      const dataToInsert = batch.map((match) => ({
+        projectId,
+        storeItemId: match.storeItemId,
+        targetType: 'SUPPLIER' as const,
+        targetId: match.supplierItemId,
+        method: MatchMethod.EXACT_NORMALIZED,
+        confidence: match.confidence,
+        matchStage: 1, // Stage 1: Exact matching
+        status: MatchStatus.PENDING,
+        features: {
+          matchMethod: match.matchMethod,
+          matchReason: match.matchReason || 'exact_match',
+          storePartNumber: match.storePartNumber,
+          supplierPartNumber: match.supplierPartNumber,
+          storeLineCode: match.storeLineCode || 'N/A',
+          supplierLineCode: match.supplierLineCode || 'N/A',
+        },
+      }));
+      
+      await prisma.matchCandidate.createMany({
+        data: dataToInsert,
+        skipDuplicates: true,
+      });
+      
+      savedCount += batch.length;
+    } catch (error) {
+      console.error(`[EXACT-MATCH-V3.0] ERROR: Failed to save batch`);
+      console.error(`[EXACT-MATCH-V3.0] Error details:`, error);
+      console.error(`[EXACT-MATCH-V3.0] Sample data:`, JSON.stringify(batch[0], null, 2));
+      throw error;
+    }
+  }
+
+  console.log(`[EXACT-MATCH-V3.0] Saved ${savedCount} matches to database`);
+  
+  // Calculate and log match rate
+  const matchRate = (matches.length / storeItems.length) * 100;
+  console.log(`[EXACT-MATCH-V3.0] Batch match rate: ${matchRate.toFixed(1)}% (${matches.length}/${storeItems.length})`);
+  
+  return savedCount;
+}
+
+/**
+ * Process a chunk of items using fuzzy matching
  */
 async function processFuzzyChunk(
   storeItems: any[],
