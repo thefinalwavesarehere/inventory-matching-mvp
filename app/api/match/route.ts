@@ -321,9 +321,63 @@ export async function POST(req: NextRequest) {
       console.log(`[MATCH] Stage 2 complete: ${exactMatches} exact matches (${sqlMatches.length} from SQL)`);
       console.log(`[MATCH] Perfect matches: ${sqlMatches.filter(m => m.confidence === 1.0).length}`);
       console.log(`[MATCH] Normalized matches: ${sqlMatches.filter(m => m.confidence < 1.0).length}`);
-    } else {
-      // For subsequent batches, get already matched store IDs from database
-      console.log(`[MATCH] Skipping Stage 1 & 2 (not first batch)`);
+    }
+    
+    // CRITICAL FIX: Run exact matching on ALL batches (not just first)
+    // This was causing the "glass ceiling" - items in batch 2+ never got exact matches
+    if (batchOffset > 0) {
+      console.log(`[MATCH] Stage 2B: Running exact matching for batch ${batchOffset} (CRITICAL FIX)`);
+      
+      // Get already matched store IDs to avoid duplicates
+      const existingMatchesForExact = await prisma.matchCandidate.findMany({
+        where: { projectId },
+        select: { storeItemId: true },
+      });
+      const alreadyMatchedIds = new Set(existingMatchesForExact.map(m => m.storeItemId));
+      
+      // Add current batch matches to the set
+      for (const match of matches) {
+        alreadyMatchedIds.add(match.storeItemId);
+      }
+      
+      // Import Postgres native matcher V2.0
+      const { findHybridExactMatches } = await import('@/app/lib/matching/postgres-exact-matcher');
+      
+      // Run SQL-based matching
+      const sqlMatches = await findHybridExactMatches(projectId);
+      
+      console.log(`[MATCH] Postgres matcher V2.0 found ${sqlMatches.length} total exact matches`);
+      
+      // Convert to match candidates (skip already matched items)
+      let newExactMatches = 0;
+      for (const match of sqlMatches) {
+        if (alreadyMatchedIds.has(match.storeItemId)) {
+          continue;
+        }
+        
+        exactMatches++;
+        newExactMatches++;
+        alreadyMatchedIds.add(match.storeItemId);
+        matches.push({
+          projectId,
+          storeItemId: match.storeItemId,
+          targetType: 'SUPPLIER',
+          targetId: match.supplierItemId,
+          method: match.matchMethod,
+          confidence: match.confidence,
+          features: { 
+            reason: match.matchReason || 'Postgres native exact match V2.0',
+            matchMethod: match.matchMethod,
+            storePartNumber: match.storePartNumber,
+            supplierPartNumber: match.supplierPartNumber,
+            storeLineCode: match.storeLineCode,
+            supplierLineCode: match.supplierLineCode,
+          },
+          status: 'PENDING',
+        });
+      }
+      
+      console.log(`[MATCH] Stage 2B complete: ${newExactMatches} NEW exact matches (${sqlMatches.length - newExactMatches} already matched)`);
     }
 
     // Stage 3: Fuzzy Matching (for remaining unmatched items)
