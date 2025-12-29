@@ -461,9 +461,9 @@ async function applyCostValidation(
     const storeItem = storeItemMap.get(match.storeItemId);
     const supplierItem = supplierItemMap.get(match.supplierItemId);
     
-    // Cost fallback: try multiple cost fields
-    const storeCostRaw = storeItem?.cost || storeItem?.wholesalePrice || storeItem?.listPrice;
-    const supplierCostRaw = supplierItem?.currentCost || supplierItem?.wholesalePrice || supplierItem?.listPrice;
+    // Cost fallback: use available cost field (only currentCost is selected)
+    const storeCostRaw = storeItem?.cost;
+    const supplierCostRaw = supplierItem?.currentCost;
     
     if (!storeCostRaw || !supplierCostRaw) {
       noDataCount++;
