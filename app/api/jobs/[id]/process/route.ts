@@ -436,14 +436,19 @@ async function applyCostValidation(
     const supplierItem = supplierItemMap.get(match.supplierItemId);
     
     // Check if both items have cost data
-    if (!storeItem?.cost || !supplierItem?.currentCost || 
-        storeItem.cost <= 0 || supplierItem.currentCost <= 0) {
+    if (!storeItem?.cost || !supplierItem?.currentCost) {
       noDataCount++;
       return match; // No cost data, keep original confidence
     }
     
     const storeCost = parseFloat(storeItem.cost.toString());
     const supplierCost = parseFloat(supplierItem.currentCost.toString());
+    
+    // Skip if costs are invalid
+    if (storeCost <= 0 || supplierCost <= 0 || isNaN(storeCost) || isNaN(supplierCost)) {
+      noDataCount++;
+      return match;
+    }
     const maxCost = Math.max(storeCost, supplierCost);
     const minCost = Math.min(storeCost, supplierCost);
     const ratio = maxCost / minCost;
