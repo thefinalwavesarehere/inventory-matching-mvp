@@ -1,5 +1,5 @@
 /**
- * Postgres Exact Matcher V3.7 - BROAD MATCH Strategy (CONTAINMENT)
+ * Postgres Exact Matcher V3.8 - OPTIMIZED EQUALITY (Timeout Fix)
  * 
  * CRITICAL FIX for match rate collapse (30% → 5%)
  * 
@@ -49,10 +49,10 @@ export async function findHybridExactMatches(
   projectId: string,
   storeIds?: string[]
 ): Promise<PostgresExactMatch[]> {
-  console.log(`[POSTGRES_MATCHER_V3.7] Starting Part-First exact matching for project ${projectId}`);
+  console.log(`[POSTGRES_MATCHER_V3.8] Starting Part-First exact matching for project ${projectId}`);
   
   if (storeIds && storeIds.length > 0) {
-    console.log(`[POSTGRES_MATCHER_V3.7] Filtering to ${storeIds.length} store items`);
+    console.log(`[POSTGRES_MATCHER_V3.8] Filtering to ${storeIds.length} store items`);
   }
 
   // Build the SQL query with Part-First strategy
@@ -63,19 +63,7 @@ export async function findHybridExactMatches(
 
   const query = `
     WITH 
-    -- V3.7 DEBUG: Count total joins before confidence filter
-    raw_joins AS (
-      SELECT COUNT(*) as total_joins
-      FROM "store_items" s
-      INNER JOIN "supplier_items" sup
-        ON LTRIM(UPPER(REGEXP_REPLACE(s."partNumber", '[^a-zA-Z0-9]', '', 'g')), '0')
-         = LTRIM(UPPER(REGEXP_REPLACE(sup."partNumber", '[^a-zA-Z0-9]', '', 'g')), '0')
-      WHERE s."projectId" = $1
-        AND (sup."projectId" = $1 OR sup."projectId" IS NULL)
-        ${storeIdFilter}
-    ),
-    
-    -- Normalize part numbers (remove all non-alphanumeric, uppercase, trim leading zeros)
+    -- V3.8: OPTIMIZED - Pre-normalize small batch (50 items) before joining
     normalized_store AS (
       SELECT 
         s.id as store_id,
@@ -149,10 +137,7 @@ export async function findHybridExactMatches(
     )
     
     -- Main query: JOIN on part number ONLY, SCORE line codes
-    SELECT 
-      (SELECT total_joins FROM raw_joins) as debug_total_joins,
-      * 
-    FROM (
+    SELECT * FROM (
     SELECT 
       ns.store_id as "storeItemId",
       nsup.supplier_id as "supplierItemId",
@@ -231,15 +216,10 @@ export async function findHybridExactMatches(
       
     FROM normalized_store ns
     INNER JOIN normalized_supplier nsup
-      ON (
-        -- V3.7 BROAD MATCH: Containment strategy (STRPOS)
-        -- Check if store part is contained in supplier part OR vice versa
-        STRPOS(ns.normalized_part, nsup.normalized_part) > 0
-        OR STRPOS(nsup.normalized_part, ns.normalized_part) > 0
-      )
+      ON ns.normalized_part = nsup.normalized_part  -- V3.8: Back to EQUALITY (optimized with CTEs)
     
     ) matches
-    WHERE confidence >= 0.60  -- V3.7: Lowered from 0.80 to prioritize RECALL
+    WHERE confidence >= 0.60  -- V3.8: Lowered from 0.80 to prioritize RECALL
     ORDER BY confidence DESC, "storeItemId";
   `;
 
@@ -250,14 +230,8 @@ export async function findHybridExactMatches(
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, ...params);
     
-    // V3.7: RAW COUNT LOGGING (BEFORE ANY FILTERING)
-    console.log(`[POSTGRES_MATCHER_V3.7] !!! RAW RESULT COUNT: ${matches.length} candidates returned from SQL (BEFORE any post-processing) !!!`);
-    
-    if (matches.length > 0 && 'debug_total_joins' in matches[0]) {
-      console.log(`[POSTGRES_MATCHER_V3.7] DEBUG: Total part number joins (before confidence filter): ${(matches[0] as any).debug_total_joins}`);
-    }
-    
-    console.log(`[POSTGRES_MATCHER_V3.7] Found ${matches.length} matches using BROAD MATCH strategy (after confidence >= 0.60 filter)`);
+    // V3.8: Optimized query with equality JOIN
+    console.log(`[POSTGRES_MATCHER_V3.8] Found ${matches.length} matches using optimized equality JOIN (confidence >= 0.60)`);
     
     // Log confidence distribution
     const distribution = matches.reduce((acc, m) => {
@@ -268,12 +242,12 @@ export async function findHybridExactMatches(
       return acc;
     }, {} as Record<string, number>);
     
-    console.log(`[POSTGRES_MATCHER_V3.7] Confidence distribution:`, distribution);
+    console.log(`[POSTGRES_MATCHER_V3.8] Confidence distribution:`, distribution);
     
     return matches;
   } catch (error) {
-    console.error(`[POSTGRES_MATCHER_V3.7] ERROR: SQL query failed`);
-    console.error(`[POSTGRES_MATCHER_V3.7] Error details:`, error);
+    console.error(`[POSTGRES_MATCHER_V3.8] ERROR: SQL query failed`);
+    console.error(`[POSTGRES_MATCHER_V3.8] Error details:`, error);
     throw error;
   }
 }
@@ -295,10 +269,10 @@ export async function findInterchangeMatches(
   storeIds?: string[]
 ): Promise<PostgresExactMatch[]> {
   
-  console.log(`[INTERCHANGE_MATCHER_V3.7] Starting Interchange matching for project ${projectId}`);
+  console.log(`[INTERCHANGE_MATCHER_V3.8] Starting Interchange matching for project ${projectId}`);
   
   if (storeIds && storeIds.length > 0) {
-    console.log(`[INTERCHANGE_MATCHER_V3.7] Filtering to ${storeIds.length} store items`);
+    console.log(`[INTERCHANGE_MATCHER_V3.8] Filtering to ${storeIds.length} store items`);
   }
   
   // Using UNNEST for robust array handling in Prisma raw queries
@@ -347,7 +321,7 @@ export async function findInterchangeMatches(
       ns.store_line as "storeLineCode",
       nsu.supplier_line as "supplierLineCode",
       ni.interchange_confidence as confidence,
-      'POSTGRES_INTERCHANGE_V3.7' as "matchMethod",
+      'POSTGRES_INTERCHANGE_V3.8' as "matchMethod",
       CONCAT('Interchange: ', ns.store_part, ' -> ', ni."oursPartNumber", ' <-> ', ni."theirsPartNumber", ' -> ', nsu.supplier_part) as "matchReason"
     FROM normalized_store ns
     INNER JOIN normalized_interchange ni
@@ -364,12 +338,12 @@ export async function findInterchangeMatches(
     const params = storeIds && storeIds.length > 0 ? [projectId, storeIds] : [projectId];
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, ...params);
     
-    console.log(`[INTERCHANGE_MATCHER_V3.7] Found ${matches.length} interchange matches`);
+    console.log(`[INTERCHANGE_MATCHER_V3.8] Found ${matches.length} interchange matches`);
     
     return matches;
   } catch (error) {
-    console.error(`[INTERCHANGE_MATCHER_V3.7] ERROR: SQL query failed`);
-    console.error(`[INTERCHANGE_MATCHER_V3.7] Error details:`, error);
+    console.error(`[INTERCHANGE_MATCHER_V3.8] ERROR: SQL query failed`);
+    console.error(`[INTERCHANGE_MATCHER_V3.8] Error details:`, error);
     throw error;
   }
 }
