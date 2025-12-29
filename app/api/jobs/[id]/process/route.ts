@@ -421,7 +421,7 @@ async function applyCostValidation(
     },
     select: {
       id: true,
-      cost: true,
+      currentCost: true,
       partNumber: true
     }
   });
@@ -436,14 +436,14 @@ async function applyCostValidation(
     const supplierItem = supplierItemMap.get(match.supplierItemId);
     
     // Check if both items have cost data
-    if (!storeItem?.cost || !supplierItem?.cost || 
-        storeItem.cost <= 0 || supplierItem.cost <= 0) {
+    if (!storeItem?.cost || !supplierItem?.currentCost || 
+        storeItem.cost <= 0 || supplierItem.currentCost <= 0) {
       noDataCount++;
       return match; // No cost data, keep original confidence
     }
     
-    const storeCost = parseFloat(storeItem.cost);
-    const supplierCost = parseFloat(supplierItem.cost);
+    const storeCost = parseFloat(storeItem.cost.toString());
+    const supplierCost = parseFloat(supplierItem.currentCost.toString());
     const maxCost = Math.max(storeCost, supplierCost);
     const minCost = Math.min(storeCost, supplierCost);
     const ratio = maxCost / minCost;
