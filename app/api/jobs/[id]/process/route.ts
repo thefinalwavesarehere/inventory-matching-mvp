@@ -18,9 +18,9 @@ const openai = new OpenAI({
 });
 
 // Chunk sizes optimized for each job type
-// V3.9: Reduced exact chunk size to prevent database timeouts
+// V3.10: Reduced exact chunk size to prevent database timeouts
 const CHUNK_SIZES: Record<string, number> = {
-  'exact': 50,    // V3.9: Reduced from 500 to 50 to prevent connection pool exhaustion
+  'exact': 50,    // V3.10: Reduced from 500 to 50 to prevent connection pool exhaustion
   'fuzzy': 150,   // Fuzzy processes 150 items in ~30-60 seconds (safe for 100k+ suppliers)
   'ai': 100,      // AI processes 100 items in ~3-4 minutes
   'web-search': 20, // Web search processes 20 items in ~1-2 minutes
@@ -323,14 +323,14 @@ async function processExactMatching(
   projectId: string
 ): Promise<number> {
   // !!! LIVE CODE CHECK - TRACE ID !!!
-  console.log("!!! LIVE CODE CHECK - TRACE ID: 2025-12-29_17:45:00_UTC - MODE: RAW REPORTING V3.9 !!!");
+  console.log("!!! LIVE CODE CHECK - TRACE ID: 2025-12-29_18:00:00_UTC - MODE: DIAGNOSTIC V3.10 !!!");
   
-  // Import V3.9 Postgres Native Matcher (Raw Reporting - No Confidence Filter)
+  // Import V3.10 Postgres Native Matcher (Diagnostic Mode - Fishbowl Analysis)
   const { findHybridExactMatches, findInterchangeMatches } = await import('@/app/lib/matching/postgres-exact-matcher-v3');
   const { MatchMethod, MatchStatus } = await import('@prisma/client');
   
-  console.log(`[EXACT-MATCH-V3.9] Processing ${storeItems.length} store items (batch size reduced to 50)`);
-  console.log(`[EXACT-MATCH-V3.9] Using WATERFALL strategy: Interchange -> Exact`);
+  console.log(`[EXACT-MATCH-V3.10] Processing ${storeItems.length} store items (batch size reduced to 50)`);
+  console.log(`[EXACT-MATCH-V3.10] Using WATERFALL strategy: Interchange -> Exact`);
   
   // 🔍 DATA VERIFICATION: Check if Interchange table has data
   const interchangeCount = await prisma.interchange.count({ where: { projectId } });
@@ -347,24 +347,24 @@ async function processExactMatching(
   const storeIds = storeItems.map(item => item.id);
   
   // 🚨 PHASE 1: INTERCHANGE MATCHING (The "Missing 25%")
-  console.log(`[EXACT-MATCH-V3.9] === PHASE 1: INTERCHANGE MATCHING ===`);
+  console.log(`[EXACT-MATCH-V3.10] === PHASE 1: INTERCHANGE MATCHING ===`);
   const interchangeMatches = await findInterchangeMatches(projectId, storeIds);
-  console.log(`[EXACT-MATCH-V3.9] Found ${interchangeMatches.length} interchange matches`);
+  console.log(`[EXACT-MATCH-V3.10] Found ${interchangeMatches.length} interchange matches`);
   
   // Save interchange matches
   let interchangeSavedCount = 0;
   if (interchangeMatches.length > 0) {
     interchangeSavedCount = await saveMatches(interchangeMatches, projectId, 'INTERCHANGE');
-    console.log(`[EXACT-MATCH-V3.9] Saved ${interchangeSavedCount} interchange matches`);
+    console.log(`[EXACT-MATCH-V3.10] Saved ${interchangeSavedCount} interchange matches`);
   }
   
   // Filter out matched store items to prevent duplicates
   const matchedStoreIds = new Set(interchangeMatches.map(m => m.storeItemId));
   const remainingStoreIds = storeIds.filter(id => !matchedStoreIds.has(id));
-  console.log(`[EXACT-MATCH-V3.9] Remaining items for exact match: ${remainingStoreIds.length}/${storeIds.length}`);
+  console.log(`[EXACT-MATCH-V3.10] Remaining items for exact match: ${remainingStoreIds.length}/${storeIds.length}`);
   
   // 🚨 PHASE 2: EXACT MATCHING (Only for items not matched by Interchange)
-  console.log(`[EXACT-MATCH-V3.9] === PHASE 2: EXACT MATCHING ===`);
+  console.log(`[EXACT-MATCH-V3.10] === PHASE 2: EXACT MATCHING ===`);
   let exactMatches: any[] = [];
   if (remainingStoreIds.length > 0) {
     exactMatches = await findHybridExactMatches(projectId, remainingStoreIds);
@@ -373,11 +373,11 @@ async function processExactMatching(
   // Combine all matches for reporting
   let matches = [...interchangeMatches, ...exactMatches];
   
-  console.log(`[EXACT-MATCH-V3.9] Found ${exactMatches.length} exact matches`);
-  console.log(`[EXACT-MATCH-V3.9] TOTAL matches: ${matches.length} (${interchangeMatches.length} interchange + ${exactMatches.length} exact)`);
+  console.log(`[EXACT-MATCH-V3.10] Found ${exactMatches.length} exact matches`);
+  console.log(`[EXACT-MATCH-V3.10] TOTAL matches: ${matches.length} (${interchangeMatches.length} interchange + ${exactMatches.length} exact)`);
   
   // 💰 RULE 5: Cost-Based Validation (UOM Mismatch Detection)
-  console.log(`[EXACT-MATCH-V3.9] === COST VALIDATION ===`);
+  console.log(`[EXACT-MATCH-V3.10] === COST VALIDATION ===`);
   matches = await applyCostValidation(matches, storeItems, projectId);
   
   // Calculate confidence distribution
@@ -389,7 +389,7 @@ async function processExactMatching(
     return acc;
   }, {} as Record<string, number>);
   
-  console.log(`[EXACT-MATCH-V3.9] Confidence distribution:`, confidenceDistribution);
+  console.log(`[EXACT-MATCH-V3.10] Confidence distribution:`, confidenceDistribution);
   
   // 📊 NEAR-MISS REPORTING: Log brand mismatches for alias mapping
   const brandMismatches = matches.filter(m => m.matchReason === 'brand_mismatch');
@@ -417,15 +417,15 @@ async function processExactMatching(
   let exactSavedCount = 0;
   if (exactMatches.length > 0) {
     exactSavedCount = await saveMatches(exactMatches, projectId, 'EXACT');
-    console.log(`[EXACT-MATCH-V3.9] Saved ${exactSavedCount} exact matches`);
+    console.log(`[EXACT-MATCH-V3.10] Saved ${exactSavedCount} exact matches`);
   }
   
   const totalSavedCount = interchangeSavedCount + exactSavedCount;
-  console.log(`[EXACT-MATCH-V3.9] TOTAL saved: ${totalSavedCount} matches (${interchangeSavedCount} interchange + ${exactSavedCount} exact)`);
+  console.log(`[EXACT-MATCH-V3.10] TOTAL saved: ${totalSavedCount} matches (${interchangeSavedCount} interchange + ${exactSavedCount} exact)`);
   
   // Calculate and log match rate
   const matchRate = (totalSavedCount / storeItems.length) * 100;
-  console.log(`[EXACT-MATCH-V3.9] Batch match rate: ${matchRate.toFixed(1)}% (${totalSavedCount}/${storeItems.length})`);
+  console.log(`[EXACT-MATCH-V3.10] Batch match rate: ${matchRate.toFixed(1)}% (${totalSavedCount}/${storeItems.length})`);
   
   return totalSavedCount;
 }
@@ -553,9 +553,9 @@ async function saveMatches(
       
       savedCount += batch.length;
     } catch (error) {
-      console.error(`[EXACT-MATCH-V3.9] ERROR: Failed to save ${matchType} batch`);
-      console.error(`[EXACT-MATCH-V3.9] Error details:`, error);
-      console.error(`[EXACT-MATCH-V3.9] Sample data:`, JSON.stringify(batch[0], null, 2));
+      console.error(`[EXACT-MATCH-V3.10] ERROR: Failed to save ${matchType} batch`);
+      console.error(`[EXACT-MATCH-V3.10] Error details:`, error);
+      console.error(`[EXACT-MATCH-V3.10] Sample data:`, JSON.stringify(batch[0], null, 2));
       throw error;
     }
   }
