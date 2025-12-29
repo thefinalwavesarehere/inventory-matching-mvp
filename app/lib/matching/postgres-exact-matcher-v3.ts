@@ -1,5 +1,5 @@
 /**
- * Postgres Exact Matcher V3.2 - Part-First, Brand-Second Strategy + UNNEST Fix
+ * Postgres Exact Matcher V3.3 - Part-First, Brand-Second Strategy + UNNEST Fix
  * 
  * CRITICAL FIX for match rate collapse (30% → 5%)
  * 
@@ -49,10 +49,10 @@ export async function findHybridExactMatches(
   projectId: string,
   storeIds?: string[]
 ): Promise<PostgresExactMatch[]> {
-  console.log(`[POSTGRES_MATCHER_V3.2] Starting Part-First exact matching for project ${projectId}`);
+  console.log(`[POSTGRES_MATCHER_V3.3] Starting Part-First exact matching for project ${projectId}`);
   
   if (storeIds && storeIds.length > 0) {
-    console.log(`[POSTGRES_MATCHER_V3.2] Filtering to ${storeIds.length} store items`);
+    console.log(`[POSTGRES_MATCHER_V3.3] Filtering to ${storeIds.length} store items`);
   }
 
   // Build the SQL query with Part-First strategy
@@ -164,6 +164,11 @@ export async function findHybridExactMatches(
         -- Scenario 6: Part match + brand mismatch (KEPT, not rejected!)
         WHEN ns.normalized_part = nsup.normalized_part THEN 0.85
         
+        -- Scenario 7: First Three stripped match (Rule 1)
+        WHEN LENGTH(nsup.normalized_part) > 3 
+         AND SUBSTRING(nsup.normalized_part FROM 4) = ns.normalized_part
+         AND LENGTH(ns.normalized_part) >= 4 THEN 0.90
+        
         ELSE 0.0
       END as confidence,
       
@@ -171,6 +176,8 @@ export async function findHybridExactMatches(
       CASE
         WHEN ns.store_part = nsup.supplier_part THEN 'strict'
         WHEN ns.normalized_part = nsup.normalized_part THEN 'normalized'
+        WHEN LENGTH(nsup.normalized_part) > 3 
+         AND SUBSTRING(nsup.normalized_part FROM 4) = ns.normalized_part THEN 'first_three_stripped'
         ELSE 'unknown'
       END as "matchMethod",
       
@@ -187,12 +194,23 @@ export async function findHybridExactMatches(
         WHEN ns.normalized_line = nsup.normalized_line THEN 'normalized_brand'
         WHEN ns.is_complex THEN 'complex_part'
         WHEN ns.store_line IS NULL OR nsup.supplier_line IS NULL THEN 'null_brand'
+        WHEN LENGTH(nsup.normalized_part) > 3 
+         AND SUBSTRING(nsup.normalized_part FROM 4) = ns.normalized_part THEN 'first_three_stripped'
         ELSE 'brand_mismatch'
       END as "matchReason"
       
     FROM normalized_store ns
     INNER JOIN normalized_supplier nsup
-      ON ns.normalized_part = nsup.normalized_part  -- JOIN on part ONLY!
+      ON (
+        -- Rule 1: Exact Normalized Match (Existing)
+        ns.normalized_part = nsup.normalized_part
+        OR
+        -- Rule 1 (First Three): Supplier Part = Store Part + 3-char prefix
+        -- Example: MEVES409LT (supplier) matches ES409LT (store)
+        (LENGTH(nsup.normalized_part) > 3 
+         AND SUBSTRING(nsup.normalized_part FROM 4) = ns.normalized_part
+         AND LENGTH(ns.normalized_part) >= 4)
+      )
     
     ) matches
     WHERE confidence >= 0.80
@@ -206,7 +224,7 @@ export async function findHybridExactMatches(
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, ...params);
     
-    console.log(`[POSTGRES_MATCHER_V3.2] Found ${matches.length} matches using Part-First strategy`);
+    console.log(`[POSTGRES_MATCHER_V3.3] Found ${matches.length} matches using Part-First strategy`);
     
     // Log confidence distribution
     const distribution = matches.reduce((acc, m) => {
@@ -217,12 +235,12 @@ export async function findHybridExactMatches(
       return acc;
     }, {} as Record<string, number>);
     
-    console.log(`[POSTGRES_MATCHER_V3.2] Confidence distribution:`, distribution);
+    console.log(`[POSTGRES_MATCHER_V3.3] Confidence distribution:`, distribution);
     
     return matches;
   } catch (error) {
-    console.error(`[POSTGRES_MATCHER_V3.2] ERROR: SQL query failed`);
-    console.error(`[POSTGRES_MATCHER_V3.2] Error details:`, error);
+    console.error(`[POSTGRES_MATCHER_V3.3] ERROR: SQL query failed`);
+    console.error(`[POSTGRES_MATCHER_V3.3] Error details:`, error);
     throw error;
   }
 }
@@ -244,10 +262,10 @@ export async function findInterchangeMatches(
   storeIds?: string[]
 ): Promise<PostgresExactMatch[]> {
   
-  console.log(`[INTERCHANGE_MATCHER_V3.2] Starting Interchange matching for project ${projectId}`);
+  console.log(`[INTERCHANGE_MATCHER_V3.3] Starting Interchange matching for project ${projectId}`);
   
   if (storeIds && storeIds.length > 0) {
-    console.log(`[INTERCHANGE_MATCHER_V3.2] Filtering to ${storeIds.length} store items`);
+    console.log(`[INTERCHANGE_MATCHER_V3.3] Filtering to ${storeIds.length} store items`);
   }
   
   // Using UNNEST for robust array handling in Prisma raw queries
@@ -296,7 +314,7 @@ export async function findInterchangeMatches(
       ns.store_line as "storeLineCode",
       nsu.supplier_line as "supplierLineCode",
       ni.interchange_confidence as confidence,
-      'POSTGRES_INTERCHANGE_V3.2' as "matchMethod",
+      'POSTGRES_INTERCHANGE_V3.3' as "matchMethod",
       CONCAT('Interchange: ', ns.store_part, ' -> ', ni."oursPartNumber", ' <-> ', ni."theirsPartNumber", ' -> ', nsu.supplier_part) as "matchReason"
     FROM normalized_store ns
     INNER JOIN normalized_interchange ni
@@ -313,12 +331,12 @@ export async function findInterchangeMatches(
     const params = storeIds && storeIds.length > 0 ? [projectId, storeIds] : [projectId];
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, ...params);
     
-    console.log(`[INTERCHANGE_MATCHER_V3.2] Found ${matches.length} interchange matches`);
+    console.log(`[INTERCHANGE_MATCHER_V3.3] Found ${matches.length} interchange matches`);
     
     return matches;
   } catch (error) {
-    console.error(`[INTERCHANGE_MATCHER_V3.2] ERROR: SQL query failed`);
-    console.error(`[INTERCHANGE_MATCHER_V3.2] Error details:`, error);
+    console.error(`[INTERCHANGE_MATCHER_V3.3] ERROR: SQL query failed`);
+    console.error(`[INTERCHANGE_MATCHER_V3.3] Error details:`, error);
     throw error;
   }
 }
