@@ -1,5 +1,5 @@
 /**
- * Postgres Exact Matcher V3.1 - Part-First, Brand-Second Strategy + UNNEST Fix
+ * Postgres Exact Matcher V3.2 - Part-First, Brand-Second Strategy + UNNEST Fix
  * 
  * CRITICAL FIX for match rate collapse (30% → 5%)
  * 
@@ -49,10 +49,10 @@ export async function findHybridExactMatches(
   projectId: string,
   storeIds?: string[]
 ): Promise<PostgresExactMatch[]> {
-  console.log(`[POSTGRES_MATCHER_V3.1] Starting Part-First exact matching for project ${projectId}`);
+  console.log(`[POSTGRES_MATCHER_V3.2] Starting Part-First exact matching for project ${projectId}`);
   
   if (storeIds && storeIds.length > 0) {
-    console.log(`[POSTGRES_MATCHER_V3.1] Filtering to ${storeIds.length} store items`);
+    console.log(`[POSTGRES_MATCHER_V3.2] Filtering to ${storeIds.length} store items`);
   }
 
   // Build the SQL query with Part-First strategy
@@ -84,7 +84,7 @@ export async function findHybridExactMatches(
         LTRIM(UPPER(REGEXP_REPLACE(sup."partNumber", '[^a-zA-Z0-9]', '', 'g')), '0') as normalized_part,
         UPPER(REGEXP_REPLACE(COALESCE(sup."lineCode", ''), '[^a-zA-Z0-9]', '', 'g')) as normalized_line
       FROM "supplier_items" sup
-      WHERE sup."projectId" = $1
+      WHERE (sup."projectId" = $1 OR sup."projectId" IS NULL)
     ),
     -- Brand alias mappings (15 families, 30+ aliases)
     brand_aliases AS (
@@ -206,7 +206,7 @@ export async function findHybridExactMatches(
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, ...params);
     
-    console.log(`[POSTGRES_MATCHER_V3.1] Found ${matches.length} matches using Part-First strategy`);
+    console.log(`[POSTGRES_MATCHER_V3.2] Found ${matches.length} matches using Part-First strategy`);
     
     // Log confidence distribution
     const distribution = matches.reduce((acc, m) => {
@@ -217,12 +217,12 @@ export async function findHybridExactMatches(
       return acc;
     }, {} as Record<string, number>);
     
-    console.log(`[POSTGRES_MATCHER_V3.1] Confidence distribution:`, distribution);
+    console.log(`[POSTGRES_MATCHER_V3.2] Confidence distribution:`, distribution);
     
     return matches;
   } catch (error) {
-    console.error(`[POSTGRES_MATCHER_V3.1] ERROR: SQL query failed`);
-    console.error(`[POSTGRES_MATCHER_V3.1] Error details:`, error);
+    console.error(`[POSTGRES_MATCHER_V3.2] ERROR: SQL query failed`);
+    console.error(`[POSTGRES_MATCHER_V3.2] Error details:`, error);
     throw error;
   }
 }
@@ -244,10 +244,10 @@ export async function findInterchangeMatches(
   storeIds?: string[]
 ): Promise<PostgresExactMatch[]> {
   
-  console.log(`[INTERCHANGE_MATCHER_V3.1] Starting Interchange matching for project ${projectId}`);
+  console.log(`[INTERCHANGE_MATCHER_V3.2] Starting Interchange matching for project ${projectId}`);
   
   if (storeIds && storeIds.length > 0) {
-    console.log(`[INTERCHANGE_MATCHER_V3.1] Filtering to ${storeIds.length} store items`);
+    console.log(`[INTERCHANGE_MATCHER_V3.2] Filtering to ${storeIds.length} store items`);
   }
   
   // Using UNNEST for robust array handling in Prisma raw queries
@@ -286,7 +286,7 @@ export async function findInterchangeMatches(
         sup."lineCode" as supplier_line,
         LTRIM(UPPER(REGEXP_REPLACE(sup."partNumber", '[^a-zA-Z0-9]', '', 'g')), '0') as normalized_part
       FROM "supplier_items" sup
-      WHERE sup."projectId" = $1
+      WHERE (sup."projectId" = $1 OR sup."projectId" IS NULL)
     )
     SELECT 
       ns.store_id as "storeItemId",
@@ -296,7 +296,7 @@ export async function findInterchangeMatches(
       ns.store_line as "storeLineCode",
       nsu.supplier_line as "supplierLineCode",
       ni.interchange_confidence as confidence,
-      'POSTGRES_INTERCHANGE_V3.1' as "matchMethod",
+      'POSTGRES_INTERCHANGE_V3.2' as "matchMethod",
       CONCAT('Interchange: ', ns.store_part, ' -> ', ni."oursPartNumber", ' <-> ', ni."theirsPartNumber", ' -> ', nsu.supplier_part) as "matchReason"
     FROM normalized_store ns
     INNER JOIN normalized_interchange ni
@@ -313,12 +313,12 @@ export async function findInterchangeMatches(
     const params = storeIds && storeIds.length > 0 ? [projectId, storeIds] : [projectId];
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, ...params);
     
-    console.log(`[INTERCHANGE_MATCHER_V3.1] Found ${matches.length} interchange matches`);
+    console.log(`[INTERCHANGE_MATCHER_V3.2] Found ${matches.length} interchange matches`);
     
     return matches;
   } catch (error) {
-    console.error(`[INTERCHANGE_MATCHER_V3.1] ERROR: SQL query failed`);
-    console.error(`[INTERCHANGE_MATCHER_V3.1] Error details:`, error);
+    console.error(`[INTERCHANGE_MATCHER_V3.2] ERROR: SQL query failed`);
+    console.error(`[INTERCHANGE_MATCHER_V3.2] Error details:`, error);
     throw error;
   }
 }
