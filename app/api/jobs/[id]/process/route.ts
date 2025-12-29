@@ -322,42 +322,46 @@ async function processExactMatching(
   supplierItems: any[],
   projectId: string
 ): Promise<number> {
-  // Import V3.4 Postgres Native Matcher (Part-First + Interchange)
+  // Import V3.5 Postgres Native Matcher (Part-First + Interchange)
   const { findHybridExactMatches, findInterchangeMatches } = await import('@/app/lib/matching/postgres-exact-matcher-v3');
   const { MatchMethod, MatchStatus } = await import('@prisma/client');
   
-  console.log(`[EXACT-MATCH-V3.4] Processing ${storeItems.length} store items`);
-  console.log(`[EXACT-MATCH-V3.4] Using WATERFALL strategy: Interchange -> Exact`);
+  console.log(`[EXACT-MATCH-V3.5] Processing ${storeItems.length} store items`);
+  console.log(`[EXACT-MATCH-V3.5] Using WATERFALL strategy: Interchange -> Exact`);
   
   // 🔍 DATA VERIFICATION: Check if Interchange table has data
   const interchangeCount = await prisma.interchange.count({ where: { projectId } });
-  console.log(`[DATA-CHECK] Project has ${interchangeCount} interchange records.`);
+  const interchangeCoverage = (interchangeCount / storeItems.length) * 100;
+  console.log(`[DATA-CHECK] Project has ${interchangeCount} interchange records for ${storeItems.length} store items (${interchangeCoverage.toFixed(1)}% coverage).`);
+  
   if (interchangeCount === 0) {
-    console.warn(`[DATA-CHECK] ⚠️  WARNING: Interchange table is empty! Match rate will be low. Did the import finish?`);
+    console.warn(`[DATA-CHECK] ⚠️  CRITICAL: Interchange table is EMPTY! Match rate will be very low. Did the import finish?`);
+  } else if (interchangeCoverage < 10) {
+    console.warn(`[DATA-CHECK] ⚠️  WARNING: Very low interchange coverage (${interchangeCoverage.toFixed(1)}%). Expected at least 10%. Check if interchange data is filtered correctly.`);
   }
 
   // Extract store item IDs for batch processing
   const storeIds = storeItems.map(item => item.id);
   
   // 🚨 PHASE 1: INTERCHANGE MATCHING (The "Missing 25%")
-  console.log(`[EXACT-MATCH-V3.4] === PHASE 1: INTERCHANGE MATCHING ===`);
+  console.log(`[EXACT-MATCH-V3.5] === PHASE 1: INTERCHANGE MATCHING ===`);
   const interchangeMatches = await findInterchangeMatches(projectId, storeIds);
-  console.log(`[EXACT-MATCH-V3.4] Found ${interchangeMatches.length} interchange matches`);
+  console.log(`[EXACT-MATCH-V3.5] Found ${interchangeMatches.length} interchange matches`);
   
   // Save interchange matches
   let interchangeSavedCount = 0;
   if (interchangeMatches.length > 0) {
     interchangeSavedCount = await saveMatches(interchangeMatches, projectId, 'INTERCHANGE');
-    console.log(`[EXACT-MATCH-V3.4] Saved ${interchangeSavedCount} interchange matches`);
+    console.log(`[EXACT-MATCH-V3.5] Saved ${interchangeSavedCount} interchange matches`);
   }
   
   // Filter out matched store items to prevent duplicates
   const matchedStoreIds = new Set(interchangeMatches.map(m => m.storeItemId));
   const remainingStoreIds = storeIds.filter(id => !matchedStoreIds.has(id));
-  console.log(`[EXACT-MATCH-V3.4] Remaining items for exact match: ${remainingStoreIds.length}/${storeIds.length}`);
+  console.log(`[EXACT-MATCH-V3.5] Remaining items for exact match: ${remainingStoreIds.length}/${storeIds.length}`);
   
   // 🚨 PHASE 2: EXACT MATCHING (Only for items not matched by Interchange)
-  console.log(`[EXACT-MATCH-V3.4] === PHASE 2: EXACT MATCHING ===`);
+  console.log(`[EXACT-MATCH-V3.5] === PHASE 2: EXACT MATCHING ===`);
   let exactMatches: any[] = [];
   if (remainingStoreIds.length > 0) {
     exactMatches = await findHybridExactMatches(projectId, remainingStoreIds);
@@ -366,11 +370,11 @@ async function processExactMatching(
   // Combine all matches for reporting
   let matches = [...interchangeMatches, ...exactMatches];
   
-  console.log(`[EXACT-MATCH-V3.4] Found ${exactMatches.length} exact matches`);
-  console.log(`[EXACT-MATCH-V3.4] TOTAL matches: ${matches.length} (${interchangeMatches.length} interchange + ${exactMatches.length} exact)`);
+  console.log(`[EXACT-MATCH-V3.5] Found ${exactMatches.length} exact matches`);
+  console.log(`[EXACT-MATCH-V3.5] TOTAL matches: ${matches.length} (${interchangeMatches.length} interchange + ${exactMatches.length} exact)`);
   
   // 💰 RULE 5: Cost-Based Validation (UOM Mismatch Detection)
-  console.log(`[EXACT-MATCH-V3.4] === COST VALIDATION ===`);
+  console.log(`[EXACT-MATCH-V3.5] === COST VALIDATION ===`);
   matches = await applyCostValidation(matches, storeItems, projectId);
   
   // Calculate confidence distribution
@@ -382,21 +386,43 @@ async function processExactMatching(
     return acc;
   }, {} as Record<string, number>);
   
-  console.log(`[EXACT-MATCH-V3.4] Confidence distribution:`, confidenceDistribution);
+  console.log(`[EXACT-MATCH-V3.5] Confidence distribution:`, confidenceDistribution);
+  
+  // 📊 NEAR-MISS REPORTING: Log brand mismatches for alias mapping
+  const brandMismatches = matches.filter(m => m.matchReason === 'brand_mismatch');
+  const fuzzyBrandMatches = matches.filter(m => m.matchReason === 'fuzzy_brand');
+  
+  if (brandMismatches.length > 0) {
+    console.log(`[NEAR-MISS] Found ${brandMismatches.length} part matches with brand mismatch (potential alias mappings needed):`);
+    // Log first 10 examples
+    brandMismatches.slice(0, 10).forEach((m, i) => {
+      console.log(`[NEAR-MISS] ${i+1}. Store: ${m.storePartNumber} (${m.storeLineCode}) → Supplier: ${m.supplierPartNumber} (${m.supplierLineCode}) [Confidence: ${m.confidence.toFixed(2)}]`);
+    });
+    if (brandMismatches.length > 10) {
+      console.log(`[NEAR-MISS] ... and ${brandMismatches.length - 10} more brand mismatches`);
+    }
+  }
+  
+  if (fuzzyBrandMatches.length > 0) {
+    console.log(`[NEAR-MISS] Found ${fuzzyBrandMatches.length} fuzzy brand matches (partial string matches):`);
+    fuzzyBrandMatches.slice(0, 5).forEach((m, i) => {
+      console.log(`[NEAR-MISS] ${i+1}. Store: ${m.storePartNumber} (${m.storeLineCode}) ↔ Supplier: ${m.supplierPartNumber} (${m.supplierLineCode}) [Confidence: ${m.confidence.toFixed(2)}]`);
+    });
+  }
 
   // Save exact matches (interchange already saved)
   let exactSavedCount = 0;
   if (exactMatches.length > 0) {
     exactSavedCount = await saveMatches(exactMatches, projectId, 'EXACT');
-    console.log(`[EXACT-MATCH-V3.4] Saved ${exactSavedCount} exact matches`);
+    console.log(`[EXACT-MATCH-V3.5] Saved ${exactSavedCount} exact matches`);
   }
   
   const totalSavedCount = interchangeSavedCount + exactSavedCount;
-  console.log(`[EXACT-MATCH-V3.4] TOTAL saved: ${totalSavedCount} matches (${interchangeSavedCount} interchange + ${exactSavedCount} exact)`);
+  console.log(`[EXACT-MATCH-V3.5] TOTAL saved: ${totalSavedCount} matches (${interchangeSavedCount} interchange + ${exactSavedCount} exact)`);
   
   // Calculate and log match rate
   const matchRate = (totalSavedCount / storeItems.length) * 100;
-  console.log(`[EXACT-MATCH-V3.4] Batch match rate: ${matchRate.toFixed(1)}% (${totalSavedCount}/${storeItems.length})`);
+  console.log(`[EXACT-MATCH-V3.5] Batch match rate: ${matchRate.toFixed(1)}% (${totalSavedCount}/${storeItems.length})`);
   
   return totalSavedCount;
 }
@@ -435,14 +461,17 @@ async function applyCostValidation(
     const storeItem = storeItemMap.get(match.storeItemId);
     const supplierItem = supplierItemMap.get(match.supplierItemId);
     
-    // Check if both items have cost data
-    if (!storeItem?.cost || !supplierItem?.currentCost) {
+    // Cost fallback: try multiple cost fields
+    const storeCostRaw = storeItem?.cost || storeItem?.wholesalePrice || storeItem?.listPrice;
+    const supplierCostRaw = supplierItem?.currentCost || supplierItem?.wholesalePrice || supplierItem?.listPrice;
+    
+    if (!storeCostRaw || !supplierCostRaw) {
       noDataCount++;
-      return match; // No cost data, keep original confidence
+      return match; // No cost data available, keep original confidence
     }
     
-    const storeCost = parseFloat(storeItem.cost.toString());
-    const supplierCost = parseFloat(supplierItem.currentCost.toString());
+    const storeCost = parseFloat(storeCostRaw.toString());
+    const supplierCost = parseFloat(supplierCostRaw.toString());
     
     // Skip if costs are invalid
     if (storeCost <= 0 || supplierCost <= 0 || isNaN(storeCost) || isNaN(supplierCost)) {
@@ -521,9 +550,9 @@ async function saveMatches(
       
       savedCount += batch.length;
     } catch (error) {
-      console.error(`[EXACT-MATCH-V3.4] ERROR: Failed to save ${matchType} batch`);
-      console.error(`[EXACT-MATCH-V3.4] Error details:`, error);
-      console.error(`[EXACT-MATCH-V3.4] Sample data:`, JSON.stringify(batch[0], null, 2));
+      console.error(`[EXACT-MATCH-V3.5] ERROR: Failed to save ${matchType} batch`);
+      console.error(`[EXACT-MATCH-V3.5] Error details:`, error);
+      console.error(`[EXACT-MATCH-V3.5] Sample data:`, JSON.stringify(batch[0], null, 2));
       throw error;
     }
   }

@@ -1,5 +1,5 @@
 /**
- * Postgres Exact Matcher V3.4 - Part-First, Brand-Second Strategy (PERFORMANCE FIX)
+ * Postgres Exact Matcher V3.5 - Part-First, Brand-Second Strategy (COMPREHENSIVE IMPROVEMENTS)
  * 
  * CRITICAL FIX for match rate collapse (30% → 5%)
  * 
@@ -49,10 +49,10 @@ export async function findHybridExactMatches(
   projectId: string,
   storeIds?: string[]
 ): Promise<PostgresExactMatch[]> {
-  console.log(`[POSTGRES_MATCHER_V3.4] Starting Part-First exact matching for project ${projectId}`);
+  console.log(`[POSTGRES_MATCHER_V3.5] Starting Part-First exact matching for project ${projectId}`);
   
   if (storeIds && storeIds.length > 0) {
-    console.log(`[POSTGRES_MATCHER_V3.4] Filtering to ${storeIds.length} store items`);
+    console.log(`[POSTGRES_MATCHER_V3.5] Filtering to ${storeIds.length} store items`);
   }
 
   // Build the SQL query with Part-First strategy
@@ -118,7 +118,21 @@ export async function findHybridExactMatches(
         -- DAYCO family
         ('DAY', 'DAYCO'),
         -- DURALAST family
-        ('DUR', 'DURALAST'), ('DL', 'DURALAST')
+        ('DUR', 'DURALAST'), ('DL', 'DURALAST'),
+        -- 3M family
+        ('3M', '3M'), ('3MPRODUCTS', '3M'), ('3MCORP', '3M'),
+        -- ARNOLD family
+        ('ARNOLD', 'ARNOLD'), ('ARNOLDMOTORSUPPLY', 'ARNOLD'), ('ARNOLDMOTOR', 'ARNOLD'),
+        -- WIX family
+        ('WIX', 'WIX'), ('WIXFILTERS', 'WIX'),
+        -- BOSCH family
+        ('BOSCH', 'BOSCH'), ('BSH', 'BOSCH'),
+        -- DENSO family
+        ('DENSO', 'DENSO'), ('DNS', 'DENSO'),
+        -- FORD family
+        ('FORD', 'FORD'), ('FRD', 'FORD'), ('MOTORCRAFT', 'FORD'),
+        -- GENUINE family
+        ('GENUINE', 'GENUINE'), ('OEM', 'GENUINE'), ('OE', 'GENUINE')
       ) AS aliases(alias, canonical)
     )
     
@@ -146,6 +160,13 @@ export async function findHybridExactMatches(
               OR (ba.alias = nsup.normalized_line AND ba.canonical = ns.normalized_line)
               OR (ba.canonical = ns.normalized_line AND ba.canonical = nsup.normalized_line)
          ) THEN 0.99
+        
+        -- Scenario 2b: Fuzzy brand match (ARNOLD in ARNOLDMOTORSUPPLY)
+        WHEN ns.normalized_part = nsup.normalized_part
+         AND LENGTH(ns.normalized_line) >= 3
+         AND LENGTH(nsup.normalized_line) >= 3
+         AND (ns.normalized_line LIKE '%' || nsup.normalized_line || '%'
+              OR nsup.normalized_line LIKE '%' || ns.normalized_line || '%') THEN 0.95
         
         -- Scenario 3: Normalized part + brand match
         WHEN ns.normalized_part = nsup.normalized_part
@@ -184,6 +205,9 @@ export async function findHybridExactMatches(
               OR (ba.alias = nsup.normalized_line AND ba.canonical = ns.normalized_line)
               OR (ba.canonical = ns.normalized_line AND ba.canonical = nsup.normalized_line)
          ) THEN 'brand_alias'
+        WHEN LENGTH(ns.normalized_line) >= 3 AND LENGTH(nsup.normalized_line) >= 3
+         AND (ns.normalized_line LIKE '%' || nsup.normalized_line || '%'
+              OR nsup.normalized_line LIKE '%' || ns.normalized_line || '%') THEN 'fuzzy_brand'
         WHEN ns.normalized_line = nsup.normalized_line THEN 'normalized_brand'
         WHEN ns.is_complex THEN 'complex_part'
         WHEN ns.store_line IS NULL OR nsup.supplier_line IS NULL THEN 'null_brand'
@@ -206,7 +230,7 @@ export async function findHybridExactMatches(
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, ...params);
     
-    console.log(`[POSTGRES_MATCHER_V3.4] Found ${matches.length} matches using Part-First strategy`);
+    console.log(`[POSTGRES_MATCHER_V3.5] Found ${matches.length} matches using Part-First strategy`);
     
     // Log confidence distribution
     const distribution = matches.reduce((acc, m) => {
@@ -217,12 +241,12 @@ export async function findHybridExactMatches(
       return acc;
     }, {} as Record<string, number>);
     
-    console.log(`[POSTGRES_MATCHER_V3.4] Confidence distribution:`, distribution);
+    console.log(`[POSTGRES_MATCHER_V3.5] Confidence distribution:`, distribution);
     
     return matches;
   } catch (error) {
-    console.error(`[POSTGRES_MATCHER_V3.4] ERROR: SQL query failed`);
-    console.error(`[POSTGRES_MATCHER_V3.4] Error details:`, error);
+    console.error(`[POSTGRES_MATCHER_V3.5] ERROR: SQL query failed`);
+    console.error(`[POSTGRES_MATCHER_V3.5] Error details:`, error);
     throw error;
   }
 }
@@ -244,10 +268,10 @@ export async function findInterchangeMatches(
   storeIds?: string[]
 ): Promise<PostgresExactMatch[]> {
   
-  console.log(`[INTERCHANGE_MATCHER_V3.4] Starting Interchange matching for project ${projectId}`);
+  console.log(`[INTERCHANGE_MATCHER_V3.5] Starting Interchange matching for project ${projectId}`);
   
   if (storeIds && storeIds.length > 0) {
-    console.log(`[INTERCHANGE_MATCHER_V3.4] Filtering to ${storeIds.length} store items`);
+    console.log(`[INTERCHANGE_MATCHER_V3.5] Filtering to ${storeIds.length} store items`);
   }
   
   // Using UNNEST for robust array handling in Prisma raw queries
@@ -296,7 +320,7 @@ export async function findInterchangeMatches(
       ns.store_line as "storeLineCode",
       nsu.supplier_line as "supplierLineCode",
       ni.interchange_confidence as confidence,
-      'POSTGRES_INTERCHANGE_V3.4' as "matchMethod",
+      'POSTGRES_INTERCHANGE_V3.5' as "matchMethod",
       CONCAT('Interchange: ', ns.store_part, ' -> ', ni."oursPartNumber", ' <-> ', ni."theirsPartNumber", ' -> ', nsu.supplier_part) as "matchReason"
     FROM normalized_store ns
     INNER JOIN normalized_interchange ni
@@ -313,12 +337,12 @@ export async function findInterchangeMatches(
     const params = storeIds && storeIds.length > 0 ? [projectId, storeIds] : [projectId];
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, ...params);
     
-    console.log(`[INTERCHANGE_MATCHER_V3.4] Found ${matches.length} interchange matches`);
+    console.log(`[INTERCHANGE_MATCHER_V3.5] Found ${matches.length} interchange matches`);
     
     return matches;
   } catch (error) {
-    console.error(`[INTERCHANGE_MATCHER_V3.4] ERROR: SQL query failed`);
-    console.error(`[INTERCHANGE_MATCHER_V3.4] Error details:`, error);
+    console.error(`[INTERCHANGE_MATCHER_V3.5] ERROR: SQL query failed`);
+    console.error(`[INTERCHANGE_MATCHER_V3.5] Error details:`, error);
     throw error;
   }
 }
