@@ -100,30 +100,43 @@ export async function POST(
     console.log(`[JOB-PROCESS] Current progress: ${job.processedItems}/${job.totalItems}`);
     console.log(`[JOB-PROCESS] Current matches: ${job.matchesFound}`);
 
-    // Get unmatched items
-    const existingMatches = await prisma.matchCandidate.findMany({
-      where: { projectId: job.projectId },
-      select: { storeItemId: true },
-    });
-    const matchedIds = new Set(existingMatches.map((m) => m.storeItemId));
-
-    const allUnmatchedItems = await prisma.storeItem.findMany({
+    // V5.6: IDEMPOTENT RESUME LOGIC
+    // Query only truly unmatched items (those without match_candidates entries)
+    // This prevents reprocessing already-matched items after a "Silent Kill"
+    const chunkSize = getChunkSize(jobType);
+    
+    console.log(`[JOB-PROCESS-V5.6] Querying unmatched items (idempotent resume)...`);
+    
+    // Direct query: fetch only items that don't have match_candidates
+    const chunk = await prisma.storeItem.findMany({
       where: {
         projectId: job.projectId,
-        id: { notIn: Array.from(matchedIds) },
+        // Exclude items that already have matches
+        NOT: {
+          matchCandidates: {
+            some: {}
+          }
+        }
       },
       orderBy: { partNumber: 'asc' },
+      take: chunkSize, // Take only the chunk size we need
+    });
+    
+    // Get total count of remaining unmatched items for progress tracking
+    const totalUnmatchedCount = await prisma.storeItem.count({
+      where: {
+        projectId: job.projectId,
+        NOT: {
+          matchCandidates: {
+            some: {}
+          }
+        }
+      }
     });
 
-    // Calculate which chunk to process
-    const chunkSize = getChunkSize(jobType);
-    const startIdx = job.processedItems;
-    const endIdx = Math.min(startIdx + chunkSize, allUnmatchedItems.length);
-    const chunk = allUnmatchedItems.slice(startIdx, endIdx);
-
-    console.log(`[JOB-PROCESS] Total unmatched items available: ${allUnmatchedItems.length}`);
-    console.log(`[JOB-PROCESS] Chunk size for ${jobType}: ${chunkSize}`);
-    console.log(`[JOB-PROCESS] Processing items ${startIdx} to ${endIdx} (${chunk.length} items)`);
+    console.log(`[JOB-PROCESS-V5.6] Total unmatched items remaining: ${totalUnmatchedCount}`);
+    console.log(`[JOB-PROCESS-V5.6] Chunk size for ${jobType}: ${chunkSize}`);
+    console.log(`[JOB-PROCESS-V5.6] Processing ${chunk.length} items (idempotent - never restarts from 0)`);
 
     if (chunk.length === 0) {
       // Job is complete
@@ -234,18 +247,18 @@ export async function POST(
       throw new Error(`Unknown job type: ${jobType}`);
     }
 
-    // Update job progress
-    const newProcessedItems = endIdx;
+    // V5.6: Update job progress using actual processed count
+    const newProcessedItems = job.processedItems + chunk.length;
     const totalItems = job.totalItems || 0;
     const progressPercentage = totalItems > 0 ? (newProcessedItems / totalItems) * 100 : 0;
     const newMatchesFound = job.matchesFound + newMatches;
     const matchRate = newProcessedItems > 0 ? (newMatchesFound / newProcessedItems) * 100 : 0;
 
-    // Estimate completion time
+    // Estimate completion time based on remaining unmatched items
     const elapsedMs = Date.now() - (job.startedAt?.getTime() || Date.now());
     const itemsPerMs = newProcessedItems / elapsedMs;
-    const remainingItems = totalItems - newProcessedItems;
-    const estimatedRemainingMs = remainingItems / itemsPerMs;
+    const remainingItems = totalUnmatchedCount - chunk.length; // Use actual remaining count
+    const estimatedRemainingMs = remainingItems > 0 ? remainingItems / itemsPerMs : 0;
     const estimatedCompletion = new Date(Date.now() + estimatedRemainingMs);
 
     await prisma.matchingJob.update({
