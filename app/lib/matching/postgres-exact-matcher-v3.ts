@@ -13,7 +13,7 @@ export interface PostgresExactMatch {
 }
 
 export async function findMatches(projectId: string, storeIds?: string[]): Promise<PostgresExactMatch[]> {
-  console.log(`[MATCHER_V4.1_SQL] Starting Prefix-Strip Matching for Project: ${projectId}`);
+  console.log(`[MATCHER_V4.2_SQL] Starting Prefix-Strip Matching (Cost Logic Removed) for Project: ${projectId}`);
 
   // This SQL query implements the "3-Character Strip" rule directly in the database
   const query = `
@@ -22,7 +22,6 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
         id, 
         "partNumber", 
         "lineCode", 
-        "cost",
         -- Remove special chars for fuzzy comparison
         REGEXP_REPLACE(UPPER("partNumber"), '[^A-Z0-9]', '', 'g') as norm_part
       FROM "store_items"
@@ -35,7 +34,6 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
         id, 
         "partNumber", 
         "lineCode", 
-        "currentCost" as cost,
         -- 1. Standard Normalization
         REGEXP_REPLACE(UPPER("partNumber"), '[^A-Z0-9]', '', 'g') as norm_full,
         -- 2. "The Eric Rule": Strip first 3 chars, then normalize
@@ -63,7 +61,7 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
         ELSE 0.95
       END as confidence,
 
-      'SQL_PREFIX_STRIP_V4.1' as "matchMethod",
+      'SQL_PREFIX_STRIP_V4.2' as "matchMethod",
       
       CASE
         WHEN ns."lineCode" = sup.extracted_prefix THEN 'Line Code Confirmed + Part Match'
@@ -79,18 +77,16 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
     -- DISAMBIGUATION LOGIC (ORDER BY picks the winner)
     ORDER BY 
       ns.id, 
-      -- Priority 1: Prefer matches where Line Codes align
-      (CASE WHEN ns."lineCode" = sup.extracted_prefix THEN 0 ELSE 1 END) ASC,
-      -- Priority 2: Prefer closest price (UOM Mismatch Check)
-      ABS(COALESCE(ns.cost, 0) - COALESCE(sup.cost, 0)) ASC
+      -- Priority: Prefer matches where Line Codes align
+      (CASE WHEN ns."lineCode" = sup.extracted_prefix THEN 0 ELSE 1 END) ASC
   `;
 
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, projectId);
-    console.log(`[MATCHER_V4.1_SQL] Found ${matches.length} matches using Prefix Stripping logic.`);
+    console.log(`[MATCHER_V4.2_SQL] Found ${matches.length} matches using Prefix Stripping logic.`);
     return matches;
   } catch (error) {
-    console.error('[MATCHER_V4.1_SQL] Error executing match query:', error);
+    console.error('[MATCHER_V4.2_SQL] Error executing match query:', error);
     throw error;
   }
 }
