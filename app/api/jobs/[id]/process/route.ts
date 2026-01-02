@@ -323,14 +323,14 @@ async function processExactMatching(
   projectId: string
 ): Promise<number> {
   // !!! LIVE CODE CHECK - TRACE ID !!!
-  console.log("!!! LIVE CODE CHECK - TRACE ID: 2025-12-29_18:15:00_UTC - MODE: LINE CODE PREFIX STRIPPING V4.0 !!!");
+  console.log("!!! LIVE CODE CHECK - TRACE ID: 2026-01-02_19:00:00_UTC - MODE: 3-CHAR PREFIX STRIP V4.1 !!!");
   
-  // Import V4.0 Postgres Native Matcher (Line Code Prefix Stripping)
-  const { findHybridExactMatches, findInterchangeMatches } = await import('@/app/lib/matching/postgres-exact-matcher-v3');
+  // Import V4.1 Postgres Native Matcher (3-Character Prefix Stripping)
+  const { findMatches } = await import('@/app/lib/matching/postgres-exact-matcher-v3');
   const { MatchMethod, MatchStatus } = await import('@prisma/client');
   
-  console.log(`[EXACT-MATCH-V4.0] Processing ${storeItems.length} store items (batch size reduced to 50)`);
-  console.log(`[EXACT-MATCH-V4.0] Using WATERFALL strategy: Interchange -> Exact`);
+  console.log(`[EXACT-MATCH-V4.1] Processing ${storeItems.length} store items (batch size: 50)`);
+  console.log(`[EXACT-MATCH-V4.1] Using 3-Character Prefix Stripping (Eric's Rule)`);
   
   // 🔍 DATA VERIFICATION: Check if Interchange table has data
   const interchangeCount = await prisma.interchange.count({ where: { projectId } });
@@ -361,13 +361,13 @@ async function processExactMatching(
   // Filter out matched store items to prevent duplicates
   const matchedStoreIds = new Set(interchangeMatches.map(m => m.storeItemId));
   const remainingStoreIds = storeIds.filter(id => !matchedStoreIds.has(id));
-  console.log(`[EXACT-MATCH-V4.0] Remaining items for exact match: ${remainingStoreIds.length}/${storeIds.length}`);
+  console.log(`[EXACT-MATCH-V4.1] Processing ${remainingStoreIds.length}/${storeIds.length} items`);
   
-  // 🚨 PHASE 2: EXACT MATCHING (Only for items not matched by Interchange)
-  console.log(`[EXACT-MATCH-V4.0] === PHASE 2: EXACT MATCHING ===`);
+  // 🚨 V4.1: PREFIX STRIPPING MATCH (Eric's 3-Character Rule)
+  console.log(`[EXACT-MATCH-V4.1] === MATCHING WITH PREFIX STRIP ===`);
   let exactMatches: any[] = [];
   if (remainingStoreIds.length > 0) {
-    exactMatches = await findHybridExactMatches(projectId, remainingStoreIds);
+    exactMatches = await findMatches(projectId, remainingStoreIds);
   }
   
   // Combine all matches for reporting
