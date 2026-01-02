@@ -323,26 +323,31 @@ async function processExactMatching(
   projectId: string
 ): Promise<number> {
   // !!! LIVE CODE CHECK - TRACE ID !!!
-  console.log("!!! LIVE CODE CHECK - TRACE ID: 2026-01-02_19:00:00_UTC - MODE: 3-CHAR PREFIX STRIP V4.1 !!!");
+  console.log("!!! LIVE CODE CHECK - TRACE ID: 2026-01-02_22:00:00_UTC - MODE: UNIVERSAL SUFFIX V5.4 + CONNECTION THROTTLING !!!");
   
   // Import V4.1 Postgres Native Matcher (3-Character Prefix Stripping)
   const { findMatches } = await import('@/app/lib/matching/postgres-exact-matcher-v3');
   const { MatchMethod, MatchStatus } = await import('@prisma/client');
   
-  console.log(`[EXACT-MATCH-V4.1] Processing ${storeItems.length} store items (batch size: 50)`);
-  console.log(`[EXACT-MATCH-V4.1] Using 3-Character Prefix Stripping (Eric's Rule)`);
+  console.log(`[EXACT-MATCH-V5.4] Processing ${storeItems.length} store items with batch throttling`);
+  console.log(`[EXACT-MATCH-V5.4] Using Universal Suffix Matching (V5.3)`);
   
   // Extract store item IDs for batch processing
   const storeIds = storeItems.map(item => item.id);
   
-  // 🚨 V4.1: PREFIX STRIPPING MATCH (Eric's 3-Character Rule)
-  console.log(`[EXACT-MATCH-V4.1] === MATCHING WITH PREFIX STRIP ===`);
+  // 🚨 V5.4: UNIVERSAL SUFFIX MATCH with Connection Pool Throttling
+  console.log(`[EXACT-MATCH-V5.4] === MATCHING WITH SUFFIX LOGIC ===`);
   let matches: any[] = [];
   if (storeIds.length > 0) {
     matches = await findMatches(projectId, storeIds);
+    
+    // V5.4: Mandatory 1-second gap to release DB connection back to pool
+    // This prevents P2024 connection pool exhaustion during long-running jobs
+    console.log(`[EXACT-MATCH-V5.4] Releasing connection to pool (1s throttle)...`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
   
-  console.log(`[EXACT-MATCH-V4.1] Found ${matches.length} matches using prefix stripping`);
+  console.log(`[EXACT-MATCH-V5.4] Found ${matches.length} matches using universal suffix logic`);
   
   // 💰 RULE 5: Cost-Based Validation (UOM Mismatch Detection)
   console.log(`[EXACT-MATCH-V4.0] === COST VALIDATION ===`);
