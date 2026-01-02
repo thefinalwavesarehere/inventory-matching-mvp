@@ -381,21 +381,18 @@ async function processExactMatching(
     });
   }
 
-  // Save exact matches (interchange already saved)
-  let exactSavedCount = 0;
-  if (exactMatches.length > 0) {
-    exactSavedCount = await saveMatches(exactMatches, projectId, 'EXACT');
-    console.log(`[EXACT-MATCH-V4.0] Saved ${exactSavedCount} exact matches`);
+  // Save matches
+  let savedCount = 0;
+  if (matches.length > 0) {
+    savedCount = await saveMatches(matches, projectId, 'EXACT');
+    console.log(`[EXACT-MATCH-V4.1] Saved ${savedCount} matches`);
   }
   
-  const totalSavedCount = interchangeSavedCount + exactSavedCount;
-  console.log(`[EXACT-MATCH-V4.0] TOTAL saved: ${totalSavedCount} matches (${interchangeSavedCount} interchange + ${exactSavedCount} exact)`);
-  
   // Calculate and log match rate
-  const matchRate = (totalSavedCount / storeItems.length) * 100;
-  console.log(`[EXACT-MATCH-V4.0] Batch match rate: ${matchRate.toFixed(1)}% (${totalSavedCount}/${storeItems.length})`);
+  const matchRate = (savedCount / storeItems.length) * 100;
+  console.log(`[EXACT-MATCH-V4.1] Batch match rate: ${matchRate.toFixed(1)}% (${savedCount}/${storeItems.length})`);
   
-  return totalSavedCount;
+  return savedCount;
 }
 
 /**
