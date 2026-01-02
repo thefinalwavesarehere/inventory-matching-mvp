@@ -18,9 +18,9 @@ const openai = new OpenAI({
 });
 
 // Chunk sizes optimized for each job type
-// V5.3: Optimized exact chunk size for complex SQL joins
+// V5.7: Reduced exact chunk size for serverless resilience
 const CHUNK_SIZES: Record<string, number> = {
-  'exact': 250,   // V5.3: Goldilocks zone - balances performance and timeout prevention
+  'exact': 50,    // V5.7: Reduced to 50 to prevent timeout on complex suffix joins (<10s execution)
   'fuzzy': 150,   // Fuzzy processes 150 items in ~30-60 seconds (safe for 100k+ suppliers)
   'ai': 100,      // AI processes 100 items in ~3-4 minutes
   'web-search': 20, // Web search processes 20 items in ~1-2 minutes
@@ -275,6 +275,32 @@ export async function POST(
     console.log(`[JOB-PROCESS] Chunk complete. Progress: ${newProcessedItems}/${totalItems} (${progressPercentage.toFixed(1)}%)`);
     console.log(`[JOB-PROCESS] New matches: ${newMatches}, Total matches: ${newMatchesFound}`);
 
+    // V5.7: STATELESS BATCH TRIGGERING
+    // If there are more unmatched items, trigger the next batch asynchronously
+    const hasMoreWork = totalUnmatchedCount > chunk.length;
+    if (hasMoreWork && job.status !== 'failed') {
+      console.log(`[JOB-PROCESS-V5.7] ${totalUnmatchedCount - chunk.length} items remaining. Triggering next batch...`);
+      
+      // Trigger next batch asynchronously (fire-and-forget)
+      // This ensures each serverless invocation handles exactly one batch
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL}` 
+        : 'http://localhost:3000';
+      
+      fetch(`${baseUrl}/api/jobs/${jobId}/process`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-call': process.env.CRON_SECRET || 'internal'
+        }
+      }).catch(err => {
+        console.error(`[JOB-PROCESS-V5.7] Failed to trigger next batch:`, err.message);
+        // Non-fatal: job can be resumed manually or by cron
+      });
+    } else {
+      console.log(`[JOB-PROCESS-V5.7] No more unmatched items. Job will complete on next check.`);
+    }
+
     return NextResponse.json({
       success: true,
       job: {
@@ -288,6 +314,8 @@ export async function POST(
         estimatedCompletion,
       },
       message: `Processed ${chunk.length} items, ${newMatches} new matches`,
+      hasMoreWork,
+      remainingItems: totalUnmatchedCount - chunk.length,
     });
 
   } catch (error: any) {
