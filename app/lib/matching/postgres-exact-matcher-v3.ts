@@ -13,11 +13,11 @@ export interface PostgresExactMatch {
 }
 
 export async function findMatches(projectId: string, storeIds?: string[]): Promise<PostgresExactMatch[]> {
-  console.log(`[MATCHER_V4.4_SQL] Starting Prefix-Strip Matching (Schema Validated) for Project: ${projectId}`);
+  console.log(`[MATCHER_V4.6_SQL] Starting Prefix-Strip Matching (Cost & Filter Corrected) for Project: ${projectId}`);
 
-  // V4.4 FINAL FIX:
-  // 1. Table names corrected ("store_items", "supplier_items")
-  // 2. Column names corrected ("unitCost", "status")
+  // V4.6 FINAL FIX:
+  // 1. Cost column corrected to "currentCost" (not unitCost)
+  // 2. Status filtering replaced with match_candidates check
   // 3. Cost tie-breaker logic RESTORED
   
   const query = `
@@ -26,27 +26,30 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
         id, 
         "partNumber", 
         "lineCode", 
-        "unitCost" as cost,  -- Map unitCost to cost
+        "currentCost" as cost,  -- Correct column: currentCost
         -- Normalization
         REGEXP_REPLACE(UPPER("partNumber"), '[^A-Z0-9]', '', 'g') as norm_part
-      FROM "store_items"  -- Correct table name
+      FROM "store_items"
       WHERE "projectId" = $1 
       ${storeIds && storeIds.length > 0 ? `AND "id" IN (${storeIds.map(id => `'${id}'`).join(',')})` : ''}
-      AND "status" != 'MATCHED' -- Correct column name
+      AND NOT EXISTS (
+        SELECT 1 FROM "match_candidates" mc 
+        WHERE mc."storeItemId" = "store_items".id
+      )
     ),
     normalized_supplier AS (
       SELECT 
         id, 
         "partNumber", 
         "lineCode", 
-        "unitCost" as cost, -- Map unitCost to cost
+        "currentCost" as cost, -- Correct column: currentCost
         -- 1. Standard Normalization
         REGEXP_REPLACE(UPPER("partNumber"), '[^A-Z0-9]', '', 'g') as norm_full,
         -- 2. "The Eric Rule": Strip first 3 chars, then normalize
         REGEXP_REPLACE(UPPER(SUBSTRING("partNumber", 4)), '[^A-Z0-9]', '', 'g') as norm_stripped,
         -- Extract the prefix (first 3 chars) to use as line code if needed
         UPPER(LEFT("partNumber", 3)) as extracted_prefix
-      FROM "supplier_items" -- Correct table name
+      FROM "supplier_items"
       WHERE "projectId" = $1 OR "projectId" IS NULL
     )
     SELECT DISTINCT ON (ns.id)
@@ -67,7 +70,7 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
         ELSE 0.95
       END as confidence,
 
-      'SQL_PREFIX_STRIP_V4.4' as "matchMethod",
+      'SQL_PREFIX_STRIP_V4.6' as "matchMethod",
       
       CASE
         WHEN ns."lineCode" = sup.extracted_prefix THEN 'Line Code Confirmed + Part Match'
@@ -88,10 +91,10 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
 
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, projectId);
-    console.log(`[MATCHER_V4.4_SQL] Found ${matches.length} matches using Prefix Stripping logic.`);
+    console.log(`[MATCHER_V4.6_SQL] Found ${matches.length} matches using Prefix Stripping logic.`);
     return matches;
   } catch (error) {
-    console.error('[MATCHER_V4.4_SQL] Error executing match query:', error);
+    console.error('[MATCHER_V4.6_SQL] Error executing match query:', error);
     throw error;
   }
 }
