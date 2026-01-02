@@ -332,49 +332,17 @@ async function processExactMatching(
   console.log(`[EXACT-MATCH-V4.1] Processing ${storeItems.length} store items (batch size: 50)`);
   console.log(`[EXACT-MATCH-V4.1] Using 3-Character Prefix Stripping (Eric's Rule)`);
   
-  // 🔍 DATA VERIFICATION: Check if Interchange table has data
-  const interchangeCount = await prisma.interchange.count({ where: { projectId } });
-  const interchangeCoverage = (interchangeCount / storeItems.length) * 100;
-  console.log(`[DATA-CHECK] Project has ${interchangeCount} interchange records for ${storeItems.length} store items (${interchangeCoverage.toFixed(1)}% coverage).`);
-  
-  if (interchangeCount === 0) {
-    console.warn(`[DATA-CHECK] ⚠️  CRITICAL: Interchange table is EMPTY! Match rate will be very low. Did the import finish?`);
-  } else if (interchangeCoverage < 10) {
-    console.warn(`[DATA-CHECK] ⚠️  WARNING: Very low interchange coverage (${interchangeCoverage.toFixed(1)}%). Expected at least 10%. Check if interchange data is filtered correctly.`);
-  }
-
   // Extract store item IDs for batch processing
   const storeIds = storeItems.map(item => item.id);
   
-  // 🚨 PHASE 1: INTERCHANGE MATCHING (The "Missing 25%")
-  console.log(`[EXACT-MATCH-V4.0] === PHASE 1: INTERCHANGE MATCHING ===`);
-  const interchangeMatches = await findInterchangeMatches(projectId, storeIds);
-  console.log(`[EXACT-MATCH-V4.0] Found ${interchangeMatches.length} interchange matches`);
-  
-  // Save interchange matches
-  let interchangeSavedCount = 0;
-  if (interchangeMatches.length > 0) {
-    interchangeSavedCount = await saveMatches(interchangeMatches, projectId, 'INTERCHANGE');
-    console.log(`[EXACT-MATCH-V4.0] Saved ${interchangeSavedCount} interchange matches`);
-  }
-  
-  // Filter out matched store items to prevent duplicates
-  const matchedStoreIds = new Set(interchangeMatches.map(m => m.storeItemId));
-  const remainingStoreIds = storeIds.filter(id => !matchedStoreIds.has(id));
-  console.log(`[EXACT-MATCH-V4.1] Processing ${remainingStoreIds.length}/${storeIds.length} items`);
-  
   // 🚨 V4.1: PREFIX STRIPPING MATCH (Eric's 3-Character Rule)
   console.log(`[EXACT-MATCH-V4.1] === MATCHING WITH PREFIX STRIP ===`);
-  let exactMatches: any[] = [];
-  if (remainingStoreIds.length > 0) {
-    exactMatches = await findMatches(projectId, remainingStoreIds);
+  let matches: any[] = [];
+  if (storeIds.length > 0) {
+    matches = await findMatches(projectId, storeIds);
   }
   
-  // Combine all matches for reporting
-  let matches = [...interchangeMatches, ...exactMatches];
-  
-  console.log(`[EXACT-MATCH-V4.0] Found ${exactMatches.length} exact matches`);
-  console.log(`[EXACT-MATCH-V4.0] TOTAL matches: ${matches.length} (${interchangeMatches.length} interchange + ${exactMatches.length} exact)`);
+  console.log(`[EXACT-MATCH-V4.1] Found ${matches.length} matches using prefix stripping`);
   
   // 💰 RULE 5: Cost-Based Validation (UOM Mismatch Detection)
   console.log(`[EXACT-MATCH-V4.0] === COST VALIDATION ===`);
