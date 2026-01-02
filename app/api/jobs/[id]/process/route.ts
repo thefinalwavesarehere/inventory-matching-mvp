@@ -18,9 +18,9 @@ const openai = new OpenAI({
 });
 
 // Chunk sizes optimized for each job type
-// V5.2: Increased exact chunk size to reduce overhead from excessive database roundtrips
+// V5.3: Optimized exact chunk size for complex SQL joins
 const CHUNK_SIZES: Record<string, number> = {
-  'exact': 1000,  // V5.2: Increased from 50 to 1000 (industry standard for batch operations)
+  'exact': 250,   // V5.3: Goldilocks zone - balances performance and timeout prevention
   'fuzzy': 150,   // Fuzzy processes 150 items in ~30-60 seconds (safe for 100k+ suppliers)
   'ai': 100,      // AI processes 100 items in ~3-4 minutes
   'web-search': 20, // Web search processes 20 items in ~1-2 minutes
