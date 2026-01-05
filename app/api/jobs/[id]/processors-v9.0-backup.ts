@@ -11,58 +11,28 @@ const openai = new OpenAI({
 });
 
 /**
- * V9.1: Process AI matching with 10 concurrent requests
- * Uses Promise.all to process items in parallel while respecting OpenAI rate limits
+ * Process AI matching for a chunk of items
+ * Uses improved prompt with examples and better candidate selection
  */
 export async function processAIMatching(
   storeItems: any[],
   supplierItems: any[],
   projectId: string
 ): Promise<number> {
-  console.log(`[AI-V9.1] Starting AI matching with 10-concurrent parallelization`);
-  console.log(`[AI-V9.1] Processing ${storeItems.length} items`);
-  
   let matchCount = 0;
 
-  // V9.1: Process in batches of 10 concurrently (not sequentially)
+  // Process in batches of 10 for API rate limiting
   for (let i = 0; i < storeItems.length; i += 10) {
     const batch = storeItems.slice(i, i + 10);
-    console.log(`[AI-V9.1] Processing batch ${Math.floor(i/10) + 1}: ${batch.length} items in parallel`);
 
-    // Process all 10 items in parallel using Promise.all
-    const batchResults = await Promise.all(
-      batch.map(storeItem => processAIItem(storeItem, supplierItems, projectId))
-    );
+    for (const storeItem of batch) {
+      try {
+        // Get relevant candidates (top 50)
+        const candidates = getCandidates(storeItem, supplierItems, 50);
 
-    // Count successful matches
-    const batchMatches = batchResults.filter(result => result === true).length;
-    matchCount += batchMatches;
-    
-    console.log(`[AI-V9.1] Batch complete: ${batchMatches}/${batch.length} matches found`);
-  }
+        if (candidates.length === 0) continue;
 
-  console.log(`[AI-V9.1] AI matching complete: ${matchCount} total matches`);
-  return matchCount;
-}
-
-/**
- * V9.1: Process a single store item with AI matching
- * Returns true if a match was found and saved
- */
-async function processAIItem(
-  storeItem: any,
-  supplierItems: any[],
-  projectId: string
-): Promise<boolean> {
-  try {
-    // Get relevant candidates (top 50)
-    const candidates = getCandidates(storeItem, supplierItems, 50);
-
-    if (candidates.length === 0) {
-      return false;
-    }
-
-    const prompt = `You are an automotive parts expert. Find the BEST match for this store part from the supplier catalog.
+        const prompt = `You are an automotive parts expert. Find the BEST match for this store part from the supplier catalog.
 
 MATCHING EXAMPLES:
 ✓ MATCH: "ABC10026A" matches "DLPEG10026" (different line code, same core)
@@ -94,71 +64,69 @@ Respond with ONLY valid JSON:
   "reason": "Brief reason"
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4.1-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert automotive parts matcher. Be generous - 60%+ similarity is acceptable. Always respond with valid JSON only.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.3,
-      max_tokens: 250,
-    });
-
-    let responseText = response.choices[0]?.message?.content?.trim();
-    if (!responseText) {
-      return false;
-    }
-
-    // Remove markdown code blocks
-    responseText = responseText
-      .replace(/^```json/gm, '')
-      .replace(/^```/gm, '')
-      .replace(/`/g, '')
-      .trim();
-
-    const aiResponse = JSON.parse(responseText);
-
-    if (aiResponse.match && aiResponse.supplierPartNumber) {
-      const supplier = supplierItems.find(
-        (s) => s.partNumber === aiResponse.supplierPartNumber
-      );
-
-      if (supplier) {
-        await prisma.matchCandidate.create({
-          data: {
-            projectId,
-            storeItemId: storeItem.id,
-            targetType: 'SUPPLIER',
-            targetId: supplier.id,
-            method: 'AI',
-            confidence: aiResponse.confidence || 0.8,
-            matchStage: 3,
-            status: 'PENDING',
-            features: {
-              aiReason: aiResponse.reason,
-              model: 'gpt-4.1-mini',
-              candidatesShown: candidates.length,
-              version: 'V9.1-parallel',
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4.1-mini',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert automotive parts matcher. Be generous - 60%+ similarity is acceptable. Always respond with valid JSON only.',
             },
-          },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 250,
         });
 
-        console.log(`[AI-V9.1] Match: ${storeItem.partNumber} -> ${supplier.partNumber} (${aiResponse.confidence})`);
-        return true;
+        let responseText = response.choices[0]?.message?.content?.trim();
+        if (!responseText) continue;
+
+        // Remove markdown code blocks
+        responseText = responseText
+          .replace(/^```json/gm, '')
+          .replace(/^```/gm, '')
+          .replace(/`/g, '')
+          .trim();
+
+        const aiResponse = JSON.parse(responseText);
+
+        if (aiResponse.match && aiResponse.supplierPartNumber) {
+          const supplier = supplierItems.find(
+            (s) => s.partNumber === aiResponse.supplierPartNumber
+          );
+
+          if (supplier) {
+            await prisma.matchCandidate.create({
+              data: {
+                projectId,
+                storeItemId: storeItem.id,
+                targetType: 'SUPPLIER',
+                targetId: supplier.id,
+                method: 'AI',
+                confidence: aiResponse.confidence || 0.8,
+                matchStage: 3,
+                status: 'PENDING',
+                features: {
+                  aiReason: aiResponse.reason,
+                  model: 'gpt-4.1-mini',
+                  candidatesShown: candidates.length,
+                },
+              },
+            });
+
+            matchCount++;
+            console.log(`[AI-JOB] Match: ${storeItem.partNumber} -> ${supplier.partNumber} (${aiResponse.confidence})`);
+          }
+        }
+      } catch (error) {
+        console.error(`[AI-JOB] Error processing ${storeItem.partNumber}:`, error);
       }
     }
-
-    return false;
-  } catch (error) {
-    console.error(`[AI-V9.1] Error processing ${storeItem.partNumber}:`, error);
-    return false;
   }
+
+  return matchCount;
 }
 
 /**

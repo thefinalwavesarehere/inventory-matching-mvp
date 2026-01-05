@@ -21,7 +21,7 @@ const openai = new OpenAI({
 // V8.1: Increased exact chunk size for high-throughput direct index matching
 const CHUNK_SIZES: Record<string, number> = {
   'exact': 500,   // V8.1: Increased to 500 for V8.0 direct index matching (1.2s per 50 items = 12s per 500)
-  'fuzzy': 150,   // Fuzzy processes 150 items in ~30-60 seconds (safe for 100k+ suppliers)
+  'fuzzy': 300,   // V9.0: Increased to 300 for optimized fuzzy matching
   'ai': 100,      // AI processes 100 items in ~3-4 minutes
   'web-search': 20, // Web search processes 20 items in ~1-2 minutes
 };
