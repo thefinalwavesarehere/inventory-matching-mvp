@@ -1,4 +1,4 @@
-import { prisma } from '@/app/lib/prisma';
+import { prisma } from '@/app/lib/db/prisma';
 
 export interface PostgresExactMatch {
   storeItemId: string;
