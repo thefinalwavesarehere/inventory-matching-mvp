@@ -277,11 +277,11 @@ export default function UploadPage() {
               {/* Store File */}
               <div>
                 <label className="block text-sm font-medium mb-2">
-                  Store Inventory File (Excel) *
+                  Store Inventory File (Excel/CSV) *
                 </label>
                 <input
                   type="file"
-                  accept=".xlsx,.xls"
+                  accept=".xlsx,.xls,.csv"
                   onChange={(e) => setStoreFile(e.target.files?.[0] || null)}
                   disabled={uploading}
                   required
@@ -298,11 +298,11 @@ export default function UploadPage() {
               {/* Supplier File */}
               <div>
                 <label className="block text-sm font-medium mb-2">
-                  Supplier Catalog File (Excel) *
+                  Supplier Catalog File (Excel/CSV) *
                 </label>
                 <input
                   type="file"
-                  accept=".xlsx,.xls"
+                  accept=".xlsx,.xls,.csv"
                   onChange={(e) => setSupplierFile(e.target.files?.[0] || null)}
                   disabled={uploading}
                   required
@@ -319,11 +319,11 @@ export default function UploadPage() {
               {/* Interchange File */}
               <div>
                 <label className="block text-sm font-medium mb-2">
-                  Interchange File (Excel) - Optional
+                  Interchange File (Excel/CSV) - Optional
                 </label>
                 <input
                   type="file"
-                  accept=".xlsx,.xls"
+                  accept=".xlsx,.xls,.csv"
                   onChange={(e) => setInterchangeFile(e.target.files?.[0] || null)}
                   disabled={uploading}
                   className="w-full px-4 py-2 border rounded"
