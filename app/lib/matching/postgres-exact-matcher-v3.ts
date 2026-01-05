@@ -1,4 +1,5 @@
 import { prisma } from '@/app/lib/db/prisma';
+import { findDirectMatches } from './postgres-direct-matcher-v8';
 
 export interface PostgresExactMatch {
   storeItemId: string;
@@ -13,7 +14,18 @@ export interface PostgresExactMatch {
 }
 
 export async function findMatches(projectId: string, storeIds?: string[]): Promise<PostgresExactMatch[]> {
-  console.log(`[MATCHER_V7.1_SQL] Starting Rosetta Stone Matching (Interchange Hop) for Project: ${projectId}`);
+  console.log(`[MATCHER_V8.0_HYBRID] Starting Hybrid Matching (Direct + Rosetta Stone) for Project: ${projectId}`);
+  
+  // V8.0: Try direct matching first (fastest)
+  console.log('[MATCHER_V8.0_HYBRID] Stage 1: Direct Index Matching');
+  const directMatches = await findDirectMatches(projectId, storeIds);
+  
+  if (directMatches.length > 0) {
+    console.log(`[MATCHER_V8.0_HYBRID] Direct matching found ${directMatches.length} matches. Skipping fallback stages.`);
+    return directMatches;
+  }
+  
+  console.log('[MATCHER_V8.0_HYBRID] No direct matches found. Falling back to V7.1 Rosetta Stone logic...');
   
   // V5.8: DIAGNOSTIC X-RAY PROBE
   try {
@@ -47,7 +59,7 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
     ? `AND id IN (${storeIds.map(id => `'${id}'`).join(',')})` 
     : '';
   
-  // V7.1 ROSETTA STONE MATCHER:
+  // V7.1 ROSETTA STONE MATCHER (FALLBACK):
   // Stage 1: Direct matching (V6.1 Clean-Side logic)
   // Stage 2: Interchange hop - lookup in interchange table, then match
   
@@ -171,13 +183,13 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
     const directCount = matches.filter(m => m.matchMethod.includes('DIRECT')).length;
     const interchangeCount = matches.filter(m => m.matchMethod.includes('INTERCHANGE')).length;
     
-    console.log(`[MATCHER_V7.1_SQL] Found ${matches.length} total matches`);
+    console.log(`[MATCHER_V8.0_HYBRID] Found ${matches.length} fallback matches`);
     console.log(`  - Direct matches: ${directCount}`);
     console.log(`  - Interchange hop matches: ${interchangeCount}`);
     
     return matches;
   } catch (error) {
-    console.error('[MATCHER_V7.1_SQL] Error executing match query:', error);
+    console.error('[MATCHER_V8.0_HYBRID] Error executing match query:', error);
     throw error;
   }
 }

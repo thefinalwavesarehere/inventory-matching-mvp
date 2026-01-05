@@ -65,21 +65,40 @@ function processStoreFile(data: any[], projectId: string) {
       partFull = lineCode + partNumber;
     }
 
-    // Apply normalization - this will extract line code from PART column
-    const normalized = normalizePartNumber(partFull, { extractLineCode: true });
-
-    // Use extracted values from normalization (don't trust formula columns)
-    const finalLineCode = normalized.lineCode || null;
-    const finalMfrPartNumber = normalized.mfrPartNumber || null;
+    // V8.0 ERIC SPEC: Check if PART NUMBER column exists (pre-cleaned data)
+    let partNumberNormValue: string;
+    let finalLineCode: string | null;
+    let finalMfrPartNumber: string | null;
+    let canonicalPartNumber: string | null;
+    
+    if (partNumber && !partNumberHasFormula) {
+      // V8.0 PATH: TRUST THE FILE - Pre-cleaned data from Eric.xlsx
+      // Do NOT apply regex stripping. Just uppercase and trim.
+      partNumberNormValue = String(partNumber).toUpperCase().trim();
+      finalLineCode = lineCode ? String(lineCode).toUpperCase().trim() : null;
+      finalMfrPartNumber = partNumber ? String(partNumber).trim() : null;
+      canonicalPartNumber = partFull ? partFull.toUpperCase().trim() : null;
+      
+      console.log(`[V8.0_IMPORT] Passthrough: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+    } else {
+      // LEGACY PATH: Apply normalization for old file formats
+      const normalized = normalizePartNumber(partFull, { extractLineCode: true });
+      partNumberNormValue = normalized.normalized;
+      finalLineCode = normalized.lineCode || null;
+      finalMfrPartNumber = normalized.mfrPartNumber || null;
+      canonicalPartNumber = normalized.canonical;
+      
+      console.log(`[LEGACY_IMPORT] Normalized: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+    }
 
     return {
       projectId,
       partNumber: partFull,
       partFull,
-      partNumberNorm: normalized.normalized,
+      partNumberNorm: partNumberNormValue,
       lineCode: finalLineCode,
       mfrPartNumber: finalMfrPartNumber,
-      canonicalPartNumber: normalized.canonical,
+      canonicalPartNumber: canonicalPartNumber,
       description: getCellValue(row, row, 'DESCRIPTION') || getCellValue(row, row, 'Description') || null,
       currentCost: parseFloat(row['CURR COST $'] || row['COST $'] || row['Cost'] || 0) || null,
       quantity: parseInt(row['QTY AVL'] || row['QTY AVAIL'] || row['Qty Available'] || 0) || null,
@@ -114,22 +133,41 @@ function processSupplierFile(data: any[], projectId: string) {
       partFull = lineCode + partNumber;
     }
 
-    // Apply normalization - this will extract line code from PART column
-    const normalized = normalizePartNumber(partFull, { extractLineCode: true });
-
-    // Use extracted values from normalization (don't trust formula columns)
-    const finalLineCode = normalized.lineCode || null;
-    const finalMfrPartNumber = normalized.mfrPartNumber || null;
+    // V8.0 ERIC SPEC: Check if PART NUMBER column exists (pre-cleaned data)
+    let partNumberNormValue: string;
+    let finalLineCode: string | null;
+    let finalMfrPartNumber: string | null;
+    let canonicalPartNumber: string | null;
+    
+    if (partNumber && !partNumberHasFormula) {
+      // V8.0 PATH: TRUST THE FILE - Pre-cleaned data from Eric.xlsx
+      // Do NOT apply regex stripping. Just uppercase and trim.
+      partNumberNormValue = String(partNumber).toUpperCase().trim();
+      finalLineCode = lineCode ? String(lineCode).toUpperCase().trim() : null;
+      finalMfrPartNumber = partNumber ? String(partNumber).trim() : null;
+      canonicalPartNumber = partFull ? partFull.toUpperCase().trim() : null;
+      
+      console.log(`[V8.0_IMPORT_SUPPLIER] Passthrough: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+    } else {
+      // LEGACY PATH: Apply normalization for old file formats
+      const normalized = normalizePartNumber(partFull, { extractLineCode: true });
+      partNumberNormValue = normalized.normalized;
+      finalLineCode = normalized.lineCode || null;
+      finalMfrPartNumber = normalized.mfrPartNumber || null;
+      canonicalPartNumber = normalized.canonical;
+      
+      console.log(`[LEGACY_IMPORT_SUPPLIER] Normalized: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+    }
 
     return {
       projectId,
       supplier: 'CarQuest', // Default supplier name
       partNumber: partFull,
       partFull,
-      partNumberNorm: normalized.normalized,
+      partNumberNorm: partNumberNormValue,
       lineCode: finalLineCode,
       mfrPartNumber: finalMfrPartNumber,
-      canonicalPartNumber: normalized.canonical,
+      canonicalPartNumber: canonicalPartNumber,
       description: getCellValue(row, row, 'DESCRIPTION') || getCellValue(row, row, 'Description') || null,
       currentCost: parseFloat(row['COST $'] || row[' COST $'] || row['Cost'] || 0) || null,
       quantity: parseInt(row['QTY AVAIL'] || row['Qty Available'] || 0) || null,
