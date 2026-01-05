@@ -11,7 +11,11 @@ import { authOptions } from '@/app/lib/auth';
 import prisma from '@/app/lib/db/prisma';
 import * as XLSX from 'xlsx';
 
-// Normalize part number
+// V9.5: Set maximum duration for large file uploads
+export const maxDuration = 60;
+
+// V9.5: Strict sanitization - removes all non-alphanumeric characters
+// Example: "000-2112-73" becomes "000211273"
 function normalizePartNumber(partNumber: string): string {
   return partNumber.toUpperCase().replace(/[^A-Z0-9]/g, '');
 }

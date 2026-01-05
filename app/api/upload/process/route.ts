@@ -14,6 +14,9 @@ import * as XLSX from 'xlsx';
 import { normalizePartNumber, extractLineCode, excelLeft, excelMid } from '@/app/lib/normalization';
 import { extractRulesFromInterchange, deduplicateRules } from '@/app/lib/interchange-rule-extractor';
 
+// V9.5: Set maximum duration for large file uploads
+export const maxDuration = 60;
+
 // Legacy normalization (kept for backward compatibility)
 function legacyNormalizePartNumber(partNumber: string): string {
   return partNumber.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -72,14 +75,16 @@ function processStoreFile(data: any[], projectId: string) {
     let canonicalPartNumber: string | null;
     
     if (partNumber && !partNumberHasFormula) {
-      // V8.0 PATH: TRUST THE FILE - Pre-cleaned data from Eric.xlsx
-      // Do NOT apply regex stripping. Just uppercase and trim.
-      partNumberNormValue = String(partNumber).toUpperCase().trim();
+      // V9.5 PATH: Apply strict sanitization to ensure matches
+      // Force strict sanitization on the join key (removes all non-alphanumeric)
+      const rawPart = String(partNumber);
+      partNumberNormValue = rawPart.toUpperCase().replace(/[^A-Z0-9]/g, '');
       finalLineCode = lineCode ? String(lineCode).toUpperCase().trim() : null;
       finalMfrPartNumber = partNumber ? String(partNumber).trim() : null;
       canonicalPartNumber = partFull ? partFull.toUpperCase().trim() : null;
       
-      console.log(`[V8.0_IMPORT] Passthrough: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+      // V9.5: Row-level logging removed to prevent timeout on large files
+      // console.log(`[V8.0_IMPORT] Passthrough: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
     } else {
       // LEGACY PATH: Apply normalization for old file formats
       const normalized = normalizePartNumber(partFull, { extractLineCode: true });
@@ -88,7 +93,8 @@ function processStoreFile(data: any[], projectId: string) {
       finalMfrPartNumber = normalized.mfrPartNumber || null;
       canonicalPartNumber = normalized.canonical;
       
-      console.log(`[LEGACY_IMPORT] Normalized: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+      // V9.5: Row-level logging removed to prevent timeout on large files
+      // console.log(`[LEGACY_IMPORT] Normalized: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
     }
 
     return {
@@ -140,14 +146,16 @@ function processSupplierFile(data: any[], projectId: string) {
     let canonicalPartNumber: string | null;
     
     if (partNumber && !partNumberHasFormula) {
-      // V8.0 PATH: TRUST THE FILE - Pre-cleaned data from Eric.xlsx
-      // Do NOT apply regex stripping. Just uppercase and trim.
-      partNumberNormValue = String(partNumber).toUpperCase().trim();
+      // V9.5 PATH: Apply strict sanitization to ensure matches
+      // Force strict sanitization on the join key (removes all non-alphanumeric)
+      const rawPart = String(partNumber);
+      partNumberNormValue = rawPart.toUpperCase().replace(/[^A-Z0-9]/g, '');
       finalLineCode = lineCode ? String(lineCode).toUpperCase().trim() : null;
       finalMfrPartNumber = partNumber ? String(partNumber).trim() : null;
       canonicalPartNumber = partFull ? partFull.toUpperCase().trim() : null;
       
-      console.log(`[V8.0_IMPORT_SUPPLIER] Passthrough: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+      // V9.5: Row-level logging removed to prevent timeout on large files
+      // console.log(`[V8.0_IMPORT_SUPPLIER] Passthrough: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
     } else {
       // LEGACY PATH: Apply normalization for old file formats
       const normalized = normalizePartNumber(partFull, { extractLineCode: true });
@@ -156,7 +164,8 @@ function processSupplierFile(data: any[], projectId: string) {
       finalMfrPartNumber = normalized.mfrPartNumber || null;
       canonicalPartNumber = normalized.canonical;
       
-      console.log(`[LEGACY_IMPORT_SUPPLIER] Normalized: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+      // V9.5: Row-level logging removed to prevent timeout on large files
+      // console.log(`[LEGACY_IMPORT_SUPPLIER] Normalized: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
     }
 
     return {
