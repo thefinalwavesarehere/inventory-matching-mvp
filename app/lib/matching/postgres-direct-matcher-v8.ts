@@ -24,17 +24,14 @@ export interface PostgresDirectMatch {
  * - Database must have index on (partNumberNorm, lineCode)
  */
 export async function findDirectMatches(projectId: string, storeIds?: string[]): Promise<PostgresDirectMatch[]> {
-  console.log(`[MATCHER_V8.0_DIRECT] Starting Passthrough Direct Matching for Project: ${projectId}`);
+  console.log(`[MATCHER_V9.4_GLOBAL] Starting Global Match (Line Code Ignored) for Project: ${projectId}`);
   
   // Build the store IDs filter condition
   const storeIdsFilter = storeIds && storeIds.length > 0 
     ? `AND s.id IN (${storeIds.map(id => `'${id}'`).join(',')})` 
     : '';
   
-  // V8.0 DIRECT JOIN QUERY
-  // Matches on partNumberNorm (pre-cleaned) and optionally lineCode
-  // Runs at database index speed (thousands per second)
-  
+  // V9.4 GLOBAL MATCH QUERY (Line Code Ignored)
   const query = `
     SELECT DISTINCT ON (s.id)
       s.id as "storeItemId",
@@ -43,66 +40,29 @@ export async function findDirectMatches(projectId: string, storeIds?: string[]):
       sup."partNumber" as "supplierPartNumber",
       s."lineCode" as "storeLineCode",
       sup."lineCode" as "supplierLineCode",
-      
-      -- Confidence scoring based on match type
-      CASE 
-        WHEN s."partNumberNorm" = sup."partNumberNorm" AND s."lineCode" = sup."lineCode" 
-          THEN 1.0  -- Perfect match: same normalized part AND same line code
-        WHEN s."partNumberNorm" = sup."partNumberNorm" AND s."lineCode" IS NULL 
-          THEN 0.98 -- Store has no line code, but part matches
-        WHEN s."partNumberNorm" = sup."partNumberNorm" AND sup."lineCode" IS NULL 
-          THEN 0.98 -- Supplier has no line code, but part matches
-        WHEN s."partNumberNorm" = sup."partNumberNorm" 
-          THEN 0.95 -- Part matches, different line codes (cross-reference)
-        ELSE 0.90
-      END as confidence,
-
-      'SQL_DIRECT_V8.0' as "matchMethod",
-      
-      CASE
-        WHEN s."partNumberNorm" = sup."partNumberNorm" AND s."lineCode" = sup."lineCode" 
-          THEN 'Direct Index Match - Same Line Code'
-        WHEN s."partNumberNorm" = sup."partNumberNorm" AND (s."lineCode" IS NULL OR sup."lineCode" IS NULL)
-          THEN 'Direct Index Match - Missing Line Code'
-        WHEN s."partNumberNorm" = sup."partNumberNorm" 
-          THEN 'Direct Index Match - Cross Line Code'
-        ELSE 'Direct Index Match'
-      END as "matchReason"
-
+      1.0 as confidence,
+      'DIRECT_INDEX_V9.4' as "matchMethod",
+      'Global Exact Match' as "matchReason"
     FROM "store_items" s
-    INNER JOIN "supplier_items" sup ON (
-      -- V8.0: Direct index join on pre-cleaned partNumberNorm
-      s."partNumberNorm" = sup."partNumberNorm"
-      AND s."partNumberNorm" IS NOT NULL
-      AND sup."partNumberNorm" IS NOT NULL
-    )
-    WHERE s."projectId" = $1
-    ${storeIdsFilter}
-    AND NOT EXISTS (
-      SELECT 1 FROM "match_candidates" mc 
-      WHERE mc."storeItemId" = s.id
-    )
-    ORDER BY s.id, confidence DESC
+    -- JOIN strictly on the normalized part number. 
+    -- WE IGNORE THE LINE CODE HERE to allow "ABC" to match "RAY".
+    INNER JOIN "supplier_items" sup 
+      ON s."partNumberNorm" = sup."partNumberNorm"
+    WHERE 
+      s."projectId" = $1
+      ${storeIdsFilter}
+    -- Deduplicate: If multiple suppliers have the same part, pick the first one (usually alphabetical by ID)
+    ORDER BY s.id, sup.id ASC
   `;
 
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresDirectMatch[]>(query, projectId);
     
-    console.log(`[MATCHER_V8.0_DIRECT] Found ${matches.length} direct matches`);
-    
-    // Breakdown by confidence
-    const perfect = matches.filter(m => m.confidence === 1.0).length;
-    const high = matches.filter(m => m.confidence >= 0.95 && m.confidence < 1.0).length;
-    const medium = matches.filter(m => m.confidence >= 0.90 && m.confidence < 0.95).length;
-    
-    console.log(`[MATCHER_V8.0_DIRECT] Confidence breakdown:`);
-    console.log(`  - Perfect (1.0): ${perfect} (same part + same line)`);
-    console.log(`  - High (0.95-0.98): ${high} (same part, different/missing line)`);
-    console.log(`  - Medium (0.90-0.94): ${medium}`);
+    console.log(`[MATCHER_V9.4_GLOBAL] Found ${matches.length} global matches (line code ignored)`);
     
     return matches;
   } catch (error) {
-    console.error('[MATCHER_V8.0_DIRECT] Error executing direct match query:', error);
+    console.error('[MATCHER_V9.4_GLOBAL] Error executing global match query:', error);
     throw error;
   }
 }
