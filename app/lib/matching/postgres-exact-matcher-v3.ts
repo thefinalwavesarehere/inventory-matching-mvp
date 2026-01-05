@@ -13,12 +13,25 @@ export interface PostgresExactMatch {
 }
 
 export async function findMatches(projectId: string, storeIds?: string[]): Promise<PostgresExactMatch[]> {
-  console.log(`[MATCHER_V5.3_SQL] Starting Fast-Suffix Matching (Universal Prefix Detection) for Project: ${projectId}`);
+  console.log(`[MATCHER_V5.8_SQL] Starting Fast-Suffix Matching (Global Scope) for Project: ${projectId}`);
+  
+  // V5.8: DIAGNOSTIC X-RAY PROBE
+  // Verify supplier data visibility before running main query
+  try {
+    const probe = await prisma.$queryRaw`
+      SELECT id, "partNumber", "projectId" 
+      FROM "supplier_items" 
+      WHERE "partNumber" LIKE '%18600%' 
+      LIMIT 3`;
+    console.log('[MATCH_PROBE] Looking for 18600 in Supplier DB:', probe);
+  } catch (probeError) {
+    console.error('[MATCH_PROBE] X-Ray probe failed:', probeError);
+  }
 
-  // V5.3 FAST-SUFFIX MATCHER:
+  // V5.8 GLOBAL FAST-SUFFIX MATCHER:
   // 1. Universal suffix matching - works with ANY prefix length (2, 3, 4+ chars)
-  // 2. Optimized with pre-filtering to avoid redundant regex calls
-  // 3. 5x faster than naive regex approach
+  // 2. Global scope - scans entire supplier catalog (no project isolation)
+  // 3. Optimized with pre-filtering to avoid redundant regex calls
   // 4. Safety filter: ignores very short parts (< 4 chars) to prevent false positives
   
   // Build the store IDs filter condition
@@ -48,7 +61,7 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
         "lineCode",
         REGEXP_REPLACE(UPPER("partNumber"), '[^A-Z0-9]', '', 'g') as norm_sup
       FROM "supplier_items"
-      WHERE "projectId" = $1 OR "projectId" IS NULL
+      WHERE 1=1  -- V5.8: Global scope - scan entire supplier catalog across all projects
     )
     SELECT DISTINCT ON (ns.id)
       ns.id as "storeItemId",
@@ -64,7 +77,7 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
         ELSE 0.95
       END as confidence,
 
-      'SQL_FAST_SUFFIX_V5.3' as "matchMethod",
+      'SQL_FAST_SUFFIX_V5.8' as "matchMethod",
       
       CASE
         WHEN sup.norm_sup = ns.norm_part THEN 'Exact Match'
@@ -88,10 +101,10 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
 
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, projectId);
-    console.log(`[MATCHER_V5.3_SQL] Found ${matches.length} matches using Fast-Suffix logic.`);
+    console.log(`[MATCHER_V5.8_SQL] Found ${matches.length} matches using Global Fast-Suffix logic.`);
     return matches;
   } catch (error) {
-    console.error('[MATCHER_V5.3_SQL] Error executing match query:', error);
+    console.error('[MATCHER_V5.8_SQL] Error executing match query:', error);
     throw error;
   }
 }
