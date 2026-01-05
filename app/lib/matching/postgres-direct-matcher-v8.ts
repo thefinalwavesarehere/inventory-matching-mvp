@@ -121,7 +121,7 @@ export async function diagnosePartNumberNorm(projectId: string): Promise<void> {
   const storeWithNorm = await prisma.storeItem.count({ 
     where: { 
       projectId,
-      partNumberNorm: { not: null }
+      partNumberNorm: { not: undefined }
     } 
   });
   
@@ -133,7 +133,7 @@ export async function diagnosePartNumberNorm(projectId: string): Promise<void> {
   const supplierTotal = await prisma.supplierItem.count();
   const supplierWithNorm = await prisma.supplierItem.count({ 
     where: { 
-      partNumberNorm: { not: null }
+      partNumberNorm: { not: undefined }
     } 
   });
   
