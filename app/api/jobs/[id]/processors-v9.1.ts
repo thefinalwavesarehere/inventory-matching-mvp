@@ -35,7 +35,7 @@ export async function processAIMatching(
     );
 
     // Count successful matches
-    const batchMatches = batchResults.filter(result => result === true).length;
+    const batchMatches = batchResults.filter((result: boolean) => result === true).length;
     matchCount += batchMatches;
     
     console.log(`[AI-V9.1] Batch complete: ${batchMatches}/${batch.length} matches found`);
@@ -186,7 +186,7 @@ function getCandidates(storeItem: any, supplierItems: any[], topN: number): any[
     }
     // Similarity based on common characters
     else {
-      const commonChars = storePart.split('').filter(c => supplierPart.includes(c)).length;
+      const commonChars = storePart.split('').filter((c: string) => supplierPart.includes(c)).length;
       score = (commonChars / Math.max(storePart.length, supplierPart.length)) * 60;
     }
     
