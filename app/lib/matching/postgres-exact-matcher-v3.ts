@@ -13,10 +13,9 @@ export interface PostgresExactMatch {
 }
 
 export async function findMatches(projectId: string, storeIds?: string[]): Promise<PostgresExactMatch[]> {
-  console.log(`[MATCHER_V6.1_SQL] Starting Clean-Side Matching (Store Prefix Stripping) for Project: ${projectId}`);
+  console.log(`[MATCHER_V7.1_SQL] Starting Rosetta Stone Matching (Interchange Hop) for Project: ${projectId}`);
   
   // V5.8: DIAGNOSTIC X-RAY PROBE
-  // Verify supplier data visibility before running main query
   try {
     const probe = await prisma.$queryRaw`
       SELECT id, "partNumber", "projectId" 
@@ -29,7 +28,6 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
   }
   
   // V5.9: BATCH INPUT TRANSPARENCY
-  // Log the actual store part numbers being processed to verify data quality
   if (storeIds && storeIds.length > 0) {
     try {
       const storeSample = await prisma.storeItem.findMany({
@@ -44,16 +42,14 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
     }
   }
 
-  // V6.1 CLEAN-SIDE MATCHER:
-  // 1. Uses lineCode to strip prefix from Store parts (clean the dirty data)
-  // 2. Matches cleaned Store parts against Supplier part suffixes
-  // 3. Lightweight V5.8 structure with batch size 50
-  // 4. Double suffix logic: Supplier part ends with cleaned Store part
-  
   // Build the store IDs filter condition
   const storeIdsFilter = storeIds && storeIds.length > 0 
     ? `AND id IN (${storeIds.map(id => `'${id}'`).join(',')})` 
     : '';
+  
+  // V7.1 ROSETTA STONE MATCHER:
+  // Stage 1: Direct matching (V6.1 Clean-Side logic)
+  // Stage 2: Interchange hop - lookup in interchange table, then match
   
   const query = `
     WITH ns AS (
@@ -82,51 +78,106 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
         "lineCode",
         REGEXP_REPLACE(UPPER("partNumber"), '[^A-Z0-9]', '', 'g') as norm_part
       FROM "supplier_items"
-      WHERE 1=1  -- V5.8: Global scope - scan entire supplier catalog across all projects
-    )
-    SELECT DISTINCT ON (ns.id)
-      ns.id as "storeItemId",
-      sup.id as "supplierItemId",
-      ns."partNumber" as "storePartNumber",
-      sup."partNumber" as "supplierPartNumber",
-      ns."lineCode" as "storeLineCode",
-      sup."lineCode" as "supplierLineCode",
-      
-      -- Calculate Confidence Score
-      CASE 
-        WHEN sup.norm_part = ns.clean_part THEN 1.0
-        WHEN RIGHT(sup.norm_part, LENGTH(ns.clean_part)) = ns.clean_part THEN 0.95
-        ELSE 0.90
-      END as confidence,
-
-      'SQL_CLEAN_SIDE_V6.1' as "matchMethod",
-      
-      CASE
-        WHEN sup.norm_part = ns.clean_part THEN 'Exact Match (Cleaned Store Part)'
-        WHEN RIGHT(sup.norm_part, LENGTH(ns.clean_part)) = ns.clean_part THEN 'Suffix Match (Supplier ends with Cleaned Store)'
-        ELSE 'Partial Match'
-      END as "matchReason"
-
-    FROM ns
-    INNER JOIN sup ON (
-      -- V6.1: Double Suffix Logic - Supplier part ends with cleaned Store part
-      sup.norm_part = ns.clean_part 
-      OR (
-        LENGTH(sup.norm_part) > LENGTH(ns.clean_part) AND
-        RIGHT(sup.norm_part, LENGTH(ns.clean_part)) = ns.clean_part
+      WHERE 1=1  -- Global scope
+    ),
+    -- V7.1: Interchange lookup - find Arnold equivalents for Store parts
+    interchange_hop AS (
+      SELECT 
+        ns.id as store_id,
+        ns."partNumber" as store_part,
+        ns.clean_part,
+        i."oursPartNumber" as arnold_part,
+        REGEXP_REPLACE(UPPER(i."oursPartNumber"), '[^A-Z0-9]', '', 'g') as arnold_norm
+      FROM ns
+      INNER JOIN "interchanges" i ON (
+        -- Match store part against interchange "theirs" (competitor/store part)
+        UPPER(i."theirsPartNumber") = UPPER(ns."partNumber")
+        OR UPPER(i."theirsPartNumber") = UPPER(ns.clean_part)
       )
+    ),
+    -- Stage 1: Direct matches (V6.1 logic)
+    direct_matches AS (
+      SELECT DISTINCT ON (ns.id)
+        ns.id as "storeItemId",
+        sup.id as "supplierItemId",
+        ns."partNumber" as "storePartNumber",
+        sup."partNumber" as "supplierPartNumber",
+        ns."lineCode" as "storeLineCode",
+        sup."lineCode" as "supplierLineCode",
+        CASE 
+          WHEN sup.norm_part = ns.clean_part THEN 1.0
+          WHEN RIGHT(sup.norm_part, LENGTH(ns.clean_part)) = ns.clean_part THEN 0.95
+          ELSE 0.90
+        END as confidence,
+        'SQL_DIRECT_V7.1' as "matchMethod",
+        CASE
+          WHEN sup.norm_part = ns.clean_part THEN 'Direct Exact Match'
+          WHEN RIGHT(sup.norm_part, LENGTH(ns.clean_part)) = ns.clean_part THEN 'Direct Suffix Match'
+          ELSE 'Direct Partial Match'
+        END as "matchReason"
+      FROM ns
+      INNER JOIN sup ON (
+        sup.norm_part = ns.clean_part 
+        OR (
+          LENGTH(sup.norm_part) > LENGTH(ns.clean_part) AND
+          RIGHT(sup.norm_part, LENGTH(ns.clean_part)) = ns.clean_part
+        )
+      )
+      WHERE LENGTH(ns.clean_part) >= 3
+      ORDER BY ns.id, confidence DESC
+    ),
+    -- Stage 2: Interchange hop matches
+    interchange_matches AS (
+      SELECT DISTINCT ON (ih.store_id)
+        ih.store_id as "storeItemId",
+        sup.id as "supplierItemId",
+        ih.store_part as "storePartNumber",
+        sup."partNumber" as "supplierPartNumber",
+        NULL as "storeLineCode",
+        sup."lineCode" as "supplierLineCode",
+        CASE 
+          WHEN sup.norm_part = ih.arnold_norm THEN 0.98
+          WHEN RIGHT(sup.norm_part, LENGTH(ih.arnold_norm)) = ih.arnold_norm THEN 0.93
+          ELSE 0.88
+        END as confidence,
+        'SQL_INTERCHANGE_HOP_V7.1' as "matchMethod",
+        CASE
+          WHEN sup.norm_part = ih.arnold_norm THEN 'Interchange Hop - Exact'
+          WHEN RIGHT(sup.norm_part, LENGTH(ih.arnold_norm)) = ih.arnold_norm THEN 'Interchange Hop - Suffix'
+          ELSE 'Interchange Hop - Partial'
+        END as "matchReason"
+      FROM interchange_hop ih
+      INNER JOIN sup ON (
+        sup.norm_part = ih.arnold_norm
+        OR (
+          LENGTH(sup.norm_part) > LENGTH(ih.arnold_norm) AND
+          RIGHT(sup.norm_part, LENGTH(ih.arnold_norm)) = ih.arnold_norm
+        )
+      )
+      WHERE LENGTH(ih.arnold_norm) >= 3
+      ORDER BY ih.store_id, confidence DESC
     )
-    -- V6.1: Safety threshold - ignore very short cleaned parts
-    WHERE LENGTH(ns.clean_part) >= 3
-    ORDER BY ns.id, confidence DESC
+    -- Combine both stages, prioritizing direct matches
+    SELECT * FROM direct_matches
+    UNION ALL
+    SELECT * FROM interchange_matches
+    WHERE "storeItemId" NOT IN (SELECT "storeItemId" FROM direct_matches)
+    ORDER BY confidence DESC
   `;
 
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, projectId);
-    console.log(`[MATCHER_V6.1_SQL] Found ${matches.length} matches using Clean-Side logic.`);
+    
+    const directCount = matches.filter(m => m.matchMethod.includes('DIRECT')).length;
+    const interchangeCount = matches.filter(m => m.matchMethod.includes('INTERCHANGE')).length;
+    
+    console.log(`[MATCHER_V7.1_SQL] Found ${matches.length} total matches`);
+    console.log(`  - Direct matches: ${directCount}`);
+    console.log(`  - Interchange hop matches: ${interchangeCount}`);
+    
     return matches;
   } catch (error) {
-    console.error('[MATCHER_V6.1_SQL] Error executing match query:', error);
+    console.error('[MATCHER_V7.1_SQL] Error executing match query:', error);
     throw error;
   }
 }
