@@ -13,7 +13,7 @@ export interface PostgresExactMatch {
 }
 
 export async function findMatches(projectId: string, storeIds?: string[]): Promise<PostgresExactMatch[]> {
-  console.log(`[MATCHER_V6.0_SQL] Starting MFR Part Number Matching (Line Code Independent) for Project: ${projectId}`);
+  console.log(`[MATCHER_V6.1_SQL] Starting Clean-Side Matching (Store Prefix Stripping) for Project: ${projectId}`);
   
   // V5.8: DIAGNOSTIC X-RAY PROBE
   // Verify supplier data visibility before running main query
@@ -34,21 +34,21 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
     try {
       const storeSample = await prisma.storeItem.findMany({
         where: { id: { in: storeIds.slice(0, 5) } },
-        select: { partNumber: true, mfrPartNumber: true, lineCode: true },
+        select: { partNumber: true, lineCode: true },
         take: 5
       });
       console.log('[BATCH_INPUT] Processing first 5 Store Parts:', 
-        storeSample.map(s => `${s.partNumber} (mfr: ${s.mfrPartNumber}, line: ${s.lineCode})`));
+        storeSample.map(s => `${s.partNumber} (line: ${s.lineCode})`));
     } catch (sampleError) {
       console.error('[BATCH_INPUT] Failed to fetch sample:', sampleError);
     }
   }
 
-  // V6.0 MFR PART NUMBER MATCHER:
-  // 1. Matches on mfrPartNumber field (without line codes)
-  // 2. Supports both exact and suffix matching
-  // 3. Line codes are metadata only, not part of match logic
-  // 4. Works with Eric(1) split column format natively
+  // V6.1 CLEAN-SIDE MATCHER:
+  // 1. Uses lineCode to strip prefix from Store parts (clean the dirty data)
+  // 2. Matches cleaned Store parts against Supplier part suffixes
+  // 3. Lightweight V5.8 structure with batch size 50
+  // 4. Double suffix logic: Supplier part ends with cleaned Store part
   
   // Build the store IDs filter condition
   const storeIdsFilter = storeIds && storeIds.length > 0 
@@ -60,9 +60,13 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
       SELECT 
         id, 
         "partNumber",
-        "mfrPartNumber",
         "lineCode",
-        REGEXP_REPLACE(UPPER(COALESCE("mfrPartNumber", "partNumber")), '[^A-Z0-9]', '', 'g') as norm_mfr
+        -- V6.1: Clean Store Part by removing lineCode prefix if present
+        CASE
+          WHEN "lineCode" IS NOT NULL AND LENGTH("lineCode") > 0
+          THEN REGEXP_REPLACE(UPPER(REPLACE("partNumber", "lineCode", '')), '[^A-Z0-9]', '', 'g')
+          ELSE REGEXP_REPLACE(UPPER("partNumber"), '[^A-Z0-9]', '', 'g')
+        END as clean_part
       FROM "store_items"
       WHERE "projectId" = $1 
       ${storeIdsFilter}
@@ -75,9 +79,8 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
       SELECT 
         id, 
         "partNumber",
-        "mfrPartNumber",
         "lineCode",
-        REGEXP_REPLACE(UPPER(COALESCE("mfrPartNumber", "partNumber")), '[^A-Z0-9]', '', 'g') as norm_mfr
+        REGEXP_REPLACE(UPPER("partNumber"), '[^A-Z0-9]', '', 'g') as norm_part
       FROM "supplier_items"
       WHERE 1=1  -- V5.8: Global scope - scan entire supplier catalog across all projects
     )
@@ -91,47 +94,39 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
       
       -- Calculate Confidence Score
       CASE 
-        WHEN sup.norm_mfr = ns.norm_mfr THEN 1.0
-        WHEN RIGHT(sup.norm_mfr, LENGTH(ns.norm_mfr)) = ns.norm_mfr THEN 0.95
-        WHEN RIGHT(ns.norm_mfr, LENGTH(sup.norm_mfr)) = sup.norm_mfr THEN 0.95
+        WHEN sup.norm_part = ns.clean_part THEN 1.0
+        WHEN RIGHT(sup.norm_part, LENGTH(ns.clean_part)) = ns.clean_part THEN 0.95
         ELSE 0.90
       END as confidence,
 
-      'SQL_MFR_PART_V6.0' as "matchMethod",
+      'SQL_CLEAN_SIDE_V6.1' as "matchMethod",
       
       CASE
-        WHEN sup.norm_mfr = ns.norm_mfr THEN 'Exact MFR Part Match'
-        WHEN RIGHT(sup.norm_mfr, LENGTH(ns.norm_mfr)) = ns.norm_mfr THEN 'Supplier MFR ends with Store MFR'
-        WHEN RIGHT(ns.norm_mfr, LENGTH(sup.norm_mfr)) = sup.norm_mfr THEN 'Store MFR ends with Supplier MFR'
-        ELSE 'Partial MFR Match'
+        WHEN sup.norm_part = ns.clean_part THEN 'Exact Match (Cleaned Store Part)'
+        WHEN RIGHT(sup.norm_part, LENGTH(ns.clean_part)) = ns.clean_part THEN 'Suffix Match (Supplier ends with Cleaned Store)'
+        ELSE 'Partial Match'
       END as "matchReason"
 
     FROM ns
     INNER JOIN sup ON (
-      -- V6.0: Match on MFR part numbers (without line codes)
-      sup.norm_mfr = ns.norm_mfr 
+      -- V6.1: Double Suffix Logic - Supplier part ends with cleaned Store part
+      sup.norm_part = ns.clean_part 
       OR (
-        -- Supplier MFR part ends with Store MFR part (e.g., AMG18600 ends with 18600)
-        LENGTH(sup.norm_mfr) > LENGTH(ns.norm_mfr) AND
-        RIGHT(sup.norm_mfr, LENGTH(ns.norm_mfr)) = ns.norm_mfr
-      )
-      OR (
-        -- Store MFR part ends with Supplier MFR part (e.g., AMG18600 ends with 18600)
-        LENGTH(ns.norm_mfr) > LENGTH(sup.norm_mfr) AND
-        RIGHT(ns.norm_mfr, LENGTH(sup.norm_mfr)) = sup.norm_mfr
+        LENGTH(sup.norm_part) > LENGTH(ns.clean_part) AND
+        RIGHT(sup.norm_part, LENGTH(ns.clean_part)) = ns.clean_part
       )
     )
-    -- V6.0: Safety threshold - ignore very short parts
-    WHERE LENGTH(ns.norm_mfr) >= 3 AND LENGTH(sup.norm_mfr) >= 3
+    -- V6.1: Safety threshold - ignore very short cleaned parts
+    WHERE LENGTH(ns.clean_part) >= 3
     ORDER BY ns.id, confidence DESC
   `;
 
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, projectId);
-    console.log(`[MATCHER_V6.0_SQL] Found ${matches.length} matches using MFR Part Number logic.`);
+    console.log(`[MATCHER_V6.1_SQL] Found ${matches.length} matches using Clean-Side logic.`);
     return matches;
   } catch (error) {
-    console.error('[MATCHER_V6.0_SQL] Error executing match query:', error);
+    console.error('[MATCHER_V6.1_SQL] Error executing match query:', error);
     throw error;
   }
 }
