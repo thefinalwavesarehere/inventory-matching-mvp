@@ -30,6 +30,27 @@ function getChunkSize(jobType: string): number {
   return CHUNK_SIZES[jobType] || 100;
 }
 
+/**
+ * V9.2: Fire-and-forget batch trigger
+ * Triggers next batch without awaiting response to free up current serverless function
+ */
+function triggerNextBatch(req: NextRequest, jobId: string): void {
+  const host = req.headers.get('host') || 'localhost:3000';
+  const protocol = host.includes('localhost') ? 'http' : 'https';
+  const url = `${protocol}://${host}/api/jobs/${jobId}/process`;
+  
+  // Fire-and-forget: no await
+  fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-internal-call': process.env.CRON_SECRET || 'internal'
+    }
+  }).catch(err => {
+    console.error(`[V9.2-TRIGGER] Failed to trigger next batch:`, err.message);
+  });
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -275,30 +296,13 @@ export async function POST(
     console.log(`[JOB-PROCESS] Chunk complete. Progress: ${newProcessedItems}/${totalItems} (${progressPercentage.toFixed(1)}%)`);
     console.log(`[JOB-PROCESS] New matches: ${newMatches}, Total matches: ${newMatchesFound}`);
 
-    // V8.1: IMMEDIATE RECURSIVE TRIGGERING (High-Throughput)
-    // Trigger next batch immediately without waiting for cron (no 60s idle time)
+    // V9.2: SELF-DRIVING FIRE-AND-FORGET RECURSION
     const hasMoreWork = totalUnmatchedCount > chunk.length;
     if (hasMoreWork && job.status !== 'failed') {
-      console.log(`[JOB-PROCESS-V8.1] ${totalUnmatchedCount - chunk.length} items remaining. Triggering next 500-item batch immediately...`);
-      
-      // Trigger next batch asynchronously (fire-and-forget)
-      // This ensures each serverless invocation handles exactly one batch
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL 
-        ? `https://${process.env.VERCEL_URL}` 
-        : 'http://localhost:3000';
-      
-      fetch(`${baseUrl}/api/jobs/${jobId}/process`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-internal-call': process.env.CRON_SECRET || 'internal'
-        }
-      }).catch(err => {
-        console.error(`[JOB-PROCESS-V8.1] Failed to trigger next batch:`, err.message);
-        // Non-fatal: job can be resumed manually or by cron
-      });
+      console.log(`[JOB-PROCESS-V9.2] ${totalUnmatchedCount - chunk.length} items remaining. Triggering next batch...`);
+      triggerNextBatch(req, jobId);
     } else {
-      console.log(`[JOB-PROCESS-V8.1] No more unmatched items. Job will complete on next check.`);
+      console.log(`[JOB-PROCESS-V9.2] No more unmatched items. Job will complete on next check.`);
     }
 
     return NextResponse.json({
