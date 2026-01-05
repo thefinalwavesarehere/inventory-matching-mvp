@@ -18,9 +18,9 @@ const openai = new OpenAI({
 });
 
 // Chunk sizes optimized for each job type
-// V5.7: Reduced exact chunk size for serverless resilience
+// V8.1: Increased exact chunk size for high-throughput direct index matching
 const CHUNK_SIZES: Record<string, number> = {
-  'exact': 50,    // V5.7: Reduced to 50 to prevent timeout on complex suffix joins (<10s execution)
+  'exact': 500,   // V8.1: Increased to 500 for V8.0 direct index matching (1.2s per 50 items = 12s per 500)
   'fuzzy': 150,   // Fuzzy processes 150 items in ~30-60 seconds (safe for 100k+ suppliers)
   'ai': 100,      // AI processes 100 items in ~3-4 minutes
   'web-search': 20, // Web search processes 20 items in ~1-2 minutes
@@ -275,11 +275,11 @@ export async function POST(
     console.log(`[JOB-PROCESS] Chunk complete. Progress: ${newProcessedItems}/${totalItems} (${progressPercentage.toFixed(1)}%)`);
     console.log(`[JOB-PROCESS] New matches: ${newMatches}, Total matches: ${newMatchesFound}`);
 
-    // V5.7: STATELESS BATCH TRIGGERING
-    // If there are more unmatched items, trigger the next batch asynchronously
+    // V8.1: IMMEDIATE RECURSIVE TRIGGERING (High-Throughput)
+    // Trigger next batch immediately without waiting for cron (no 60s idle time)
     const hasMoreWork = totalUnmatchedCount > chunk.length;
     if (hasMoreWork && job.status !== 'failed') {
-      console.log(`[JOB-PROCESS-V5.7] ${totalUnmatchedCount - chunk.length} items remaining. Triggering next batch...`);
+      console.log(`[JOB-PROCESS-V8.1] ${totalUnmatchedCount - chunk.length} items remaining. Triggering next 500-item batch immediately...`);
       
       // Trigger next batch asynchronously (fire-and-forget)
       // This ensures each serverless invocation handles exactly one batch
@@ -294,11 +294,11 @@ export async function POST(
           'x-internal-call': process.env.CRON_SECRET || 'internal'
         }
       }).catch(err => {
-        console.error(`[JOB-PROCESS-V5.7] Failed to trigger next batch:`, err.message);
+        console.error(`[JOB-PROCESS-V8.1] Failed to trigger next batch:`, err.message);
         // Non-fatal: job can be resumed manually or by cron
       });
     } else {
-      console.log(`[JOB-PROCESS-V5.7] No more unmatched items. Job will complete on next check.`);
+      console.log(`[JOB-PROCESS-V8.1] No more unmatched items. Job will complete on next check.`);
     }
 
     return NextResponse.json({
