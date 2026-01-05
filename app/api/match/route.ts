@@ -153,6 +153,21 @@ export async function GET(req: NextRequest) {
   }
 }
 export async function POST(req: NextRequest) {
+  // V7.2: LEGACY ENDPOINT DISABLED
+  // This endpoint uses outdated V2 matching logic with 1000-item batches
+  // causing P2022 schema errors and P2035 memory issues.
+  // Use /api/jobs/[id]/process instead (V7.1 Rosetta Stone matcher)
+  return NextResponse.json(
+    { 
+      success: false, 
+      error: 'This endpoint is deprecated. Use /api/jobs/[id]/process instead.',
+      deprecated: true,
+      migration: 'V7.2 - Use job-based matching with /api/jobs/[id]/process'
+    },
+    { status: 410 } // 410 Gone - indicates resource is permanently unavailable
+  );
+
+  /* LEGACY CODE DISABLED - DO NOT REMOVE (for reference)
   try {
     const session = await getServerSession(authOptions);
     
@@ -572,4 +587,5 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+  */ // END LEGACY CODE
 }
