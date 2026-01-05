@@ -1,4 +1,4 @@
-import { prisma } from '@/app/lib/db/prisma';
+import { prisma } from '@/app/lib/prisma';
 
 export interface PostgresExactMatch {
   storeItemId: string;
@@ -13,7 +13,7 @@ export interface PostgresExactMatch {
 }
 
 export async function findMatches(projectId: string, storeIds?: string[]): Promise<PostgresExactMatch[]> {
-  console.log(`[MATCHER_V5.9_SQL] Starting Fast-Suffix Matching (Global Scope) for Project: ${projectId}`);
+  console.log(`[MATCHER_V6.0_SQL] Starting MFR Part Number Matching (Line Code Independent) for Project: ${projectId}`);
   
   // V5.8: DIAGNOSTIC X-RAY PROBE
   // Verify supplier data visibility before running main query
@@ -34,20 +34,21 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
     try {
       const storeSample = await prisma.storeItem.findMany({
         where: { id: { in: storeIds.slice(0, 5) } },
-        select: { partNumber: true },
+        select: { partNumber: true, mfrPartNumber: true, lineCode: true },
         take: 5
       });
-      console.log('[BATCH_INPUT] Processing first 5 Store Parts:', storeSample.map(s => s.partNumber));
+      console.log('[BATCH_INPUT] Processing first 5 Store Parts:', 
+        storeSample.map(s => `${s.partNumber} (mfr: ${s.mfrPartNumber}, line: ${s.lineCode})`));
     } catch (sampleError) {
       console.error('[BATCH_INPUT] Failed to fetch sample:', sampleError);
     }
   }
 
-  // V5.9 GLOBAL FAST-SUFFIX MATCHER:
-  // 1. Universal suffix matching - works with ANY prefix length (2, 3, 4+ chars)
-  // 2. Global scope - scans entire supplier catalog (no project isolation)
-  // 3. Optimized with pre-filtering to avoid redundant regex calls
-  // 4. Safety filter: ignores very short parts (< 3 chars) to prevent false positives
+  // V6.0 MFR PART NUMBER MATCHER:
+  // 1. Matches on mfrPartNumber field (without line codes)
+  // 2. Supports both exact and suffix matching
+  // 3. Line codes are metadata only, not part of match logic
+  // 4. Works with Eric(1) split column format natively
   
   // Build the store IDs filter condition
   const storeIdsFilter = storeIds && storeIds.length > 0 
@@ -58,9 +59,10 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
     WITH ns AS (
       SELECT 
         id, 
-        "partNumber", 
+        "partNumber",
+        "mfrPartNumber",
         "lineCode",
-        REGEXP_REPLACE(UPPER("partNumber"), '[^A-Z0-9]', '', 'g') as norm_part
+        REGEXP_REPLACE(UPPER(COALESCE("mfrPartNumber", "partNumber")), '[^A-Z0-9]', '', 'g') as norm_mfr
       FROM "store_items"
       WHERE "projectId" = $1 
       ${storeIdsFilter}
@@ -73,8 +75,9 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
       SELECT 
         id, 
         "partNumber",
+        "mfrPartNumber",
         "lineCode",
-        REGEXP_REPLACE(UPPER("partNumber"), '[^A-Z0-9]', '', 'g') as norm_sup
+        REGEXP_REPLACE(UPPER(COALESCE("mfrPartNumber", "partNumber")), '[^A-Z0-9]', '', 'g') as norm_mfr
       FROM "supplier_items"
       WHERE 1=1  -- V5.8: Global scope - scan entire supplier catalog across all projects
     )
@@ -88,38 +91,47 @@ export async function findMatches(projectId: string, storeIds?: string[]): Promi
       
       -- Calculate Confidence Score
       CASE 
-        WHEN sup.norm_sup = ns.norm_part THEN 1.0
-        ELSE 0.95
+        WHEN sup.norm_mfr = ns.norm_mfr THEN 1.0
+        WHEN RIGHT(sup.norm_mfr, LENGTH(ns.norm_mfr)) = ns.norm_mfr THEN 0.95
+        WHEN RIGHT(ns.norm_mfr, LENGTH(sup.norm_mfr)) = sup.norm_mfr THEN 0.95
+        ELSE 0.90
       END as confidence,
 
-      'SQL_FAST_SUFFIX_V5.9' as "matchMethod",
+      'SQL_MFR_PART_V6.0' as "matchMethod",
       
       CASE
-        WHEN sup.norm_sup = ns.norm_part THEN 'Exact Match'
-        ELSE 'Suffix Match (Universal Prefix)'
+        WHEN sup.norm_mfr = ns.norm_mfr THEN 'Exact MFR Part Match'
+        WHEN RIGHT(sup.norm_mfr, LENGTH(ns.norm_mfr)) = ns.norm_mfr THEN 'Supplier MFR ends with Store MFR'
+        WHEN RIGHT(ns.norm_mfr, LENGTH(sup.norm_mfr)) = sup.norm_mfr THEN 'Store MFR ends with Supplier MFR'
+        ELSE 'Partial MFR Match'
       END as "matchReason"
 
     FROM ns
     INNER JOIN sup ON (
-      -- The Optimized Join
-      sup.norm_sup = ns.norm_part 
+      -- V6.0: Match on MFR part numbers (without line codes)
+      sup.norm_mfr = ns.norm_mfr 
       OR (
-        -- Only perform the RIGHT() check if the supplier part is longer
-        LENGTH(sup.norm_sup) > LENGTH(ns.norm_part) AND
-        RIGHT(sup.norm_sup, LENGTH(ns.norm_part)) = ns.norm_part
+        -- Supplier MFR part ends with Store MFR part (e.g., AMG18600 ends with 18600)
+        LENGTH(sup.norm_mfr) > LENGTH(ns.norm_mfr) AND
+        RIGHT(sup.norm_mfr, LENGTH(ns.norm_mfr)) = ns.norm_mfr
+      )
+      OR (
+        -- Store MFR part ends with Supplier MFR part (e.g., AMG18600 ends with 18600)
+        LENGTH(ns.norm_mfr) > LENGTH(sup.norm_mfr) AND
+        RIGHT(ns.norm_mfr, LENGTH(sup.norm_mfr)) = sup.norm_mfr
       )
     )
-    -- V5.9: Lowered safety threshold to allow 3-char parts like AC6
-    WHERE LENGTH(ns.norm_part) >= 3
+    -- V6.0: Safety threshold - ignore very short parts
+    WHERE LENGTH(ns.norm_mfr) >= 3 AND LENGTH(sup.norm_mfr) >= 3
     ORDER BY ns.id, confidence DESC
   `;
 
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresExactMatch[]>(query, projectId);
-    console.log(`[MATCHER_V5.9_SQL] Found ${matches.length} matches using Global Fast-Suffix logic.`);
+    console.log(`[MATCHER_V6.0_SQL] Found ${matches.length} matches using MFR Part Number logic.`);
     return matches;
   } catch (error) {
-    console.error('[MATCHER_V5.9_SQL] Error executing match query:', error);
+    console.error('[MATCHER_V6.0_SQL] Error executing match query:', error);
     throw error;
   }
 }
