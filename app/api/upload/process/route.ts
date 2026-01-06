@@ -101,15 +101,7 @@ function processStoreFile(data: any[], projectId: string) {
       // console.log(`[LEGACY_IMPORT] Normalized: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
     }
 
-    // Prompt 2: Extract manufacturer part if enabled (does NOT affect partNumberNorm)
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { enableArnoldLineCodeSplit: true },
-    });
-    
-    const { extractManufacturerPart } = await import('@/app/lib/matching/prompt2-manufacturer-extraction');
-    const extracted = extractManufacturerPart(partFull, project?.enableArnoldLineCodeSplit || false);
-
+    // Prompt 2: Manufacturer part extraction deferred to batch processing
     return {
       projectId,
       // V9.8: Use raw PART NUMBER (Column C) for matching, not PART (Column A with prefix)
@@ -117,10 +109,10 @@ function processStoreFile(data: any[], projectId: string) {
       partFull,
       partNumberNorm: partNumberNormValue,
       lineCode: finalLineCode,
-      // Prompt 2: Derived manufacturer part fields
-      arnoldLineCodeRaw: extracted.arnoldLineCodeRaw,
-      manufacturerPartRaw: extracted.manufacturerPartRaw,
-      manufacturerPartNorm: extracted.manufacturerPartNorm,
+      // Prompt 2: Derived manufacturer part fields (will be backfilled)
+      arnoldLineCodeRaw: null,
+      manufacturerPartRaw: null,
+      manufacturerPartNorm: null,
       mfrPartNumber: finalMfrPartNumber,
       canonicalPartNumber: canonicalPartNumber,
       description: getCellValue(row, row, 'DESCRIPTION') || getCellValue(row, row, 'Description') || null,
