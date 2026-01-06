@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 
-export default function InterchangeRulesPage() {
+function InterchangeRulesPageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [interchangeCount, setInterchangeCount] = useState(0);
@@ -72,6 +73,10 @@ export default function InterchangeRulesPage() {
 
   if (status === 'loading') {
     return <div className="p-8">Loading...</div>;
+  }
+
+  if (!session) {
+    return null;
   }
 
   return (
@@ -145,3 +150,7 @@ export default function InterchangeRulesPage() {
     </div>
   );
 }
+
+export default dynamic(() => Promise.resolve(InterchangeRulesPageContent), {
+  ssr: false,
+});
