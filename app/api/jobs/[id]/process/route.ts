@@ -383,38 +383,99 @@ async function processExactMatching(
   supplierItems: any[],
   projectId: string
 ): Promise<number> {
-  // V4 INTERCHANGE-FIRST EXACT MATCHER
-  console.log("[V4-EXACT] Using Interchange-First matching (bridge logic)");
+  // RESTORED: Original working matcher from f2d02d5
+  const { stage1DeterministicMatching, MatchingIndexes } = await import('@/app/lib/matching-engine');
   
-  // Import V4 Interchange-First Matcher
-  const { findInterchangeFirstMatches, persistV4Matches } = await import('@/app/lib/matching/v4-interchange-first-matcher');
+  // Get interchange mappings and rules
+  const interchangeMappings = await prisma.interchangeMapping.findMany();
+  const rules = await prisma.matchingRule.findMany({
+    where: { active: true },
+  });
   
-  console.log(`[V4-EXACT] Processing ${storeItems.length} store items`);
+  // Convert to engine format
+  const engineStoreItems = storeItems.map((item) => ({
+    id: item.id,
+    partNumber: item.partNumber,
+    partNumberNorm: item.partNumberNorm,
+    canonicalPartNumber: (item as any).canonicalPartNumber || null,
+    lineCode: item.lineCode,
+    mfrPartNumber: item.mfrPartNumber,
+    description: item.description,
+    currentCost: item.currentCost ? Number(item.currentCost) : null,
+  }));
   
-  // Extract store item IDs for batch processing
-  const storeIds = storeItems.map((item: any) => item.id);
+  const engineSupplierItems = supplierItems.map((item) => ({
+    id: item.id,
+    partNumber: item.partNumber,
+    partNumberNorm: item.partNumberNorm,
+    canonicalPartNumber: (item as any).canonicalPartNumber || null,
+    lineCode: item.lineCode,
+    mfrPartNumber: item.mfrPartNumber,
+    description: item.description,
+    currentCost: item.currentCost ? Number(item.currentCost) : null,
+  }));
   
-  // V4 Step 1: Find matches using interchange bridge
-  console.log(`[V4-EXACT] Finding interchange-first matches...`);
-  const v4Matches = await findInterchangeFirstMatches(projectId, storeIds);
+  const engineInterchanges = interchangeMappings.map((m) => ({
+    competitorFullSku: m.competitorFullSku,
+    arnoldFullSku: m.arnoldFullSku,
+    confidence: m.confidence,
+  }));
   
-  console.log(`[V4-EXACT] Found ${v4Matches.length} interchange matches`);
+  const engineRules = rules.map((r) => ({
+    id: r.id,
+    ruleType: r.ruleType,
+    pattern: r.pattern,
+    transformation: r.transformation,
+    scope: r.scope,
+    scopeId: r.scopeId,
+    confidence: r.confidence,
+  }));
   
-  // V4 Step 2: Persist matches with V4 metadata
+  console.log(`[EXACT-MATCH] Processing ${storeItems.length} store items`);
+  console.log(`[EXACT-MATCH] Supplier catalog: ${supplierItems.length} items`);
+  console.log(`[EXACT-MATCH] Interchange mappings: ${interchangeMappings.length}`);
+  console.log(`[EXACT-MATCH] Active rules: ${rules.length}`);
+  
+  // Build indexes
+  const indexes = new MatchingIndexes(engineSupplierItems, engineInterchanges, engineRules);
+  
+  // Run stage 1 matching
+  const result = stage1DeterministicMatching(engineStoreItems, indexes, {
+    costTolerancePercent: 10,
+  });
+  
+  console.log(`[EXACT-MATCH] Found ${result.matches.length} matches (${result.metrics.matchRate.toFixed(1)}% match rate)`);
+  
+  // Save matches to database
   let savedCount = 0;
-  if (v4Matches.length > 0) {
-    savedCount = await persistV4Matches(projectId, v4Matches);
-    console.log(`[V4-EXACT] Saved ${savedCount} V4 matches`);
+  for (let i = 0; i < result.matches.length; i += 100) {
+    const batch = result.matches.slice(i, i + 100);
+    
+    await prisma.matchCandidate.createMany({
+      data: batch.map((match) => ({
+        projectId,
+        storeItemId: match.storeItemId,
+        targetType: 'SUPPLIER' as const,
+        targetId: match.supplierItemId,
+        method: match.method as any,
+        confidence: match.confidence,
+        matchStage: match.matchStage,
+        status: 'PENDING' as const,
+        features: match.features || {},
+        costDifference: match.costDifference,
+        costSimilarity: match.costSimilarity,
+        transformationSignature: match.transformationSignature,
+        rulesApplied: match.rulesApplied,
+      })),
+      skipDuplicates: true,
+    });
+    
+    savedCount += batch.length;
   }
   
-  // Calculate and log match rate
-  const matchRate = (savedCount / storeItems.length) * 100;
-  console.log(`[V4-EXACT] Batch match rate: ${matchRate.toFixed(1)}% (${savedCount}/${storeItems.length})`);
-  
-  // Log vendor metadata stats
-  const withVendor = v4Matches.filter((m: any) => m.vendor).length;
-  const withSupplier = v4Matches.filter((m: any) => m.supplierItemId).length;
-  console.log(`[V4-EXACT] Vendor metadata: ${withVendor}/${v4Matches.length}`);
+  console.log(`[EXACT-MATCH] Saved ${savedCount} matches to database`);
+  return savedCount;
+}tches.length}`);
   console.log(`[V4-EXACT] Supplier enrichment: ${withSupplier}/${v4Matches.length}`);
   
   return savedCount;
