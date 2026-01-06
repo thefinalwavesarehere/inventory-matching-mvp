@@ -278,8 +278,10 @@ function processInterchangeFile(data: any[], projectId: string) {
     });
 
     // Add to new InterchangeMapping table with normalization
-    const supplierNorm = normalizePartNumber(supplierSku, { extractLineCode: true });
-    const storeNorm = normalizePartNumber(storeSku, { extractLineCode: true });
+    // V10.1: Disable extractLineCode to preserve vendor prefixes (e.g., AXLGM-8167 → AXLGM8167)
+    // This ensures unique matches against global catalog
+    const supplierNorm = normalizePartNumber(supplierSku, { extractLineCode: false });
+    const storeNorm = normalizePartNumber(storeSku, { extractLineCode: false });
 
     // IMPORTANT: The Excel file has columns backwards!
     // "VENDOR PART #" actually contains Arnold parts (AXLGM-*)

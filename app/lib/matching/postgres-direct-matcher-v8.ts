@@ -24,30 +24,64 @@ export interface PostgresDirectMatch {
  * - Database must have index on (partNumberNorm, lineCode)
  */
 export async function findDirectMatches(projectId: string, storeIds?: string[]): Promise<PostgresDirectMatch[]> {
-  console.log(`[INTERCHANGE_BRIDGE_V10.0] Starting Interchange Bridge Match for Project: ${projectId}`);
+  console.log(`[INTERCHANGE_BRIDGE_V10.1] Starting Interchange Bridge Match (LEFT JOIN) for Project: ${projectId}`);
+  
+  // V10.1: Validate interchange data exists and has required fields
+  const interchangeCount = await prisma.interchange.count({ where: { projectId } });
+  console.log(`[INTERCHANGE_BRIDGE_V10.1] Found ${interchangeCount} interchange mappings for project`);
+  
+  if (interchangeCount === 0) {
+    console.warn(`[INTERCHANGE_BRIDGE_V10.1] WARNING: No interchange data found for project ${projectId}`);
+    console.warn(`[INTERCHANGE_BRIDGE_V10.1] Interchange file must be uploaded for bridge matching to work`);
+    return [];
+  }
   
   // Build the store IDs filter condition
   const storeIdsFilter = storeIds && storeIds.length > 0 
     ? `AND s.id IN (${storeIds.map(id => `'${id}'`).join(',')})` 
     : '';
   
-  // V9.7 GLOBAL MATCH QUERY (Line Code Ignored + Skip Already Matched)
+  // V10.1 INTERCHANGE BRIDGE QUERY (LEFT JOIN)
+  // Step 1: Match Store → Interchange (project-scoped)
+  // Step 2: Match Interchange → Supplier (global catalog) - LEFT JOIN to preserve interchange-only matches
+  // Step 3: Return matches with metadata from interchange, supplier if available
   const query = `
     SELECT DISTINCT ON (s.id)
       s.id as "storeItemId",
-      sup.id as "supplierItemId",
+      COALESCE(sup.id, 'INTERCHANGE_ONLY') as "supplierItemId",
       s."partNumber" as "storePartNumber",
-      sup."partNumber" as "supplierPartNumber",
-      s."lineCode" as "storeLineCode",
-      sup."lineCode" as "supplierLineCode",
-      1.0 as confidence,
-      'DIRECT_INDEX_V9.4' as "matchMethod",
-      'Global Exact Match' as "matchReason"
+      COALESCE(sup."partNumber", i."theirsPartNumber") as "supplierPartNumber",
+      i."oursPartNumber" as "storeLineCode",
+      i."theirsPartNumber" as "supplierLineCode",
+      i.confidence as confidence,
+      CASE 
+        WHEN sup.id IS NOT NULL THEN 'INTERCHANGE_BRIDGE_V10.1'
+        ELSE 'INTERCHANGE_ONLY_V10.1'
+      END as "matchMethod",
+      CASE 
+        WHEN sup.id IS NOT NULL THEN 'Interchange Bridge Match (Catalog Found)'
+        ELSE 'Interchange Match (Catalog Missing)'
+      END as "matchReason"
     FROM "store_items" s
-    -- JOIN strictly on the normalized part number. 
-    -- WE IGNORE THE LINE CODE HERE to allow "ABC" to match "RAY".
-    INNER JOIN "supplier_items" sup 
-      ON s."partNumberNorm" = sup."partNumberNorm"
+    -- Step 1: Join to project-scoped interchange file (the bridge/key)
+    INNER JOIN "interchanges" i
+      ON s."projectId" = i."projectId"
+      AND (
+        -- Store part matches "ours" side of interchange
+        UPPER(REGEXP_REPLACE(s."partNumber", '[^A-Z0-9]', '', 'gi')) = UPPER(REGEXP_REPLACE(i."oursPartNumber", '[^A-Z0-9]', '', 'gi'))
+        OR
+        -- Store part matches "theirs" side of interchange (reverse lookup)
+        UPPER(REGEXP_REPLACE(s."partNumber", '[^A-Z0-9]', '', 'gi')) = UPPER(REGEXP_REPLACE(i."theirsPartNumber", '[^A-Z0-9]', '', 'gi'))
+      )
+    -- Step 2: LEFT JOIN to global supplier catalog (preserves interchange matches even if supplier missing)
+    LEFT JOIN "supplier_items" sup
+      ON (
+        -- Match supplier using "theirs" side of interchange
+        UPPER(REGEXP_REPLACE(sup."partNumber", '[^A-Z0-9]', '', 'gi')) = UPPER(REGEXP_REPLACE(i."theirsPartNumber", '[^A-Z0-9]', '', 'gi'))
+        OR
+        -- Match supplier using "ours" side (if store matched "theirs")
+        UPPER(REGEXP_REPLACE(sup."partNumber", '[^A-Z0-9]', '', 'gi')) = UPPER(REGEXP_REPLACE(i."oursPartNumber", '[^A-Z0-9]', '', 'gi'))
+      )
     WHERE 
       s."projectId" = $1
       ${storeIdsFilter}
@@ -56,18 +90,18 @@ export async function findDirectMatches(projectId: string, storeIds?: string[]):
         SELECT 1 FROM "match_candidates" mc 
         WHERE mc."storeItemId" = s.id
       )
-    -- Deduplicate: If multiple suppliers have the same part, pick the first one (usually alphabetical by ID)
-    ORDER BY s.id, sup.id ASC
+    -- Deduplicate: If multiple suppliers match, pick first
+    ORDER BY s.id, COALESCE(sup.id, 'INTERCHANGE_ONLY') ASC
   `;
 
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresDirectMatch[]>(query, projectId);
     
-    console.log(`[INTERCHANGE_BRIDGE_V10.0] Found ${matches.length} interchange bridge matches`);
+    console.log(`[INTERCHANGE_BRIDGE_V10.1] Found ${matches.length} interchange bridge matches (includes catalog-missing)`);
     
     return matches;
   } catch (error) {
-    console.error('[MATCHER_V9.4_GLOBAL] Error executing global match query:', error);
+    console.error('[INTERCHANGE_BRIDGE_V10.1] Error executing interchange bridge query:', error);
     throw error;
   }
 }
