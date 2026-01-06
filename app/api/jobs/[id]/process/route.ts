@@ -115,6 +115,8 @@ export async function POST(
       const jobType = config.jobType || 'ai';
       
       if (jobType === 'exact') {
+        console.log(`[V4-MATCHER] ========== EXACT MATCHER VERSION: V4 (commit 915d088) ==========`);
+        console.log(`[V4-MATCHER] Interchange-First Bridge Logic Active`);
         console.log(`[V4-UNMATCH] Starting un-match prerequisite for exact job`);
         const { unmatchProject } = await import('@/app/lib/matching/v4-interchange-first-matcher');
         const clearedCount = await unmatchProject(job.projectId);

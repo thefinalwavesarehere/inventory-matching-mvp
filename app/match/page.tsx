@@ -37,6 +37,8 @@ interface MatchCandidate {
   confidence: number;
   method: string;
   status: string;
+  vendor?: string; // V4: Vendor from interchange (e.g., "GSP")
+  matchedOn?: string; // V4: "MERRILL" | "VENDOR"
   vendorAction?: VendorAction;
   features?: any;
   matchStage?: string;
@@ -567,6 +569,12 @@ export default function MatchPageWithBulkActions() {
                           <div>
                             <span className="text-xs text-gray-500 uppercase">Description</span>
                             <p className="text-sm">{match.storeItem.description}</p>
+                          </div>
+                        )}
+                        {match.vendor && (
+                          <div>
+                            <span className="text-xs text-gray-500 uppercase">Vendor</span>
+                            <p className="text-sm font-medium text-blue-600">{match.vendor}</p>
                           </div>
                         )}
                       </div>

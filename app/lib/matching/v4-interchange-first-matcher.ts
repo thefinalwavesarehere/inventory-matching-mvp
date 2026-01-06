@@ -44,7 +44,23 @@ export interface V4Match {
 export async function unmatchProject(projectId: string): Promise<number> {
   console.log(`[V4-UNMATCH] Starting un-match for project: ${projectId}`);
   
+  if (!projectId) {
+    throw new Error('[V4-UNMATCH] SAFETY: projectId is required');
+  }
+  
   try {
+    // Count before delete
+    const countBefore = await prisma.matchCandidate.count({
+      where: { projectId },
+    });
+    
+    console.log(`[V4-UNMATCH] Found ${countBefore} existing matches to clear`);
+    
+    // Safety warning for large deletes
+    if (countBefore > 50000) {
+      console.warn(`[V4-UNMATCH] WARNING: Large delete operation (${countBefore} rows). Verify projectId is correct.`);
+    }
+    
     const deleted = await prisma.matchCandidate.deleteMany({
       where: { projectId },
     });
