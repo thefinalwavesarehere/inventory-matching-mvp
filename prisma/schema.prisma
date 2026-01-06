@@ -64,6 +64,15 @@ model Project {
   columnMappings FileColumnMapping[]
   vendorActionRules VendorActionRule[]
   activityLogs ActivityLog[]
+  lineCodeMappings ProjectLineCodeMapping[]
+  matchRules   ProjectMatchRule[]
+  
+  // Prompt 2: Config toggles (safe defaults)
+  enableArnoldLineCodeSplit    Boolean @default(false)
+  enableRuleBasedFuzzyBoosts   Boolean @default(false)
+  enablePunctuationEquivalence Boolean @default(true)
+  fuzzyHardRejectEnabled       Boolean @default(true)
+  
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -217,6 +226,12 @@ model StoreItem {
   brand          String?
   category       String?  // Product category (e.g., "belts", "hoses", "wiring")
   subcategory    String?  // Product subcategory (e.g., "V-belt", "coolant", "connectors")
+  
+  // Prompt 2: Derived manufacturer part fields (gated by enableArnoldLineCodeSplit)
+  arnoldLineCodeRaw    String? // First 3 chars when split enabled (e.g., "MEV")
+  manufacturerPartRaw  String? // Remainder after line code (e.g., "ES409LT")
+  manufacturerPartNorm String? @db.Text // Canonical normalized manufacturer part
+  
   rawData        Json?    // Store original row data
   matchCandidates MatchCandidate[]
   createdAt      DateTime @default(now())
@@ -706,4 +721,66 @@ model ActivityLog {
   @@index([projectId])
   @@index([action])
   @@index([createdAt])
+}
+
+/// Prompt 2: Project Line Code Mappings
+model ProjectLineCodeMapping {
+  id                   String   @id @default(cuid())
+  projectId            String
+  project              Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceSystem         String?  // e.g., "STORE", "CUSTOMER"
+  sourceLineCode       String   // e.g., "D7", "G4"
+  mappedManufacturer   String?  // e.g., "DECO", "Gates", "Wix"
+  mappedArnoldLineCode String?  // e.g., "BAT", "BRG"
+  confidence           Float    @default(1.0) // manual=1.0; inferred <1.0
+  status               LineCodeMappingStatus @default(MANUAL)
+  createdByUserId      String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("project_line_code_mappings")
+  @@index([projectId])
+  @@index([projectId, sourceLineCode])
+  @@index([status])
+}
+
+enum LineCodeMappingStatus {
+  MANUAL
+  SUGGESTED
+  APPROVED
+  REJECTED
+}
+
+/// Prompt 2: Project Match Rules
+model ProjectMatchRule {
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ruleType      MatchRuleType
+  payload       Json     // rule-specific data
+  status        MatchRuleStatus @default(SUGGESTED)
+  evidenceCount Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  approvedAt    DateTime?
+  approvedByUserId String?
+
+  @@map("project_match_rules")
+  @@index([projectId])
+  @@index([projectId, status])
+  @@index([ruleType])
+}
+
+enum MatchRuleType {
+  PUNCTUATION_EQUIVALENCE
+  SOURCE_LINECODE_TO_MANUFACTURER
+  SOURCE_LINECODE_TO_ARNOLD_LINECODE
+  DESCRIPTION_MUST_SHARE_TOKENS
+  COST_RATIO_BOUNDS
+}
+
+enum MatchRuleStatus {
+  SUGGESTED
+  APPROVED
+  REJECTED
 }
