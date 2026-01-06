@@ -99,12 +99,14 @@ export async function findInterchangeFirstMatches(
     console.log(`[V4-MATCHER] Matching all unmatched store items`);
   }
   
-  // Build store IDs filter
-  const storeIdsFilter = storeIds && storeIds.length > 0
-    ? `AND s.id IN (${storeIds.map(id => `'${id}'`).join(',')})`
-    : '';
+  // Debug logging
+  console.log('[V4-DEBUG] projectId', projectId);
+  console.log('[V4-DEBUG] storeIds sample', storeIds?.slice(0, 5) || 'all');
   
-  // V4 SQL: 3-step bridge with vendor tie-breaker
+  // Prepare parameterized storeIds (null if matching all)
+  const storeIdsParam = storeIds?.length ? storeIds : null;
+  
+  // V4 SQL: 3-step bridge with vendor tie-breaker (parameterized)
   const query = `
     WITH bridge AS (
       -- Step 1: Store → Interchange join (authoritative)
@@ -134,7 +136,7 @@ export async function findInterchangeFirstMatches(
         )
       WHERE 
         s."projectId" = $1
-        ${storeIdsFilter}
+        AND ($2::text[] IS NULL OR s.id = ANY($2::text[]))
         -- Only match items that haven't been matched yet
         AND NOT EXISTS (
           SELECT 1 FROM match_candidates mc
@@ -181,7 +183,7 @@ export async function findInterchangeFirstMatches(
   console.log(`[V4-MATCHER] Executing interchange-first SQL query`);
   
   try {
-    const results = await prisma.$queryRawUnsafe<any[]>(query, projectId);
+    const results = await prisma.$queryRawUnsafe<any[]>(query, projectId, storeIdsParam);
     
     console.log(`[V4-MATCHER] Found ${results.length} interchange matches`);
     console.log(`[V4-MATCHER] Breakdown:`);
