@@ -13,9 +13,24 @@ export const dynamic = 'force-dynamic';
 /**
  * GET /api/rules
  * List all global rules (projectId = null)
+ * Also supports count-only mode via ?count=true
  */
 export async function GET(request: NextRequest) {
   try {
+    // Check if count-only mode
+    const url = new URL(request.url);
+    const countOnly = url.searchParams.get('count') === 'true';
+
+    if (countOnly) {
+      const count = await prisma.matchingRule.count({
+        where: { active: true },
+      });
+      return NextResponse.json({
+        success: true,
+        count,
+      });
+    }
+
     const rules = await prisma.vendorActionRule.findMany({
       where: {
         projectId: null,
