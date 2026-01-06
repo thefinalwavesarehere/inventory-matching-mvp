@@ -284,9 +284,11 @@ function processInterchangeFile(data: any[], projectId: string) {
       return String(part).toUpperCase().replace(/[^A-Z0-9]/g, '');
     };
     
-    // V4: Normalize both sides
-    const merrillPartNumberNorm = canonicalNormalize(supplierSku);
-    const vendorPartNumberNorm = canonicalNormalize(storeSku);
+    // V4: CORRECTED MAPPING
+    // CSV "MERRILL PART #" (storeSku) = AXLGM-8167 (our matching key)
+    // CSV "VENDOR PART #" (supplierSku) = NCV10028 (vendor's SKU)
+    const merrillPartNumberNorm = canonicalNormalize(storeSku);  // AXLGM8167
+    const vendorPartNumberNorm = canonicalNormalize(supplierSku); // NCV10028
     
     // Add to interchange table with V4 fields
     interchanges.push({
@@ -294,10 +296,10 @@ function processInterchangeFile(data: any[], projectId: string) {
       // Legacy fields
       oursPartNumber: storeSku,
       theirsPartNumber: supplierSku,
-      // V4 fields
-      merrillPartNumber: supplierSku,  // Raw Merrill part (e.g., "AXLGM-8167")
+      // V4 fields (CORRECTED)
+      merrillPartNumber: storeSku,     // Raw Merrill part (e.g., "AXLGM-8167") - THE MATCH KEY
       merrillPartNumberNorm,           // Canonical (e.g., "AXLGM8167")
-      vendorPartNumber: storeSku,      // Raw vendor part (e.g., "NCV10028")
+      vendorPartNumber: supplierSku,   // Raw vendor part (e.g., "NCV10028") - VENDOR SKU
       vendorPartNumberNorm,            // Canonical (e.g., "NCV10028")
       vendor,                          // Vendor name (e.g., "GSP")
       lineCode: null,                  // Not used in this file format
