@@ -416,8 +416,8 @@ async function processExactMatching(
   }));
   
   const engineInterchanges = interchangeMappings.map((m) => ({
-    competitorFullSku: m.competitorFullSku,
-    arnoldFullSku: m.arnoldFullSku,
+    competitorFullSku: m.vendorPartNumber || m.theirsPartNumber,
+    arnoldFullSku: m.merrillPartNumber || m.oursPartNumber,
     confidence: m.confidence,
   }));
   
