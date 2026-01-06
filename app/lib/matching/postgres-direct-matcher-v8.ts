@@ -24,7 +24,7 @@ export interface PostgresDirectMatch {
  * - Database must have index on (partNumberNorm, lineCode)
  */
 export async function findDirectMatches(projectId: string, storeIds?: string[]): Promise<PostgresDirectMatch[]> {
-  console.log(`[MATCHER_V9.7_GLOBAL] Starting Global Match (Line Code Ignored + Skip Matched) for Project: ${projectId}`);
+  console.log(`[INTERCHANGE_BRIDGE_V10.0] Starting Interchange Bridge Match for Project: ${projectId}`);
   
   // Build the store IDs filter condition
   const storeIdsFilter = storeIds && storeIds.length > 0 
@@ -63,7 +63,7 @@ export async function findDirectMatches(projectId: string, storeIds?: string[]):
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresDirectMatch[]>(query, projectId);
     
-    console.log(`[MATCHER_V9.7_GLOBAL] Found ${matches.length} global matches (line code ignored, unmatched items only)`);
+    console.log(`[INTERCHANGE_BRIDGE_V10.0] Found ${matches.length} interchange bridge matches`);
     
     return matches;
   } catch (error) {
@@ -79,7 +79,7 @@ export async function findDirectMatches(projectId: string, storeIds?: string[]):
  * This field is critical for V8.0 direct matching.
  */
 export async function diagnosePartNumberNorm(projectId: string): Promise<void> {
-  console.log('\n[V8.0_DIAGNOSTIC] Checking partNumberNorm population...\n');
+  console.log('\n[V10.0_DIAGNOSTIC] Checking interchange data availability...\n');
   
   // Check store items
   const storeTotal = await prisma.storeItem.count({ where: { projectId } });

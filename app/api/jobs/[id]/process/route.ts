@@ -269,7 +269,9 @@ export async function POST(
     }
 
     // V5.6: Update job progress using actual processed count
-    const newProcessedItems = job.processedItems + chunk.length;
+    // V10.0: Cap processedItems to totalItems to prevent infinite counter bug
+    const rawProcessedItems = job.processedItems + chunk.length;
+    const newProcessedItems = Math.min(rawProcessedItems, job.totalItems || rawProcessedItems);
     const totalItems = job.totalItems || 0;
     const progressPercentage = totalItems > 0 ? (newProcessedItems / totalItems) * 100 : 0;
     const newMatchesFound = job.matchesFound + newMatches;
@@ -297,12 +299,13 @@ export async function POST(
     console.log(`[JOB-PROCESS] New matches: ${newMatches}, Total matches: ${newMatchesFound}`);
 
     // V9.2: SELF-DRIVING FIRE-AND-FORGET RECURSION
-    const hasMoreWork = totalUnmatchedCount > chunk.length;
+    // V10.0: Add safety check to prevent infinite loop
+    const hasMoreWork = totalUnmatchedCount > chunk.length && newProcessedItems < totalItems;
     if (hasMoreWork && job.status !== 'failed') {
       console.log(`[JOB-PROCESS-V9.2] ${totalUnmatchedCount - chunk.length} items remaining. Triggering next batch...`);
       triggerNextBatch(req, jobId);
     } else {
-      console.log(`[JOB-PROCESS-V9.2] No more unmatched items. Job will complete on next check.`);
+      console.log(`[JOB-PROCESS-V9.2] No more unmatched items or all items processed (${newProcessedItems}/${totalItems}). Job will complete on next check.`);
     }
 
     return NextResponse.json({
