@@ -24,14 +24,14 @@ export interface PostgresDirectMatch {
  * - Database must have index on (partNumberNorm, lineCode)
  */
 export async function findDirectMatches(projectId: string, storeIds?: string[]): Promise<PostgresDirectMatch[]> {
-  console.log(`[MATCHER_V9.4_GLOBAL] Starting Global Match (Line Code Ignored) for Project: ${projectId}`);
+  console.log(`[MATCHER_V9.7_GLOBAL] Starting Global Match (Line Code Ignored + Skip Matched) for Project: ${projectId}`);
   
   // Build the store IDs filter condition
   const storeIdsFilter = storeIds && storeIds.length > 0 
     ? `AND s.id IN (${storeIds.map(id => `'${id}'`).join(',')})` 
     : '';
   
-  // V9.4 GLOBAL MATCH QUERY (Line Code Ignored)
+  // V9.7 GLOBAL MATCH QUERY (Line Code Ignored + Skip Already Matched)
   const query = `
     SELECT DISTINCT ON (s.id)
       s.id as "storeItemId",
@@ -51,6 +51,11 @@ export async function findDirectMatches(projectId: string, storeIds?: string[]):
     WHERE 
       s."projectId" = $1
       ${storeIdsFilter}
+      -- V9.7: Skip items that already have matches (prevents reprocessing)
+      AND NOT EXISTS (
+        SELECT 1 FROM "match_candidates" mc 
+        WHERE mc."storeItemId" = s.id
+      )
     -- Deduplicate: If multiple suppliers have the same part, pick the first one (usually alphabetical by ID)
     ORDER BY s.id, sup.id ASC
   `;
@@ -58,7 +63,7 @@ export async function findDirectMatches(projectId: string, storeIds?: string[]):
   try {
     const matches = await prisma.$queryRawUnsafe<PostgresDirectMatch[]>(query, projectId);
     
-    console.log(`[MATCHER_V9.4_GLOBAL] Found ${matches.length} global matches (line code ignored)`);
+    console.log(`[MATCHER_V9.7_GLOBAL] Found ${matches.length} global matches (line code ignored, unmatched items only)`);
     
     return matches;
   } catch (error) {

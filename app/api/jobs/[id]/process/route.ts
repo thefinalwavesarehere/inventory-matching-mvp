@@ -538,8 +538,22 @@ async function saveMatches(
   const { MatchMethod, MatchStatus } = await import('@prisma/client');
   let savedCount = 0;
   
-  for (let i = 0; i < matches.length; i += 100) {
-    const batch = matches.slice(i, i + 100);
+  // V9.7: Deduplicate matches before saving to prevent duplicate key errors
+  const uniqueMatches = new Map<string, any>();
+  for (const match of matches) {
+    const key = `${match.storeItemId}:${match.supplierItemId}`;
+    if (!uniqueMatches.has(key)) {
+      uniqueMatches.set(key, match);
+    }
+  }
+  const deduplicatedMatches = Array.from(uniqueMatches.values());
+  
+  if (deduplicatedMatches.length < matches.length) {
+    console.log(`[V9.7-DEDUP] Removed ${matches.length - deduplicatedMatches.length} duplicate matches`);
+  }
+  
+  for (let i = 0; i < deduplicatedMatches.length; i += 100) {
+    const batch = deduplicatedMatches.slice(i, i + 100);
     
     try {
       const dataToInsert = batch.map((match: any) => ({
