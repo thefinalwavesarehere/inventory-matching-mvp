@@ -74,7 +74,7 @@ async function detectPunctuationEquivalence(projectId: string): Promise<Suggeste
   const matches = await prisma.matchCandidate.findMany({
     where: {
       projectId,
-      status: 'APPROVED',
+      status: 'CONFIRMED',
     },
     include: {
       storeItem: {
@@ -135,7 +135,7 @@ async function detectLineCodeMappings(projectId: string): Promise<SuggestedRule[
   const matches = await prisma.matchCandidate.findMany({
     where: {
       projectId,
-      status: 'APPROVED',
+      status: 'CONFIRMED',
     },
     include: {
       storeItem: {
