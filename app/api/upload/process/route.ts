@@ -76,19 +76,23 @@ function processStoreFile(data: any[], projectId: string) {
     
     if (partNumber && !partNumberHasFormula) {
       // V9.5 PATH: Apply strict sanitization to ensure matches
-      // Force strict sanitization on the join key (removes all non-alphanumeric)
-      const rawPart = String(partNumber);
+      // V9.9: Force string conversion to prevent CSV/XLSX type mismatches
+      const rawPart = String(partNumber).toString().trim();
       partNumberNormValue = rawPart.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      finalLineCode = lineCode ? String(lineCode).toUpperCase().trim() : null;
-      finalMfrPartNumber = partNumber ? String(partNumber).trim() : null;
+      finalLineCode = lineCode ? String(lineCode).toString().toUpperCase().trim() : null;
+      finalMfrPartNumber = partNumber ? String(partNumber).toString().trim() : null;
       canonicalPartNumber = partFull ? partFull.toUpperCase().trim() : null;
       
-      // V9.5: Row-level logging removed to prevent timeout on large files
-      // console.log(`[V8.0_IMPORT] Passthrough: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+      // V9.9: Diagnostic logging for first row only
+      if (data.indexOf(row) === 0) {
+        console.log(`[V9.9-DIAGNOSTIC] Store first row - partNumber type: ${typeof partNumber}, value: ${partNumber}`);
+        console.log(`[V9.9-DIAGNOSTIC] Store normalized: ${partNumberNormValue}`);
+      }
     } else {
       // LEGACY PATH: Apply normalization for old file formats
       const normalized = normalizePartNumber(partFull, { extractLineCode: true });
-      partNumberNormValue = normalized.normalized;
+      // V9.9: Use canonical (uppercase, no punctuation) for partNumberNorm to match V9.5 path
+      partNumberNormValue = normalized.canonical;
       finalLineCode = normalized.lineCode || null;
       finalMfrPartNumber = normalized.mfrPartNumber || null;
       canonicalPartNumber = normalized.canonical;
@@ -148,19 +152,23 @@ function processSupplierFile(data: any[], projectId: string) {
     
     if (partNumber && !partNumberHasFormula) {
       // V9.5 PATH: Apply strict sanitization to ensure matches
-      // Force strict sanitization on the join key (removes all non-alphanumeric)
-      const rawPart = String(partNumber);
+      // V9.9: Force string conversion to prevent CSV/XLSX type mismatches
+      const rawPart = String(partNumber).toString().trim();
       partNumberNormValue = rawPart.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      finalLineCode = lineCode ? String(lineCode).toUpperCase().trim() : null;
-      finalMfrPartNumber = partNumber ? String(partNumber).trim() : null;
+      finalLineCode = lineCode ? String(lineCode).toString().toUpperCase().trim() : null;
+      finalMfrPartNumber = partNumber ? String(partNumber).toString().trim() : null;
       canonicalPartNumber = partFull ? partFull.toUpperCase().trim() : null;
       
-      // V9.5: Row-level logging removed to prevent timeout on large files
-      // console.log(`[V8.0_IMPORT_SUPPLIER] Passthrough: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+      // V9.9: Diagnostic logging for first row only
+      if (data.indexOf(row) === 0) {
+        console.log(`[V9.9-DIAGNOSTIC] Supplier first row - partNumber type: ${typeof partNumber}, value: ${partNumber}`);
+        console.log(`[V9.9-DIAGNOSTIC] Supplier normalized: ${partNumberNormValue}`);
+      }
     } else {
       // LEGACY PATH: Apply normalization for old file formats
       const normalized = normalizePartNumber(partFull, { extractLineCode: true });
-      partNumberNormValue = normalized.normalized;
+      // V9.9: Use canonical (uppercase, no punctuation) for partNumberNorm to match V9.5 path
+      partNumberNormValue = normalized.canonical;
       finalLineCode = normalized.lineCode || null;
       finalMfrPartNumber = normalized.mfrPartNumber || null;
       canonicalPartNumber = normalized.canonical;
