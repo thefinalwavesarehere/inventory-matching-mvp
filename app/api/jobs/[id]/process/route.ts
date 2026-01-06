@@ -475,10 +475,6 @@ async function processExactMatching(
   
   console.log(`[EXACT-MATCH] Saved ${savedCount} matches to database`);
   return savedCount;
-}tches.length}`);
-  console.log(`[V4-EXACT] Supplier enrichment: ${withSupplier}/${v4Matches.length}`);
-  
-  return savedCount;
 }
 
 /**
