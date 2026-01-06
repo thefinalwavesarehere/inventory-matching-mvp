@@ -80,9 +80,6 @@ async function detectPunctuationEquivalence(projectId: string): Promise<Suggeste
       storeItem: {
         select: { partNumber: true, partNumberNorm: true },
       },
-      targetItem: {
-        select: { partNumber: true, partNumberNorm: true },
-      },
     },
   });
 
@@ -90,10 +87,17 @@ async function detectPunctuationEquivalence(projectId: string): Promise<Suggeste
   let punctuationEquivalenceCount = 0;
 
   for (const match of matches) {
-    if (!match.storeItem || !match.targetItem) continue;
+    if (!match.storeItem) continue;
+
+    // Fetch target item manually (stringly typed)
+    const targetItem = match.targetType === 'SUPPLIER' 
+      ? await prisma.supplierItem.findUnique({ where: { id: match.targetId }, select: { partNumber: true } })
+      : await prisma.inventoryItem.findUnique({ where: { id: match.targetId }, select: { partNumber: true } });
+    
+    if (!targetItem) continue;
 
     const storeRaw = match.storeItem.partNumber || '';
-    const targetRaw = match.targetItem.partNumber || '';
+    const targetRaw = targetItem.partNumber || '';
 
     // Remove punctuation
     const storeNoPunct = storeRaw.replace(/[-\/\.]/g, '');
@@ -141,9 +145,6 @@ async function detectLineCodeMappings(projectId: string): Promise<SuggestedRule[
       storeItem: {
         select: { arnoldLineCodeRaw: true },
       },
-      targetItem: {
-        select: { brand: true },
-      },
     },
   });
 
@@ -151,10 +152,17 @@ async function detectLineCodeMappings(projectId: string): Promise<SuggestedRule[
   const lineCodeToManufacturer: Record<string, Record<string, number>> = {};
 
   for (const match of matches) {
-    if (!match.storeItem?.arnoldLineCodeRaw || !match.targetItem?.brand) continue;
+    if (!match.storeItem?.arnoldLineCodeRaw) continue;
+
+    // Fetch target item manually (stringly typed)
+    const targetItem = match.targetType === 'SUPPLIER' 
+      ? await prisma.supplierItem.findUnique({ where: { id: match.targetId }, select: { brand: true } })
+      : await prisma.inventoryItem.findUnique({ where: { id: match.targetId }, select: { brand: true } });
+    
+    if (!targetItem?.brand) continue;
 
     const lineCode = match.storeItem.arnoldLineCodeRaw;
-    const manufacturer = match.targetItem.brand;
+    const manufacturer = targetItem.brand;
 
     if (!lineCodeToManufacturer[lineCode]) {
       lineCodeToManufacturer[lineCode] = {};
