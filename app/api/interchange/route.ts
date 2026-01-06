@@ -16,7 +16,7 @@ export async function GET() {
       );
     }
 
-    const count = await prisma.interchangeMapping.count();
+    const count = await prisma.interchange.count();
 
     return NextResponse.json({
       success: true,

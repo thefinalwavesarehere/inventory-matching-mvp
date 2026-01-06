@@ -387,7 +387,7 @@ async function processExactMatching(
   const { stage1DeterministicMatching, MatchingIndexes } = await import('@/app/lib/matching-engine');
   
   // Get interchange mappings and rules
-  const interchangeMappings = await prisma.interchangeMapping.findMany();
+  const interchangeMappings = await prisma.interchange.findMany();
   const rules = await prisma.matchingRule.findMany({
     where: { active: true },
   });

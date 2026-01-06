@@ -78,12 +78,12 @@ export async function POST(req: NextRequest) {
 
     // Clear existing and insert new (GLOBAL REPLACE)
     await prisma.$transaction(async (tx) => {
-      await tx.interchangeMapping.deleteMany({});
+      await tx.interchange.deleteMany({});
       
       // Insert in batches
       for (let i = 0; i < mappings.length; i += 1000) {
         const batch = mappings.slice(i, i + 1000);
-        await tx.interchangeMapping.createMany({
+        await tx.interchange.createMany({
           data: batch,
           skipDuplicates: true,
         });
