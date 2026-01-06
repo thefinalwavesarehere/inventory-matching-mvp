@@ -268,11 +268,36 @@ function processInterchangeFile(data: any[], projectId: string) {
       continue;
     }
 
-    // Add to legacy interchange table
+    // Extract vendor and other metadata from CSV
+    const vendor = row['VENDOR'] || row['Vendor'] || row['vendor'] || null;
+    const subCategory = row['SUB CATEGORY'] || row['Sub Category'] || row['SUBCATEGORY'] || row['Subcategory'] || null;
+    const notes = row['NOTES'] || row['Notes'] || row['notes'] || null;
+    
+    // V4: Canonical normalization (UPPERCASE + remove all non-alphanumerics)
+    // DO NOT strip prefixes - AXLGM-8167 becomes AXLGM8167
+    const canonicalNormalize = (part: string) => {
+      return String(part).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    };
+    
+    // V4: Normalize both sides
+    const merrillPartNumberNorm = canonicalNormalize(supplierSku);
+    const vendorPartNumberNorm = canonicalNormalize(storeSku);
+    
+    // Add to interchange table with V4 fields
     interchanges.push({
       projectId,
+      // Legacy fields
       oursPartNumber: storeSku,
       theirsPartNumber: supplierSku,
+      // V4 fields
+      merrillPartNumber: supplierSku,  // Raw Merrill part (e.g., "AXLGM-8167")
+      merrillPartNumberNorm,           // Canonical (e.g., "AXLGM8167")
+      vendorPartNumber: storeSku,      // Raw vendor part (e.g., "NCV10028")
+      vendorPartNumberNorm,            // Canonical (e.g., "NCV10028")
+      vendor,                          // Vendor name (e.g., "GSP")
+      lineCode: null,                  // Not used in this file format
+      subCategory,                     // Sub category (e.g., "AXLE")
+      notes,                           // Notes from CSV
       source: 'file',
       confidence: 1.0,
     });

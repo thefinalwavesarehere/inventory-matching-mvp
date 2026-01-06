@@ -237,8 +237,18 @@ model Interchange {
   id             String   @id @default(cuid())
   projectId      String
   project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // Legacy fields (kept for backward compatibility)
   oursPartNumber String
   theirsPartNumber String
+  // V4 Interchange-First fields
+  merrillPartNumber     String?   // Raw Merrill part number (e.g., "AXLGM-8167")
+  merrillPartNumberNorm String?   @db.Text // Canonical normalized (e.g., "AXLGM8167")
+  vendorPartNumber      String?   // Raw vendor part number (e.g., "NCV10028")
+  vendorPartNumberNorm  String?   @db.Text // Canonical normalized (e.g., "NCV10028")
+  vendor                String?   // Vendor name from CSV (e.g., "GSP")
+  lineCode              String?   // Line code if distinct
+  subCategory           String?   // Sub category from CSV (e.g., "AXLE")
+  notes                 String?   // Notes from CSV
   source        String?   // "client", "vendor", "file", "ai_confirmed"
   confidence    Float     @default(1.0)
   createdAt     DateTime  @default(now())
@@ -246,6 +256,8 @@ model Interchange {
   @@map("interchanges")
   @@index([projectId, oursPartNumber])
   @@index([projectId, theirsPartNumber])
+  @@index([projectId, merrillPartNumberNorm])
+  @@index([projectId, vendorPartNumberNorm])
   @@unique([projectId, oursPartNumber, theirsPartNumber])
 }
 
@@ -266,6 +278,10 @@ model MatchCandidate {
   costDifference   Decimal?   @db.Decimal(10, 2)
   costSimilarity   Float?     // 0-1
   transformationSignature String? // For pattern detection
+  // V4 Interchange-First fields
+  vendor           String?    // Vendor from interchange (e.g., "GSP")
+  matchedOn        String?    // "MERRILL" | "VENDOR" - which side of interchange matched
+  interchangeId    String?    // Reference to interchange row used
   status           MatchStatus @default(PENDING)
   decidedById      String?
   decidedBy        User?      @relation("DecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)

@@ -109,6 +109,17 @@ export async function POST(
           startedAt: new Date(),
         },
       });
+      
+      // V4 Step 0: Un-match prerequisite (only for exact jobs)
+      const config = job.config as any || {};
+      const jobType = config.jobType || 'ai';
+      
+      if (jobType === 'exact') {
+        console.log(`[V4-UNMATCH] Starting un-match prerequisite for exact job`);
+        const { unmatchProject } = await import('@/app/lib/matching/v4-interchange-first-matcher');
+        const clearedCount = await unmatchProject(job.projectId);
+        console.log(`[V4-UNMATCH] Cleared ${clearedCount} existing matches - ready for V4 rematching`);
+      }
     }
 
     const config = job.config as any || {};
@@ -370,80 +381,39 @@ async function processExactMatching(
   supplierItems: any[],
   projectId: string
 ): Promise<number> {
-  // !!! LIVE CODE CHECK - TRACE ID !!!
-  console.log("!!! LIVE CODE CHECK - TRACE ID: 2026-01-02_22:00:00_UTC - MODE: UNIVERSAL SUFFIX V5.4 + CONNECTION THROTTLING !!!");
+  // V4 INTERCHANGE-FIRST EXACT MATCHER
+  console.log("[V4-EXACT] Using Interchange-First matching (bridge logic)");
   
-  // Import V4.1 Postgres Native Matcher (3-Character Prefix Stripping)
-  const { findMatches } = await import('@/app/lib/matching/postgres-exact-matcher-v3');
-  const { MatchMethod, MatchStatus } = await import('@prisma/client');
+  // Import V4 Interchange-First Matcher
+  const { findInterchangeFirstMatches, persistV4Matches } = await import('@/app/lib/matching/v4-interchange-first-matcher');
   
-  console.log(`[EXACT-MATCH-V5.4] Processing ${storeItems.length} store items with batch throttling`);
-  console.log(`[EXACT-MATCH-V5.4] Using Universal Suffix Matching (V5.3)`);
+  console.log(`[V4-EXACT] Processing ${storeItems.length} store items`);
   
   // Extract store item IDs for batch processing
-  const storeIds = storeItems.map(item => item.id);
+  const storeIds = storeItems.map((item: any) => item.id);
   
-  // 🚨 V5.4: UNIVERSAL SUFFIX MATCH with Connection Pool Throttling
-  console.log(`[EXACT-MATCH-V5.4] === MATCHING WITH SUFFIX LOGIC ===`);
-  let matches: any[] = [];
-  if (storeIds.length > 0) {
-    matches = await findMatches(projectId, storeIds);
-    
-    // V5.4: Mandatory 1-second gap to release DB connection back to pool
-    // This prevents P2024 connection pool exhaustion during long-running jobs
-    console.log(`[EXACT-MATCH-V5.4] Releasing connection to pool (1s throttle)...`);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
+  // V4 Step 1: Find matches using interchange bridge
+  console.log(`[V4-EXACT] Finding interchange-first matches...`);
+  const v4Matches = await findInterchangeFirstMatches(projectId, storeIds);
   
-  console.log(`[EXACT-MATCH-V5.4] Found ${matches.length} matches using universal suffix logic`);
+  console.log(`[V4-EXACT] Found ${v4Matches.length} interchange matches`);
   
-  // 💰 RULE 5: Cost-Based Validation (UOM Mismatch Detection)
-  console.log(`[EXACT-MATCH-V4.0] === COST VALIDATION ===`);
-  matches = await applyCostValidation(matches, storeItems, projectId);
-  
-  // Calculate confidence distribution
-  const confidenceDistribution = matches.reduce((acc, match) => {
-    const bucket = match.confidence >= 1.0 ? 'perfect' :
-                   match.confidence >= 0.98 ? 'high' :
-                   match.confidence >= 0.90 ? 'medium' : 'low';
-    acc[bucket] = (acc[bucket] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  
-  console.log(`[EXACT-MATCH-V4.0] Confidence distribution:`, confidenceDistribution);
-  
-  // 📊 NEAR-MISS REPORTING: Log brand mismatches for alias mapping
-  const brandMismatches = matches.filter(m => m.matchReason === 'brand_mismatch');
-  const fuzzyBrandMatches = matches.filter(m => m.matchReason === 'fuzzy_brand');
-  
-  if (brandMismatches.length > 0) {
-    console.log(`[NEAR-MISS] Found ${brandMismatches.length} part matches with brand mismatch (potential alias mappings needed):`);
-    // Log first 10 examples
-    brandMismatches.slice(0, 10).forEach((m, i) => {
-      console.log(`[NEAR-MISS] ${i+1}. Store: ${m.storePartNumber} (${m.storeLineCode}) → Supplier: ${m.supplierPartNumber} (${m.supplierLineCode}) [Confidence: ${m.confidence.toFixed(2)}]`);
-    });
-    if (brandMismatches.length > 10) {
-      console.log(`[NEAR-MISS] ... and ${brandMismatches.length - 10} more brand mismatches`);
-    }
-  }
-  
-  if (fuzzyBrandMatches.length > 0) {
-    console.log(`[NEAR-MISS] Found ${fuzzyBrandMatches.length} fuzzy brand matches (partial string matches):`);
-    fuzzyBrandMatches.slice(0, 5).forEach((m, i) => {
-      console.log(`[NEAR-MISS] ${i+1}. Store: ${m.storePartNumber} (${m.storeLineCode}) ↔ Supplier: ${m.supplierPartNumber} (${m.supplierLineCode}) [Confidence: ${m.confidence.toFixed(2)}]`);
-    });
-  }
-
-  // Save matches
+  // V4 Step 2: Persist matches with V4 metadata
   let savedCount = 0;
-  if (matches.length > 0) {
-    savedCount = await saveMatches(matches, projectId, 'EXACT');
-    console.log(`[EXACT-MATCH-V4.1] Saved ${savedCount} matches`);
+  if (v4Matches.length > 0) {
+    savedCount = await persistV4Matches(projectId, v4Matches);
+    console.log(`[V4-EXACT] Saved ${savedCount} V4 matches`);
   }
   
   // Calculate and log match rate
   const matchRate = (savedCount / storeItems.length) * 100;
-  console.log(`[EXACT-MATCH-V4.1] Batch match rate: ${matchRate.toFixed(1)}% (${savedCount}/${storeItems.length})`);
+  console.log(`[V4-EXACT] Batch match rate: ${matchRate.toFixed(1)}% (${savedCount}/${storeItems.length})`);
+  
+  // Log vendor metadata stats
+  const withVendor = v4Matches.filter((m: any) => m.vendor).length;
+  const withSupplier = v4Matches.filter((m: any) => m.supplierItemId).length;
+  console.log(`[V4-EXACT] Vendor metadata: ${withVendor}/${v4Matches.length}`);
+  console.log(`[V4-EXACT] Supplier enrichment: ${withSupplier}/${v4Matches.length}`);
   
   return savedCount;
 }
