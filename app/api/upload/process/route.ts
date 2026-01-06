@@ -99,7 +99,8 @@ function processStoreFile(data: any[], projectId: string) {
 
     return {
       projectId,
-      partNumber: partFull,
+      // V9.8: Use raw PART NUMBER (Column C) for matching, not PART (Column A with prefix)
+      partNumber: finalMfrPartNumber || partFull,
       partFull,
       partNumberNorm: partNumberNormValue,
       lineCode: finalLineCode,
@@ -171,7 +172,8 @@ function processSupplierFile(data: any[], projectId: string) {
     return {
       projectId,
       supplier: 'CarQuest', // Default supplier name
-      partNumber: partFull,
+      // V9.8: Use raw PART NUMBER (Column C) for matching, not PART (Column A with prefix)
+      partNumber: finalMfrPartNumber || partFull,
       partFull,
       partNumberNorm: partNumberNormValue,
       lineCode: finalLineCode,
