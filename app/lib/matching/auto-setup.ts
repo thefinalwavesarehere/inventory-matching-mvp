@@ -184,7 +184,7 @@ export async function getSetupStatus(): Promise<SetupStatus> {
     `;
     
     // Check for indexes currently being built
-    const buildingIndexes = await prisma.$queryRaw<Array<{ indexname: string }>>`
+    const buildingIndexesRaw = await prisma.$queryRaw<Array<{ indexname: string }>>`
       SELECT 
         c.relname as indexname
       FROM pg_stat_progress_create_index p
@@ -192,7 +192,7 @@ export async function getSetupStatus(): Promise<SetupStatus> {
       WHERE c.relname IN (${INDEXES.map(idx => idx.name).join("', '")});
     `;
     
-    const buildingSet = new Set(buildingIndexes.map(b => b.indexname));
+    const buildingSet = new Set(buildingIndexesRaw.map(b => b.indexname));
     
     // Map index status
     const indexStatuses: IndexStatus[] = INDEXES.map(indexDef => {
