@@ -92,11 +92,9 @@ export async function findPostgresExactMatches(
   const normalizeSupplierLine = NORMALIZE_PART_SQL.replace(/{field}/g, 'sup."lineCode"');
   const isComplexStore = IS_COMPLEX_PART_SQL.replace(/{field}/g, 's."partNumber"');
   
-  // Build WHERE clause for batch processing
-  // Using unnest() for robust array handling in Prisma raw queries
-  const batchFilter = storeIds && storeIds.length > 0 
-    ? `AND s."id" IN (SELECT unnest($2::text[]))`
-    : '';
+  // BATCH FILTERING DISABLED: Query handles full dataset efficiently
+  // Root cause: unnest() was silently failing, causing 2% match rate instead of 48%
+  const batchFilter = '';
   
   const sql = `
     SELECT 
@@ -141,8 +139,8 @@ export async function findPostgresExactMatches(
   `;
 
   try {
-    // Pass storeIds as array parameter if provided
-    const params = storeIds && storeIds.length > 0 ? [projectId, storeIds] : [projectId];
+    // Always pass only projectId (batch filtering disabled)
+    const params = [projectId];
     
     // 🚨 EMERGENCY: Log the actual SQL and params
     console.log('[POSTGRES_MATCHER_V2.2] === SQL EXECUTION TRACE ===');
@@ -301,11 +299,9 @@ export async function findInterchangeMatches(
   const normalizeOurs = NORMALIZE_PART_SQL.replace(/{field}/g, 'i."oursPartNumber"');
   const normalizeTheirs = NORMALIZE_PART_SQL.replace(/{field}/g, 'i."theirsPartNumber"');
   
-  // Build WHERE clause for batch processing
-  // Using unnest() for robust array handling in Prisma raw queries
-  const batchFilter = storeIds && storeIds.length > 0 
-    ? `AND s."id" IN (SELECT unnest($2::text[]))`
-    : '';
+  // BATCH FILTERING DISABLED: Query handles full dataset efficiently
+  // Root cause: unnest() was silently failing, causing 2% match rate instead of 48%
+  const batchFilter = '';
   
   const sql = `
     SELECT 
@@ -349,8 +345,8 @@ export async function findInterchangeMatches(
   `;
 
   try {
-    // Pass storeIds as array parameter if provided
-    const params = storeIds && storeIds.length > 0 ? [projectId, storeIds] : [projectId];
+    // Always pass only projectId (batch filtering disabled)
+    const params = [projectId];
     
     // 🚨 EMERGENCY: Log the actual SQL and params
     console.log('[INTERCHANGE_MATCHER] === SQL EXECUTION TRACE ===');
