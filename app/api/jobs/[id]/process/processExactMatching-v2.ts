@@ -42,7 +42,7 @@ export async function processExactMatching(
   
   // 🚨 PHASE 1: INTERCHANGE MATCHING (The "Missing 25%")
   console.log(`[EXACT-MATCH-V3.0] === PHASE 1: INTERCHANGE MATCHING ===`);
-  const interchangeMatches = await findInterchangeMatches(projectId, storeItemIds);
+  const interchangeMatches = await findInterchangeMatches(projectId);
   console.log(`[EXACT-MATCH-V3.0] Found ${interchangeMatches.length} interchange matches`);
   
   // Save interchange matches
@@ -67,7 +67,7 @@ export async function processExactMatching(
     // - LTRIM for leading zero handling
     // - Relaxed line code constraints (3 scenarios)
     // - Complex part number override
-    exactMatches = await findHybridExactMatches(projectId, remainingStoreIds);
+    exactMatches = await findHybridExactMatches(projectId);
   }
   
   // Combine all matches for reporting
