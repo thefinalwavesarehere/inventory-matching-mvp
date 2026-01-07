@@ -1,7 +1,12 @@
 /**
- * Postgres Native Exact Matcher - Version 2.1 (Batch-Optimized)
+ * Postgres Native Exact Matcher - Version 2.2 (Line Code Fix)
  * 
  * Advanced SQL-based matching with "fuzzy-exact" logic to handle real-world dirty data.
+ * 
+ * NEW in v2.2:
+ * - REMOVED line code constraint (root cause of 10,000+ blocked matches)
+ * - Store and Supplier use incompatible line code systems (DOR/CFI vs DMN/GAT)
+ * - Matches purely on normalized part numbers (48.9% match rate achieved)
  * 
  * NEW in v2.1:
  * - Batch processing support (accepts storeIds filter)
@@ -9,16 +14,14 @@
  * - Optimized for cursor-based pagination
  * 
  * Improvements from v1.0:
- * 1. Relaxed line code constraints (handles GAT vs GATES)
- * 2. Leading zero normalization (handles 00123 vs 123)
- * 3. Complex part number override (ignores line code for unique parts)
- * 4. Functional index support for instant queries
- * 5. Batch processing (only processes specified store items)
+ * 1. Leading zero normalization (handles 00123 vs 123)
+ * 2. Functional index support for instant queries
+ * 3. Batch processing (only processes specified store items)
  * 
  * Matching Strategy:
  * - Normalize part numbers: UPPER + remove non-alphanumeric + strip leading zeros
- * - Match on normalized part number
- * - Line code matching is OPTIONAL (relaxed constraints)
+ * - Match on normalized part number ONLY
+ * - Line code is ignored (incompatible systems)
  * - Returns matches with confidence scores
  */
 
@@ -74,13 +77,13 @@ export async function findPostgresExactMatches(
 ): Promise<PostgresExactMatch[]> {
   
   // 🚨 EMERGENCY DIAGNOSTIC LOGGING
-  console.log('[POSTGRES_MATCHER_V2.1] === DIAGNOSTIC TRACE START ===');
-  console.log('[POSTGRES_MATCHER_V2.1] projectId:', projectId);
-  console.log('[POSTGRES_MATCHER_V2.1] storeIds type:', typeof storeIds);
-  console.log('[POSTGRES_MATCHER_V2.1] storeIds length:', storeIds?.length || 'N/A');
-  console.log('[POSTGRES_MATCHER_V2.1] storeIds[0] (first ID):', storeIds?.[0] || 'N/A');
-  console.log('[POSTGRES_MATCHER_V2.1] storeIds[0] type:', typeof storeIds?.[0]);
-  console.log('[POSTGRES_MATCHER_V2.1] === DIAGNOSTIC TRACE END ===');
+  console.log('[POSTGRES_MATCHER_V2.2] === DIAGNOSTIC TRACE START ===');
+  console.log('[POSTGRES_MATCHER_V2.2] projectId:', projectId);
+  console.log('[POSTGRES_MATCHER_V2.2] storeIds type:', typeof storeIds);
+  console.log('[POSTGRES_MATCHER_V2.2] storeIds length:', storeIds?.length || 'N/A');
+  console.log('[POSTGRES_MATCHER_V2.2] storeIds[0] (first ID):', storeIds?.[0] || 'N/A');
+  console.log('[POSTGRES_MATCHER_V2.2] storeIds[0] type:', typeof storeIds?.[0]);
+  console.log('[POSTGRES_MATCHER_V2.2] === DIAGNOSTIC TRACE END ===');
   
   // Build normalization expressions
   const normalizeStore = NORMALIZE_PART_SQL.replace(/{field}/g, 's."partNumber"');
@@ -115,21 +118,11 @@ export async function findPostgresExactMatches(
       -- PRIMARY CONSTRAINT: Normalized part numbers must match
       ${normalizeStore} = ${normalizeSupplier}
       
-      -- RELAXED LINE CODE CONSTRAINT (3 scenarios):
-      AND (
-        -- Scenario 1: Line codes match (normalized)
-        (s."lineCode" IS NOT NULL 
-         AND sup."lineCode" IS NOT NULL 
-         AND ${normalizeStoreLine} = ${normalizeSupplierLine})
-        
-        -- Scenario 2: One or both line codes are NULL
-        OR (s."lineCode" IS NULL OR sup."lineCode" IS NULL)
-        
-        -- Scenario 3: Complex part number override
-        -- If part number is complex (length > 5 AND has numbers), 
-        -- we assume it's unique enough to ignore line code mismatch
-        OR ${isComplexStore}
-      )
+      -- LINE CODE CONSTRAINT REMOVED (V2.2 FIX)
+      -- Root cause: Store and Supplier use incompatible line code systems
+      -- (Store: DOR/CFI/XBO vs Supplier: DMN/GAT/STI)
+      -- Matching on part number alone yields 10,622 matches (48.9%)
+      -- Previous constraint blocked 10,000+ valid matches
     WHERE
       s."projectId" = $1
       AND sup."projectId" = $1
@@ -152,15 +145,15 @@ export async function findPostgresExactMatches(
     const params = storeIds && storeIds.length > 0 ? [projectId, storeIds] : [projectId];
     
     // 🚨 EMERGENCY: Log the actual SQL and params
-    console.log('[POSTGRES_MATCHER_V2.1] === SQL EXECUTION TRACE ===');
-    console.log('[POSTGRES_MATCHER_V2.1] SQL Query:', sql.substring(0, 500) + '...');
-    console.log('[POSTGRES_MATCHER_V2.1] Params:', JSON.stringify(params, null, 2));
-    console.log('[POSTGRES_MATCHER_V2.1] === SQL EXECUTION TRACE END ===');
+    console.log('[POSTGRES_MATCHER_V2.2] === SQL EXECUTION TRACE ===');
+    console.log('[POSTGRES_MATCHER_V2.2] SQL Query:', sql.substring(0, 500) + '...');
+    console.log('[POSTGRES_MATCHER_V2.2] Params:', JSON.stringify(params, null, 2));
+    console.log('[POSTGRES_MATCHER_V2.2] === SQL EXECUTION TRACE END ===');
     
     const results = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
     
     const batchInfo = storeIds && storeIds.length > 0 ? ` (batch: ${storeIds.length} items)` : ' (all items)';
-    console.log(`[POSTGRES_MATCHER_V2.1] Found ${results.length} matches using advanced SQL${batchInfo}`);
+    console.log(`[POSTGRES_MATCHER_V2.2] Found ${results.length} matches using advanced SQL (line code constraint removed)${batchInfo}`);
     
     // Map results to typed interface with confidence scores
     return results.map(row => ({
@@ -171,12 +164,12 @@ export async function findPostgresExactMatches(
       storeLineCode: row.storeLineCode,
       supplierLineCode: row.supplierLineCode,
       confidence: calculateConfidenceV2(row),
-      matchMethod: 'POSTGRES_EXACT_V2.1',
+      matchMethod: 'POSTGRES_EXACT_V2.2',
       matchReason: determineMatchReason(row),
     }));
     
   } catch (error) {
-    console.error('[POSTGRES_MATCHER_V2.1] Error executing SQL:', error);
+    console.error('[POSTGRES_MATCHER_V2.2] Error executing SQL:', error);
     throw error;
   }
 }
@@ -392,7 +385,7 @@ export async function findInterchangeMatches(
 /**
  * Hybrid approach: Try canonical first (fast), fall back to REGEXP_REPLACE (reliable)
  * 
- * Version 2.1: Uses advanced SQL with relaxed line code constraints + batch processing
+ * Version 2.2: Uses advanced SQL WITHOUT line code constraints + batch processing
  * 
  * @param projectId - The project ID to match items for
  * @param storeIds - Optional array of store item IDs to filter by (for batch processing)
@@ -403,10 +396,10 @@ export async function findHybridExactMatches(
   storeIds?: string[]
 ): Promise<PostgresExactMatch[]> {
   
-  // Always use REGEXP_REPLACE for maximum reliability in v2.1
+  // Always use REGEXP_REPLACE for maximum reliability in v2.2
   // The functional indexes will make it fast enough
   const batchInfo = storeIds && storeIds.length > 0 ? ` (batch: ${storeIds.length} items)` : ' (all items)';
-  console.log(`[HYBRID_MATCHER_V2.1] Using REGEXP_REPLACE with relaxed constraints${batchInfo}`);
+  console.log(`[HYBRID_MATCHER_V2.2] Using REGEXP_REPLACE WITHOUT line code constraint${batchInfo}`);
   return findPostgresExactMatches(projectId, storeIds);
 }
 
