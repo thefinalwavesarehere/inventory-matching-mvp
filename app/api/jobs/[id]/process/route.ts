@@ -262,15 +262,16 @@ export async function POST(
         console.log(`[JOB-PROCESS-V3.0] Exact matching complete in ${processingTime}ms, found ${newMatches} matches`);
         
         // Mark job as complete immediately
+        const totalItems = job.totalItems || 0;
         await prisma.matchingJob.update({
           where: { id: jobId },
           data: {
             status: 'completed',
             completedAt: new Date(),
-            processedItems: job.totalItems,
+            processedItems: totalItems,
             progressPercentage: 100,
             matchesFound: newMatches,
-            matchRate: job.totalItems > 0 ? (newMatches / job.totalItems) * 100 : 0,
+            matchRate: totalItems > 0 ? (newMatches / totalItems) * 100 : 0,
           },
         });
         
@@ -282,11 +283,11 @@ export async function POST(
           job: {
             id: job.id,
             status: 'completed',
-            processedItems: job.totalItems,
-            totalItems: job.totalItems,
+            processedItems: totalItems,
+            totalItems: totalItems,
             progressPercentage: 100,
             matchesFound: newMatches,
-            matchRate: job.totalItems > 0 ? (newMatches / job.totalItems) * 100 : 0,
+            matchRate: totalItems > 0 ? (newMatches / totalItems) * 100 : 0,
           },
         });
       } else {
