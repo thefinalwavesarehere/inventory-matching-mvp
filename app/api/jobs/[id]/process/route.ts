@@ -253,10 +253,17 @@ export async function POST(
     const TIMEOUT_MS = 240000; // 4 minutes
     
     if (jobType === 'exact') {
-      console.log(`[JOB-PROCESS] Calling processExactMatching with ${chunk.length} store items and ${supplierItems.length} supplier items`);
-      newMatches = await processExactMatching(chunk, supplierItems, job.projectId);
-      const processingTime = Date.now() - processingStartTime;
-      console.log(`[JOB-PROCESS] Exact matching complete in ${processingTime}ms, found ${newMatches} matches`);
+      // V3.0: Single-pass processing (no chunking)
+      // Check if this is the first chunk - only run once
+      if (job.processedItems === 0) {
+        console.log(`[JOB-PROCESS-V3.0] Running single-pass exact matching for entire dataset`);
+        newMatches = await processExactMatching(chunk, supplierItems, job.projectId);
+        const processingTime = Date.now() - processingStartTime;
+        console.log(`[JOB-PROCESS-V3.0] Exact matching complete in ${processingTime}ms, found ${newMatches} matches`);
+      } else {
+        console.log(`[JOB-PROCESS-V3.0] Skipping - exact matching already completed in first pass`);
+        newMatches = 0;
+      }
     } else if (jobType === 'fuzzy') {
       console.log(`[JOB-PROCESS] Calling processFuzzyChunk with ${chunk.length} store items and ${supplierItems.length} supplier items`);
       newMatches = await processFuzzyChunk(chunk, supplierItems, job.projectId);
