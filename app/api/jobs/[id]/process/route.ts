@@ -11,7 +11,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/lib/auth';
 import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
-// processExactMatching is defined locally in this file
+import { processExactMatching } from './processExactMatching-v2';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -374,108 +374,8 @@ export async function POST(
   }
 }
 
-/**
- * Process a chunk of items using exact matching
- * Uses V3.0 Postgres Native Matcher (Part-First, Brand-Second strategy)
- */
-async function processExactMatching(
-  storeItems: any[],
-  supplierItems: any[],
-  projectId: string
-): Promise<number> {
-  // RESTORED: Original working matcher from f2d02d5
-  const { stage1DeterministicMatching, MatchingIndexes } = await import('@/app/lib/matching-engine');
-  
-  // Get interchange mappings and rules
-  const interchangeMappings = await prisma.interchange.findMany();
-  const rules = await prisma.matchingRule.findMany({
-    where: { active: true },
-  });
-  
-  // Convert to engine format
-  const engineStoreItems = storeItems.map((item) => ({
-    id: item.id,
-    partNumber: item.partNumber,
-    partNumberNorm: item.partNumberNorm,
-    canonicalPartNumber: (item as any).canonicalPartNumber || null,
-    lineCode: item.lineCode,
-    mfrPartNumber: item.mfrPartNumber,
-    description: item.description,
-    currentCost: item.currentCost ? Number(item.currentCost) : null,
-  }));
-  
-  const engineSupplierItems = supplierItems.map((item) => ({
-    id: item.id,
-    partNumber: item.partNumber,
-    partNumberNorm: item.partNumberNorm,
-    canonicalPartNumber: (item as any).canonicalPartNumber || null,
-    lineCode: item.lineCode,
-    mfrPartNumber: item.mfrPartNumber,
-    description: item.description,
-    currentCost: item.currentCost ? Number(item.currentCost) : null,
-  }));
-  
-  const engineInterchanges = interchangeMappings.map((m) => ({
-    competitorFullSku: m.vendorPartNumber || m.theirsPartNumber,
-    arnoldFullSku: m.merrillPartNumber || m.oursPartNumber,
-    confidence: m.confidence,
-  }));
-  
-  const engineRules = rules.map((r) => ({
-    id: r.id,
-    ruleType: r.ruleType,
-    pattern: r.pattern,
-    transformation: r.transformation,
-    scope: r.scope,
-    scopeId: r.scopeId,
-    confidence: r.confidence,
-  }));
-  
-  console.log(`[EXACT-MATCH] Processing ${storeItems.length} store items`);
-  console.log(`[EXACT-MATCH] Supplier catalog: ${supplierItems.length} items`);
-  console.log(`[EXACT-MATCH] Interchange mappings: ${interchangeMappings.length}`);
-  console.log(`[EXACT-MATCH] Active rules: ${rules.length}`);
-  
-  // Build indexes
-  const indexes = new MatchingIndexes(engineSupplierItems, engineInterchanges, engineRules);
-  
-  // Run stage 1 matching
-  const result = stage1DeterministicMatching(engineStoreItems, indexes, {
-    costTolerancePercent: 10,
-  });
-  
-  console.log(`[EXACT-MATCH] Found ${result.matches.length} matches (${result.metrics.matchRate.toFixed(1)}% match rate)`);
-  
-  // Save matches to database
-  let savedCount = 0;
-  for (let i = 0; i < result.matches.length; i += 100) {
-    const batch = result.matches.slice(i, i + 100);
-    
-    await prisma.matchCandidate.createMany({
-      data: batch.map((match) => ({
-        projectId,
-        storeItemId: match.storeItemId,
-        targetType: 'SUPPLIER' as const,
-        targetId: match.supplierItemId,
-        method: match.method as any,
-        confidence: match.confidence,
-        matchStage: match.matchStage,
-        status: 'PENDING' as const,
-        features: match.features || {},
-        costDifference: match.costDifference,
-        costSimilarity: match.costSimilarity,
-        transformationSignature: match.transformationSignature,
-        rulesApplied: match.rulesApplied,
-      })),
-      skipDuplicates: true,
-    });
-    
-    savedCount += batch.length;
-  }
-  
-  console.log(`[EXACT-MATCH] Saved ${savedCount} matches to database`);
-  return savedCount;
-}
+// processExactMatching now imported from processExactMatching-v2.ts
+// This uses the fixed postgres-exact-matcher-v2.ts with line code constraint removed
 
 /**
  * Apply cost-based validation (Rule 5: UOM Mismatch Detection)
