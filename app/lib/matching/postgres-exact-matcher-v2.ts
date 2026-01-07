@@ -36,7 +36,7 @@ export interface PostgresExactMatch {
 /**
  * Configuration for description similarity matching
  */
-const DESCRIPTION_SIMILARITY_THRESHOLD = 0.30; // 30% minimum similarity (lowered from 60%)
+const DESCRIPTION_SIMILARITY_THRESHOLD = 0.15; // 15% minimum similarity (lowered from 30%)
 const USE_DESCRIPTION_FILTER = true; // Set to false to disable description filtering
 
 /**
@@ -210,36 +210,23 @@ export async function findPostgresExactMatches(
 function calculateConfidenceV3(match: any): number {
   const descSimilarity = parseFloat(match.descriptionSimilarity) || 0;
   const partNumbersIdentical = match.storePartNumber === match.supplierPartNumber;
-  const isComplex = match.isComplexPart;
   
-  // Perfect match: identical part numbers AND excellent description similarity
+  // Perfect match: identical part numbers AND excellent description
   if (partNumbersIdentical && descSimilarity >= 0.90) {
     return 0.99;
   }
   
-  // Excellent description match (≥90% similarity)
-  if (descSimilarity >= 0.90) {
-    return 0.98;
-  }
+  // Tiered confidence based on description similarity
+  if (descSimilarity >= 0.90) return 0.98; // Excellent
+  if (descSimilarity >= 0.75) return 0.95; // Very good
+  if (descSimilarity >= 0.60) return 0.92; // Good
+  if (descSimilarity >= 0.50) return 0.87; // Fair
+  if (descSimilarity >= 0.40) return 0.83; // Borderline
+  if (descSimilarity >= 0.30) return 0.80; // Questionable
+  if (descSimilarity >= 0.20) return 0.75; // Very questionable
   
-  // Very good description match (≥75% similarity)
-  if (descSimilarity >= 0.75) {
-    return 0.95;
-  }
-  
-  // Good description match (≥60% similarity) - meets threshold
-  if (descSimilarity >= 0.60) {
-    return 0.92;
-  }
-  
-  // Fair description match (≥50% similarity) - borderline
-  if (descSimilarity >= 0.50) {
-    return 0.87;
-  }
-  
-  // Questionable match - low description similarity
-  // (These shouldn't appear if USE_DESCRIPTION_FILTER is true with 0.60 threshold)
-  return 0.80;
+  // 15-19% similarity - lowest confidence but still above threshold
+  return 0.70;
 }
 
 /**
