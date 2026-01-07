@@ -260,6 +260,35 @@ export async function POST(
         newMatches = await processExactMatching(chunk, supplierItems, job.projectId);
         const processingTime = Date.now() - processingStartTime;
         console.log(`[JOB-PROCESS-V3.0] Exact matching complete in ${processingTime}ms, found ${newMatches} matches`);
+        
+        // Mark job as complete immediately
+        await prisma.matchingJob.update({
+          where: { id: jobId },
+          data: {
+            status: 'completed',
+            completedAt: new Date(),
+            processedItems: job.totalItems,
+            progressPercentage: 100,
+            matchesFound: newMatches,
+            matchRate: job.totalItems > 0 ? (newMatches / job.totalItems) * 100 : 0,
+          },
+        });
+        
+        console.log(`[JOB-PROCESS-V3.0] Job marked as complete`);
+        
+        return NextResponse.json({
+          success: true,
+          complete: true,
+          job: {
+            id: job.id,
+            status: 'completed',
+            processedItems: job.totalItems,
+            totalItems: job.totalItems,
+            progressPercentage: 100,
+            matchesFound: newMatches,
+            matchRate: job.totalItems > 0 ? (newMatches / job.totalItems) * 100 : 0,
+          },
+        });
       } else {
         console.log(`[JOB-PROCESS-V3.0] Skipping - exact matching already completed in first pass`);
         newMatches = 0;
