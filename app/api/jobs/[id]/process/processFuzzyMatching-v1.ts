@@ -1,8 +1,8 @@
 /**
- * Process Fuzzy Matching V1.0
+ * Process Fuzzy Matching V1.1
  * 
- * Uses PostgreSQL Native Fuzzy Matcher with description validation
- * Single-pass processing (no batching) with deduplication
+ * Uses PostgreSQL Native Fuzzy Matcher with intelligent batching
+ * Processes 3000 items per iteration to handle large datasets
  */
 
 import { prisma } from '@/app/lib/db/prisma';
@@ -10,7 +10,7 @@ import { findPostgresFuzzyMatches } from '@/app/lib/matching/postgres-fuzzy-matc
 import { MatchMethod, MatchStatus } from '@prisma/client';
 
 /**
- * Process fuzzy matching for entire project (V1.0 handles all items at once)
+ * Process fuzzy matching with iteration loop (handles any dataset size)
  * Only processes items that don't already have matches from Stage 1 (exact matching)
  * 
  * @param projectId - Project ID
@@ -21,46 +21,72 @@ export async function processFuzzyMatching(
   supplierItems: any[], // NOT USED - kept for API compatibility
   projectId: string
 ): Promise<number> {
-  console.log(`[FUZZY-MATCH-V1.0] Starting single-pass fuzzy matching for project ${projectId}`);
+  console.log(`[FUZZY-MATCH-V1.1] Starting iterative fuzzy matching for project ${projectId}`);
   
-  // Get total unmatched store item count
-  const totalUnmatchedItems = await prisma.storeItem.count({
-    where: {
-      projectId,
-      NOT: {
-        matchCandidates: {
-          some: {}
+  let totalMatches = 0;
+  let iteration = 0;
+  const MAX_ITERATIONS = 10; // Safety limit (3000 items × 10 = 30,000 items max)
+  
+  while (iteration < MAX_ITERATIONS) {
+    iteration++;
+    
+    console.log(`[FUZZY-MATCH-V1.1] === Iteration ${iteration} ===`);
+    
+    // Check remaining unmatched items
+    const totalUnmatched = await prisma.storeItem.count({
+      where: {
+        projectId,
+        NOT: {
+          matchCandidates: {
+            some: {
+              matchStage: { in: [1, 2] }
+            }
+          }
         }
       }
+    });
+    
+    console.log(`[FUZZY-MATCH-V1.1] Remaining unmatched items: ${totalUnmatched}`);
+    
+    if (totalUnmatched === 0) {
+      console.log('[FUZZY-MATCH-V1.1] No more items to process');
+      break;
     }
-  });
-  
-  console.log(`[FUZZY-MATCH-V1.0] Total unmatched items from Stage 1: ${totalUnmatchedItems}`);
-  
-  if (totalUnmatchedItems === 0) {
-    console.log(`[FUZZY-MATCH-V1.0] No unmatched items - skipping fuzzy matching`);
-    return 0;
+    
+    // Run fuzzy matching (processes next 3000 items)
+    console.log(`[FUZZY-MATCH-V1.1] Processing next batch (up to 3000 items)...`);
+    const fuzzyMatches = await findPostgresFuzzyMatches(projectId);
+    
+    if (fuzzyMatches.length === 0) {
+      console.log('[FUZZY-MATCH-V1.1] No matches found in this batch');
+      break;
+    }
+    
+    console.log(`[FUZZY-MATCH-V1.1] Found ${fuzzyMatches.length} fuzzy matches`);
+    
+    // Save matches
+    const savedCount = await saveMatches(fuzzyMatches, projectId);
+    totalMatches += savedCount;
+    
+    console.log(`[FUZZY-MATCH-V1.1] Saved ${savedCount} matches`);
+    console.log(`[FUZZY-MATCH-V1.1] Progress: ${totalMatches} total matches, ${totalUnmatched - savedCount} items remaining`);
+    
+    // If we processed fewer than 3000 items, we're done
+    if (fuzzyMatches.length < 3000) {
+      console.log('[FUZZY-MATCH-V1.1] Last batch processed');
+      break;
+    }
   }
   
-  // Run fuzzy matching (only on unmatched items)
-  console.log(`[FUZZY-MATCH-V1.0] Running PostgreSQL trigram fuzzy matching...`);
-  const fuzzyMatches = await findPostgresFuzzyMatches(projectId);
-  console.log(`[FUZZY-MATCH-V1.0] Found ${fuzzyMatches.length} fuzzy matches (deduplicated, one per store item)`);
-  
-  // Save fuzzy matches
-  let savedCount = 0;
-  if (fuzzyMatches.length > 0) {
-    savedCount = await saveMatches(fuzzyMatches, projectId);
-    console.log(`[FUZZY-MATCH-V1.0] Saved ${savedCount} fuzzy matches`);
+  if (iteration >= MAX_ITERATIONS) {
+    console.warn(`[FUZZY-MATCH-V1.1] WARNING: Reached maximum iterations (${MAX_ITERATIONS})`);
   }
   
-  const matchRate = totalUnmatchedItems > 0 ? (savedCount / totalUnmatchedItems) * 100 : 0;
+  console.log(`[FUZZY-MATCH-V1.1] ✅ COMPLETE`);
+  console.log(`[FUZZY-MATCH-V1.1] Total iterations: ${iteration}`);
+  console.log(`[FUZZY-MATCH-V1.1] Total fuzzy matches: ${totalMatches}`);
   
-  console.log(`[FUZZY-MATCH-V1.0] ✅ COMPLETE`);
-  console.log(`[FUZZY-MATCH-V1.0] Total fuzzy matches: ${savedCount}`);
-  console.log(`[FUZZY-MATCH-V1.0] Fuzzy match rate: ${matchRate.toFixed(1)}% of unmatched items`);
-  
-  return savedCount;
+  return totalMatches;
 }
 
 /**
@@ -105,7 +131,7 @@ async function saveMatches(
       
       savedCount += batch.length;
     } catch (error) {
-      console.error(`[FUZZY-MATCH-V1.0] ERROR: Failed to save fuzzy batch`);
+      console.error(`[FUZZY-MATCH-V1.1] ERROR: Failed to save fuzzy batch`);
       console.error(error);
       throw error;
     }

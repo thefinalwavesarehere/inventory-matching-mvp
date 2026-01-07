@@ -32,7 +32,7 @@ export interface PostgresFuzzyMatch {
 /**
  * Configuration
  */
-const PART_NUMBER_SIMILARITY_THRESHOLD = 0.70; // 70% minimum part number similarity
+const PART_NUMBER_SIMILARITY_THRESHOLD = 0.60; // 60% minimum part number similarity (lowered for better coverage)
 const DESCRIPTION_SIMILARITY_THRESHOLD = 0.15; // 15% minimum description validation
 const MIN_PART_NUMBER_LENGTH = 3; // Skip very short part numbers (too many false positives)
 
@@ -55,17 +55,19 @@ export async function findPostgresFuzzyMatches(
   const sql = `
     WITH unmatched_store_items AS (
       -- Only process store items not already matched in Stage 1
-      SELECT s.*
+      -- LIMIT to prevent timeout on huge datasets
+      SELECT s."id", s."partNumber", s."lineCode", s."description"
       FROM "store_items" s
       WHERE s."projectId" = $1
         AND NOT EXISTS (
           SELECT 1 FROM "match_candidates" mc
           WHERE mc."storeItemId" = s."id"
             AND mc."projectId" = $1
-            AND mc."matchStage" = 1  -- Stage 1 = Exact matching
+            AND mc."matchStage" IN (1, 2)  -- Skip items matched in Stage 1 or 2
         )
-        -- Filter out very short part numbers (too many false positives)
         AND LENGTH(s."partNumber") >= ${MIN_PART_NUMBER_LENGTH}
+      ORDER BY s."id"
+      LIMIT 3000  -- Process 3000 items per run (prevents timeout)
     ),
     ranked_fuzzy_matches AS (
       SELECT 

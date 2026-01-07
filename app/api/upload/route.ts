@@ -204,6 +204,12 @@ export async function POST(req: NextRequest) {
       importedCount = items.length;
     }
 
+    // Auto-setup matching system (runs once, safe to call every time)
+    const { ensureMatchingSetup } = await import('@/app/lib/matching/auto-setup');
+    console.log('[UPLOAD] Running auto-setup for matching system...');
+    await ensureMatchingSetup();
+    console.log('[UPLOAD] Matching system ready');
+
     return NextResponse.json({
       success: true,
       message: `Imported ${importedCount} rows`,
