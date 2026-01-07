@@ -295,13 +295,47 @@ export async function POST(
         newMatches = 0;
       }
     } else if (jobType === 'fuzzy') {
-      console.log(`[JOB-PROCESS] Calling processFuzzyChunk with ${chunk.length} store items and ${supplierItems.length} supplier items`);
-      newMatches = await processFuzzyChunk(chunk, supplierItems, job.projectId);
-      const processingTime = Date.now() - processingStartTime;
-      console.log(`[JOB-PROCESS] Fuzzy chunk complete in ${processingTime}ms, found ${newMatches} matches`);
-      
-      if (processingTime > TIMEOUT_MS) {
-        console.warn(`[JOB-PROCESS] WARNING: Processing time (${processingTime}ms) exceeded timeout threshold (${TIMEOUT_MS}ms)`);
+      // V1.0: Single-pass processing (no chunking)
+      // Check if this is the first chunk - only run once
+      if (job.processedItems === 0) {
+        console.log(`[JOB-PROCESS-V1.0] Running single-pass fuzzy matching for unmatched items`);
+        const { processFuzzyMatching } = await import('./processFuzzyMatching-v1');
+        newMatches = await processFuzzyMatching(chunk, supplierItems, job.projectId);
+        const processingTime = Date.now() - processingStartTime;
+        console.log(`[JOB-PROCESS-V1.0] Fuzzy matching complete in ${processingTime}ms, found ${newMatches} matches`);
+        
+        // Mark job as complete immediately
+        const totalItems = job.totalItems || 0;
+        await prisma.matchingJob.update({
+          where: { id: jobId },
+          data: {
+            status: 'completed',
+            completedAt: new Date(),
+            processedItems: totalItems,
+            progressPercentage: 100,
+            matchesFound: newMatches,
+            matchRate: totalItems > 0 ? (newMatches / totalItems) * 100 : 0,
+          },
+        });
+        
+        console.log(`[JOB-PROCESS-V1.0] Job marked as complete`);
+        
+        return NextResponse.json({
+          success: true,
+          complete: true,
+          job: {
+            id: job.id,
+            status: 'completed',
+            processedItems: totalItems,
+            totalItems: totalItems,
+            progressPercentage: 100,
+            matchesFound: newMatches,
+            matchRate: totalItems > 0 ? (newMatches / totalItems) * 100 : 0,
+          },
+        });
+      } else {
+        console.log(`[JOB-PROCESS-V1.0] Skipping - fuzzy matching already completed in first pass`);
+        newMatches = 0;
       }
     } else if (jobType === 'ai') {
       console.log(`[JOB-PROCESS] Calling processAIMatching...`);
