@@ -36,7 +36,7 @@ export interface PostgresExactMatch {
 /**
  * Configuration for description similarity matching
  */
-const DESCRIPTION_SIMILARITY_THRESHOLD = 0.60; // 60% minimum similarity
+const DESCRIPTION_SIMILARITY_THRESHOLD = 0.30; // 30% minimum similarity (lowered from 60%)
 const USE_DESCRIPTION_FILTER = true; // Set to false to disable description filtering
 
 /**
