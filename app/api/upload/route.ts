@@ -205,10 +205,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Auto-setup matching system (runs once, safe to call every time)
-    const { ensureMatchingSetup } = await import('@/app/lib/matching/auto-setup');
+    const { ensureMatchingSetup, getSetupStatus } = await import('@/app/lib/matching/auto-setup');
     console.log('[UPLOAD] Running auto-setup for matching system...');
     await ensureMatchingSetup();
-    console.log('[UPLOAD] Matching system ready');
+    
+    // Get status to inform user
+    const setupStatus = await getSetupStatus();
+    console.log('[UPLOAD] Setup status:', setupStatus.message);
 
     return NextResponse.json({
       success: true,
@@ -216,6 +219,13 @@ export async function POST(req: NextRequest) {
       projectId: project.id,
       projectName: project.name,
       rowCount: importedCount,
+      setupStatus: {
+        isReady: setupStatus.isReady,
+        isComplete: setupStatus.isComplete,
+        buildingIndexes: setupStatus.buildingIndexes,
+        message: setupStatus.message,
+        estimatedWaitMins: setupStatus.estimatedWaitMins,
+      },
     });
   } catch (error) {
     console.error('Error uploading file:', error);
