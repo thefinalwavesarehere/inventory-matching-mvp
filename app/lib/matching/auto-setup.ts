@@ -98,10 +98,11 @@ const INDEXES: IndexDefinition[] = [
   },
   
   // CRITICAL: Required for fuzzy matching (Stage 2)
+  // Synchronous creation (no CONCURRENTLY) to ensure indexes exist before matching
   {
     name: 'idx_store_part_trgm',
     displayName: 'Store Part Numbers (Fuzzy Matching)',
-    sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_store_part_trgm 
+    sql: `CREATE INDEX IF NOT EXISTS idx_store_part_trgm 
           ON "store_items" USING gin (UPPER("partNumber") gin_trgm_ops);`,
     critical: true,
     estimatedTimeMins: 1,
@@ -109,7 +110,7 @@ const INDEXES: IndexDefinition[] = [
   {
     name: 'idx_supplier_part_trgm',
     displayName: 'Supplier Part Numbers (Fuzzy Matching)',
-    sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_supplier_part_trgm 
+    sql: `CREATE INDEX IF NOT EXISTS idx_supplier_part_trgm 
           ON "supplier_items" USING gin (UPPER("partNumber") gin_trgm_ops);`,
     critical: true,
     estimatedTimeMins: 3,

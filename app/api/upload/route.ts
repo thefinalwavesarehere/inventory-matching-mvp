@@ -204,14 +204,21 @@ export async function POST(req: NextRequest) {
       importedCount = items.length;
     }
 
-    // Auto-setup matching system (runs once, safe to call every time)
+    // Auto-setup matching system (creates indexes on first upload)
     const { ensureMatchingSetup, getSetupStatus } = await import('@/app/lib/matching/auto-setup');
-    console.log('[UPLOAD] Running auto-setup for matching system...');
-    await ensureMatchingSetup();
+    console.log('[UPLOAD] Running matching system setup...');
+    const setupStatus = await ensureMatchingSetup();
     
-    // Get status to inform user
-    const setupStatus = await getSetupStatus();
-    console.log('[UPLOAD] Setup status:', setupStatus.message);
+    if (setupStatus.isReady) {
+      console.log('[UPLOAD] ✅ Matching system ready');
+      console.log(`[UPLOAD] Indexes: ${setupStatus.readyIndexes}/${setupStatus.totalIndexes} complete`);
+    } else if (setupStatus.buildingIndexes > 0) {
+      console.log('[UPLOAD] ⏳ Indexes building in background');
+      console.log(`[UPLOAD] Estimated completion: ~${setupStatus.estimatedWaitMins} minutes`);
+    } else {
+      console.warn('[UPLOAD] ⚠️  Setup incomplete:', setupStatus.message);
+      console.warn('[UPLOAD] Matching may not work optimally');
+    }
 
     return NextResponse.json({
       success: true,

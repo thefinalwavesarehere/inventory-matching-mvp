@@ -49,6 +49,37 @@ export async function findPostgresFuzzyMatches(
 ): Promise<PostgresFuzzyMatch[]> {
   
   console.log('[POSTGRES_FUZZY_V1.0] === STARTING FUZZY MATCHING ===');
+  
+  // PRE-FLIGHT CHECK: Verify required indexes exist
+  try {
+    const indexCheck = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*) as count
+      FROM pg_indexes
+      WHERE indexname IN ('idx_store_part_trgm', 'idx_supplier_part_trgm');
+    `;
+    
+    const indexCount = Number(indexCheck[0]?.count || 0);
+    
+    if (indexCount < 2) {
+      console.error('[POSTGRES_FUZZY_V1.0] ❌ CRITICAL: Part number trigram indexes missing!');
+      console.error('[POSTGRES_FUZZY_V1.0] Found:', indexCount, '/ 2 required indexes');
+      console.error('[POSTGRES_FUZZY_V1.0] Fuzzy matching will timeout without these indexes');
+      console.error('[POSTGRES_FUZZY_V1.0] Run setup: ensureMatchingSetup() or create indexes manually');
+      
+      throw new Error(
+        `Fuzzy matching requires trigram indexes. Found ${indexCount}/2. Run database setup first.`
+      );
+    }
+    
+    console.log('[POSTGRES_FUZZY_V1.0] ✅ Required indexes verified (2/2 present)');
+  } catch (error: any) {
+    if (error.message?.includes('Fuzzy matching requires')) {
+      throw error; // Re-throw our own error
+    }
+    console.warn('[POSTGRES_FUZZY_V1.0] ⚠️  Could not verify indexes:', error.message);
+    console.warn('[POSTGRES_FUZZY_V1.0] Proceeding anyway - may timeout if indexes missing');
+  }
+  
   console.log('[POSTGRES_FUZZY_V1.0] Part number threshold:', PART_NUMBER_SIMILARITY_THRESHOLD);
   console.log('[POSTGRES_FUZZY_V1.0] Description threshold:', DESCRIPTION_SIMILARITY_THRESHOLD);
   
