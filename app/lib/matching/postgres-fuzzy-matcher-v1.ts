@@ -85,8 +85,8 @@ export async function findPostgresFuzzyMatches(
           matchStage: { in: [1, 2] }
         }
       },
-      partNumber: {
-        not: null,
+      NOT: {
+        partNumber: null
       }
     },
     select: {
