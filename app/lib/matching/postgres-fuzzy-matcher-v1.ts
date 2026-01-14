@@ -113,11 +113,11 @@ export async function findPostgresFuzzyMatches(
   
   const allMatches: PostgresFuzzyMatch[] = [];
   
-  for (let i = 0; i < validItems.length; i += 500) {
-    const batch = validItems.slice(i, i + 500);
+  for (let i = 0; i < validItems.length; i += 50) {
+    const batch = validItems.slice(i, i + 50);
     const batchIds = batch.map(item => item.id);
     
-    console.log(`[POSTGRES_FUZZY_V1.0] Processing micro-batch ${Math.floor(i/500) + 1}/${Math.ceil(validItems.length/500)} (${batch.length} items)...`);
+    console.log(`[POSTGRES_FUZZY_V1.0] Processing micro-batch ${Math.floor(i/50) + 1}/${Math.ceil(validItems.length/50)} (${batch.length} items)...`);
     
     const sql = `
       WITH target_items AS (
@@ -196,10 +196,10 @@ export async function findPostgresFuzzyMatches(
       });
       
       allMatches.push(...mappedMatches);
-      console.log(`[POSTGRES_FUZZY_V1.0] Micro-batch ${Math.floor(i/500) + 1}: Found ${mappedMatches.length} matches`);
+      console.log(`[POSTGRES_FUZZY_V1.0] Micro-batch ${Math.floor(i/50) + 1}: Found ${mappedMatches.length} matches`);
       
     } catch (error: any) {
-      console.error(`[POSTGRES_FUZZY_V1.0] Error in micro-batch ${Math.floor(i/500) + 1}:`, error.message);
+      console.error(`[POSTGRES_FUZZY_V1.0] Error in micro-batch ${Math.floor(i/50) + 1}:`, error.message);
       // Continue with next batch instead of failing entirely
     }
   }
