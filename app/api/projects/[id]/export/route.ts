@@ -168,14 +168,14 @@ export async function GET(
                     partNumber: true,
                     lineCode: true,
                     description: true,
-                    currentCost: true,
+                    cost: true,
                   },
                 });
                 if (inventoryItem) {
                   supplierPartNumber = inventoryItem.partNumber || '';
                   supplierLineCode = inventoryItem.lineCode || '';
                   supplierDescription = inventoryItem.description || '';
-                  supplierCost = inventoryItem.currentCost ? inventoryItem.currentCost.toString() : '';
+                  supplierCost = inventoryItem.cost ? inventoryItem.cost.toString() : '';
                 }
               }
 
