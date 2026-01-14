@@ -36,12 +36,10 @@ export async function processFuzzyMatching(
     const totalUnmatched = await prisma.storeItem.count({
       where: {
         projectId,
-        NOT: {
-          matchCandidates: {
-            some: {
-              projectId: projectId, // CRITICAL: Add projectId to subquery
-              matchStage: { in: [1, 2] }
-            }
+        matchCandidates: {
+          none: {
+            projectId: projectId,
+            matchStage: { in: [1, 2] }
           }
         }
       }
@@ -59,8 +57,9 @@ export async function processFuzzyMatching(
     const fuzzyMatches = await findPostgresFuzzyMatches(projectId);
     
     if (fuzzyMatches.length === 0) {
-      console.log('[FUZZY-MATCH-V1.1] No matches found in this batch');
-      break;
+      console.log('[FUZZY-MATCH-V1.1] No matches found in this batch - continuing to next batch');
+      // Don't break - continue to next batch of unmatched items
+      continue;
     }
     
     console.log(`[FUZZY-MATCH-V1.1] Found ${fuzzyMatches.length} fuzzy matches`);
@@ -72,11 +71,7 @@ export async function processFuzzyMatching(
     console.log(`[FUZZY-MATCH-V1.1] Saved ${savedCount} matches`);
     console.log(`[FUZZY-MATCH-V1.1] Progress: ${totalMatches} total matches, ${totalUnmatched - savedCount} items remaining`);
     
-    // If we processed fewer than 3000 items, we're done
-    if (fuzzyMatches.length < 3000) {
-      console.log('[FUZZY-MATCH-V1.1] Last batch processed');
-      break;
-    }
+    // Continue to next iteration - will check totalUnmatched at top of loop
   }
   
   if (iteration >= MAX_ITERATIONS) {
