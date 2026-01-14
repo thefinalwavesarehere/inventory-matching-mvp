@@ -82,6 +82,7 @@ export async function findPostgresFuzzyMatches(
       projectId,
       matchCandidates: {
         none: {
+          projectId: projectId, // CRITICAL: Add projectId to subquery
           matchStage: { in: [1, 2] }
         }
       }
@@ -146,12 +147,12 @@ export async function findPostgresFuzzyMatches(
             ORDER BY SIMILARITY(UPPER(t."partNumber"), UPPER(sup."partNumber")) DESC
           ) as rank
         FROM target_items t
-        CROSS JOIN "supplier_items" sup
-        WHERE 
-          sup."projectId" = $1
+        JOIN "supplier_items" sup
+          ON sup."projectId" = $1
           AND LENGTH(sup."partNumber") >= ${MIN_PART_NUMBER_LENGTH}
           AND SIMILARITY(UPPER(t."partNumber"), UPPER(sup."partNumber")) >= ${PART_NUMBER_SIMILARITY_THRESHOLD}
-          AND SIMILARITY(LOWER(COALESCE(t."description", '')), LOWER(COALESCE(sup."description", ''))) >= ${DESCRIPTION_SIMILARITY_THRESHOLD}
+        WHERE 
+          SIMILARITY(LOWER(COALESCE(t."description", '')), LOWER(COALESCE(sup."description", ''))) >= ${DESCRIPTION_SIMILARITY_THRESHOLD}
       )
       SELECT 
         store_id as "storeItemId",

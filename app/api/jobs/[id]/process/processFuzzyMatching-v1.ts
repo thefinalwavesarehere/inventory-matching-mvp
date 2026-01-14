@@ -39,6 +39,7 @@ export async function processFuzzyMatching(
         NOT: {
           matchCandidates: {
             some: {
+              projectId: projectId, // CRITICAL: Add projectId to subquery
               matchStage: { in: [1, 2] }
             }
           }
@@ -92,6 +93,7 @@ export async function processFuzzyMatching(
       projectId,
       matchCandidates: {
         none: {
+          projectId: projectId, // CRITICAL: Add projectId to subquery
           matchStage: { in: [1, 2] }
         }
       }
@@ -100,8 +102,26 @@ export async function processFuzzyMatching(
   
   console.log(`[FUZZY-AUTO-QUEUE] Remaining unmatched items: ${remainingUnmatched}`);
   
-  if (remainingUnmatched > 0) {
-    console.log('[FUZZY-AUTO-QUEUE] Creating next fuzzy matching job...');
+  // Only create next job if we actually found matches AND items remain
+  if (totalMatches > 0 && remainingUnmatched > 0) {
+    console.log('[FUZZY-AUTO-QUEUE] Found matches - creating next job...');
+    
+    // Check for existing fuzzy jobs first (prevent duplicates)
+    const existingJob = await prisma.matchingJob.findFirst({
+      where: {
+        projectId,
+        config: {
+          path: ['jobType'],
+          equals: 'fuzzy'
+        },
+        status: { in: ['pending', 'processing'] }
+      }
+    });
+    
+    if (existingJob) {
+      console.log('[FUZZY-AUTO-QUEUE] Job already exists - skipping');
+      return totalMatches;
+    }
     
     const nextJob = await prisma.matchingJob.create({
       data: {
@@ -119,6 +139,8 @@ export async function processFuzzyMatching(
     });
     
     console.log(`[FUZZY-AUTO-QUEUE] ✅ Created job ${nextJob.id} for ${remainingUnmatched} items`);
+  } else if (totalMatches === 0 && remainingUnmatched > 0) {
+    console.log('[FUZZY-AUTO-QUEUE] ⚠️  No matches found - stopping to prevent infinite loop');
   } else {
     console.log('[FUZZY-AUTO-QUEUE] ✅ All items processed - no more fuzzy matching needed');
   }
