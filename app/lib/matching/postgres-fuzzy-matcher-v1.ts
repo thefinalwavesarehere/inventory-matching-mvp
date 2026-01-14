@@ -8,7 +8,7 @@
  * - Fetch 500 unmatched items via Prisma (fast, uses indexes)
  * - Process in micro-batches of 50 items (prevents timeout)
  * - Match on fuzzy part number similarity (≥60%)
- * - Validate with description similarity (≥15%)
+ * - Validate with description similarity (≥10%)
  * - Return best match per store item (deduplication)
  */
 
@@ -54,7 +54,7 @@ export async function findPostgresFuzzyMatches(
     const indexCheck = await prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(*) as count
       FROM pg_indexes
-      WHERE indexname IN ('idx_store_part_trgm', 'idx_supplier_part_trgm');
+      WHERE indexname IN ('idx_store_part_trgm', 'idx_supplier_part_trgm', 'idx_store_description_trgm', 'idx_supplier_description_trgm');
     `;
     
     const indexCount = Number(indexCheck[0]?.count || 0);
@@ -113,11 +113,11 @@ export async function findPostgresFuzzyMatches(
   
   const allMatches: PostgresFuzzyMatch[] = [];
   
-  for (let i = 0; i < validItems.length; i += 50) {
-    const batch = validItems.slice(i, i + 50);
+  for (let i = 0; i < validItems.length; i += 500) {
+    const batch = validItems.slice(i, i + 500);
     const batchIds = batch.map(item => item.id);
     
-    console.log(`[POSTGRES_FUZZY_V1.0] Processing micro-batch ${Math.floor(i/50) + 1}/${Math.ceil(validItems.length/50)} (${batch.length} items)...`);
+    console.log(`[POSTGRES_FUZZY_V1.0] Processing micro-batch ${Math.floor(i/500) + 1}/${Math.ceil(validItems.length/500)} (${batch.length} items)...`);
     
     const sql = `
       WITH target_items AS (
@@ -172,27 +172,34 @@ export async function findPostgresFuzzyMatches(
     try {
       const batchMatches = await prisma.$queryRawUnsafe<any[]>(sql, projectId, batchIds);
       
-      const mappedMatches = batchMatches.map(row => ({
-        storeItemId: row.storeItemId,
-        supplierItemId: row.supplierItemId,
-        storePartNumber: row.storePartNumber,
-        supplierPartNumber: row.supplierPartNumber,
-        storeLineCode: row.storeLineCode,
-        supplierLineCode: row.supplierLineCode,
-        storeDescription: row.storeDescription,
-        supplierDescription: row.supplierDescription,
-        partNumberSimilarity: parseFloat(row.partNumberSimilarity) || 0,
-        descriptionSimilarity: parseFloat(row.descriptionSimilarity) || 0,
-        confidence: calculateFuzzyConfidence(row),
-        matchMethod: 'POSTGRES_FUZZY_V1.0',
-        matchReason: determineFuzzyMatchReason(row),
-      }));
+      const mappedMatches = batchMatches.map(row => {
+        const partSim = parseFloat(row.partNumberSimilarity) || 0;
+        const descSim = parseFloat(row.descriptionSimilarity) || 0;
+        const weightedScore = (partSim * 0.7) + (descSim * 0.3);
+        
+        return {
+          storeItemId: row.storeItemId,
+          supplierItemId: row.supplierItemId,
+          storePartNumber: row.storePartNumber,
+          supplierPartNumber: row.supplierPartNumber,
+          storeLineCode: row.storeLineCode,
+          supplierLineCode: row.supplierLineCode,
+          storeDescription: row.storeDescription,
+          supplierDescription: row.supplierDescription,
+          partNumberSimilarity: partSim,
+          descriptionSimilarity: descSim,
+          weightedScore: weightedScore,
+          confidence: calculateFuzzyConfidence(row),
+          matchMethod: 'POSTGRES_FUZZY_V1.0',
+          matchReason: determineFuzzyMatchReason(row),
+        };
+      });
       
       allMatches.push(...mappedMatches);
-      console.log(`[POSTGRES_FUZZY_V1.0] Micro-batch ${Math.floor(i/50) + 1}: Found ${mappedMatches.length} matches`);
+      console.log(`[POSTGRES_FUZZY_V1.0] Micro-batch ${Math.floor(i/500) + 1}: Found ${mappedMatches.length} matches`);
       
     } catch (error: any) {
-      console.error(`[POSTGRES_FUZZY_V1.0] Error in micro-batch ${Math.floor(i/50) + 1}:`, error.message);
+      console.error(`[POSTGRES_FUZZY_V1.0] Error in micro-batch ${Math.floor(i/500) + 1}:`, error.message);
       // Continue with next batch instead of failing entirely
     }
   }
