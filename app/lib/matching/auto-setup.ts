@@ -313,7 +313,8 @@ async function createIndexes(): Promise<void> {
       
       await prisma.$executeRawUnsafe(indexDef.sql);
       
-      console.log(`[MATCHING_SETUP] ✅ ${indexDef.displayName} - Index creation started`);
+      console.log(`[MATCHING_SETUP] ✅ ${indexDef.displayName} - Creation initiated`);
+      console.log(`[MATCHING_SETUP] Estimated build time: ${indexDef.estimatedTimeMins} minutes`);
     } catch (error: any) {
       if (error.message?.includes('already exists')) {
         console.log(`[MATCHING_SETUP] ✅ ${indexDef.displayName} - Already exists`);

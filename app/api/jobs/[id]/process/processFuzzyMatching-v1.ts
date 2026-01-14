@@ -86,6 +86,40 @@ export async function processFuzzyMatching(
   console.log(`[FUZZY-MATCH-V1.1] Total iterations: ${iteration}`);
   console.log(`[FUZZY-MATCH-V1.1] Total fuzzy matches: ${totalMatches}`);
   
+  // Auto-queue next batch if unmatched items remain
+  const remainingUnmatched = await prisma.storeItem.count({
+    where: {
+      projectId,
+      matchCandidates: {
+        none: {
+          matchStage: { in: [1, 2] }
+        }
+      }
+    }
+  });
+  
+  console.log(`[FUZZY-AUTO-QUEUE] Remaining unmatched items: ${remainingUnmatched}`);
+  
+  if (remainingUnmatched > 0) {
+    console.log('[FUZZY-AUTO-QUEUE] Creating next fuzzy matching job...');
+    
+    const nextJob = await prisma.job.create({
+      data: {
+        projectId,
+        type: 'fuzzy',
+        status: 'pending',
+        config: { jobType: 'fuzzy' },
+        progress: 0,
+        totalItems: remainingUnmatched,
+        currentMatches: 0,
+      }
+    });
+    
+    console.log(`[FUZZY-AUTO-QUEUE] ✅ Created job ${nextJob.id} for ${remainingUnmatched} items`);
+  } else {
+    console.log('[FUZZY-AUTO-QUEUE] ✅ All items processed - no more fuzzy matching needed');
+  }
+  
   return totalMatches;
 }
 
