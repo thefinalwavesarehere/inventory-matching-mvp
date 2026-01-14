@@ -84,9 +84,6 @@ export async function findPostgresFuzzyMatches(
         none: {
           matchStage: { in: [1, 2] }
         }
-      },
-      partNumber: {
-        not: null
       }
     },
     select: {
@@ -101,10 +98,13 @@ export async function findPostgresFuzzyMatches(
     }
   });
   
-  console.log(`[POSTGRES_FUZZY_V1.0] Found ${unmatchedItems.length} unmatched items to process`);
+  // Filter out items with null part numbers
+  const validItems = unmatchedItems.filter(item => item.partNumber && item.partNumber.length >= MIN_PART_NUMBER_LENGTH);
   
-  if (unmatchedItems.length === 0) {
-    console.log('[POSTGRES_FUZZY_V1.0] No unmatched items - returning empty');
+  console.log(`[POSTGRES_FUZZY_V1.0] Found ${validItems.length} unmatched items to process (${unmatchedItems.length} total, ${unmatchedItems.length - validItems.length} filtered)`);
+  
+  if (validItems.length === 0) {
+    console.log('[POSTGRES_FUZZY_V1.0] No valid unmatched items - returning empty');
     return [];
   }
   
@@ -113,11 +113,11 @@ export async function findPostgresFuzzyMatches(
   
   const allMatches: PostgresFuzzyMatch[] = [];
   
-  for (let i = 0; i < unmatchedItems.length; i += 50) {
-    const batch = unmatchedItems.slice(i, i + 50);
+  for (let i = 0; i < validItems.length; i += 50) {
+    const batch = validItems.slice(i, i + 50);
     const batchIds = batch.map(item => item.id);
     
-    console.log(`[POSTGRES_FUZZY_V1.0] Processing micro-batch ${Math.floor(i/50) + 1}/${Math.ceil(unmatchedItems.length/50)} (${batch.length} items)...`);
+    console.log(`[POSTGRES_FUZZY_V1.0] Processing micro-batch ${Math.floor(i/50) + 1}/${Math.ceil(validItems.length/50)} (${batch.length} items)...`);
     
     const sql = `
       WITH target_items AS (
