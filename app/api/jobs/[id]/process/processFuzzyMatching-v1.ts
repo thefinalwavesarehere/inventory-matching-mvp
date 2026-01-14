@@ -103,15 +103,18 @@ export async function processFuzzyMatching(
   if (remainingUnmatched > 0) {
     console.log('[FUZZY-AUTO-QUEUE] Creating next fuzzy matching job...');
     
-    const nextJob = await prisma.job.create({
+    const nextJob = await prisma.matchingJob.create({
       data: {
         projectId,
-        type: 'fuzzy',
+        
         status: 'pending',
-        config: { jobType: 'fuzzy' },
-        progress: 0,
+        config: { jobType: 'fuzzy', stage: 2 },
+        processedItems: 0,
+        progressPercentage: 0,
+        currentStage: 2,
+        currentStageName: 'Fuzzy Matching',
         totalItems: remainingUnmatched,
-        currentMatches: 0,
+        
       }
     });
     
