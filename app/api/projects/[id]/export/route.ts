@@ -82,9 +82,11 @@ export async function GET(
             'store_part_number',
             'store_line_code',
             'store_description',
+            'store_cost',
             'supplier_part_number',
             'supplier_line_code',
             'supplier_description',
+            'supplier_cost',
             'vendor_action',
             'review_decision',
             'corrected_supplier_part',
@@ -102,6 +104,7 @@ export async function GET(
                     partNumber: true,
                     lineCode: true,
                     description: true,
+                    currentCost: true,
                   },
                 },
               },
@@ -131,6 +134,7 @@ export async function GET(
                 partNumber: true,
                 lineCode: true,
                 description: true,
+                currentCost: true,
               },
             });
 
@@ -146,6 +150,7 @@ export async function GET(
               let supplierPartNumber = '';
               let supplierLineCode = '';
               let supplierDescription = '';
+              let supplierCost = '';
 
               if (match.targetType === 'SUPPLIER') {
                 const supplierItem = supplierItemsMap.get(match.targetId);
@@ -153,6 +158,7 @@ export async function GET(
                   supplierPartNumber = supplierItem.partNumber || '';
                   supplierLineCode = supplierItem.lineCode || '';
                   supplierDescription = supplierItem.description || '';
+                  supplierCost = supplierItem.currentCost ? supplierItem.currentCost.toString() : '';
                 }
               } else if (match.targetType === 'INVENTORY') {
                 // For inventory matches, fetch the inventory item
@@ -162,12 +168,14 @@ export async function GET(
                     partNumber: true,
                     lineCode: true,
                     description: true,
+                    currentCost: true,
                   },
                 });
                 if (inventoryItem) {
                   supplierPartNumber = inventoryItem.partNumber || '';
                   supplierLineCode = inventoryItem.lineCode || '';
                   supplierDescription = inventoryItem.description || '';
+                  supplierCost = inventoryItem.currentCost ? inventoryItem.currentCost.toString() : '';
                 }
               }
 
@@ -193,9 +201,11 @@ export async function GET(
                 storeItem.partNumber || '',
                 storeItem.lineCode || '',
                 storeItem.description || '',
+                storeItem.currentCost ? storeItem.currentCost.toString() : '',
                 supplierPartNumber,
                 supplierLineCode,
                 supplierDescription,
+                supplierCost,
                 match.vendorAction || 'NONE',
                 reviewDecision,
                 match.correctedSupplierPartNumber || '',
