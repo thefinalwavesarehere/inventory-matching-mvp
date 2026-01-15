@@ -65,8 +65,7 @@ export async function processFuzzyMatching(
     await prisma.matchingJob.update({
       where: { id: currentJob.id },
       data: {
-        status: 'complete',
-        lockedAt: null
+        status: 'complete'
       }
     });
     return 0;
@@ -118,15 +117,13 @@ export async function processFuzzyMatching(
     console.log(`[FUZZY-MATCH-V1.2] ${newUnmatchedCount} items remaining - job stays pending for next cron`);
   }
   
-  // Update job progress and release lock
+  // Update job progress
   await prisma.matchingJob.update({
     where: { id: currentJob.id },
     data: {
       processedItems: newProgress,
       matchesFound: newMatchesTotal,
-      status: nextStatus,
-      lockedAt: null, // Release lock for next cron trigger
-      updatedAt: new Date()
+      status: nextStatus
     }
   });
   
