@@ -42,6 +42,8 @@ export async function processFuzzyMatching(
   }
   
   const existingMatches = currentJob.matchesFound || 0;
+  const config = (currentJob.config as any) || {};
+  const consecutiveZeroMatches = config.consecutiveZeroMatches || 0;
   
   // Check remaining unmatched items
   const remainingUnmatched = await prisma.storeItem.count({
@@ -102,16 +104,26 @@ export async function processFuzzyMatching(
   console.log(`[FUZZY-MATCH-V1.2] Batch complete: ${itemsProcessedThisBatch} items processed, ${savedCount} matches found`);
   console.log(`[FUZZY-MATCH-V1.2] Cumulative matches: ${newMatchesTotal}, Remaining: ${newUnmatchedCount}`);
   
-  // Determine next status
+  // Determine next status with consecutive zero-match tracking
   let nextStatus: 'pending' | 'complete' = 'pending';
+  let newConsecutiveZero = consecutiveZeroMatches;
   
   if (newUnmatchedCount === 0) {
     console.log('[FUZZY-MATCH-V1.2] ✅ All items processed - job complete');
     nextStatus = 'complete';
   } else if (savedCount === 0) {
-    console.log('[FUZZY-MATCH-V1.2] ⚠️  No matches found - stopping to prevent infinite loop');
-    nextStatus = 'complete';
+    newConsecutiveZero = consecutiveZeroMatches + 1;
+    
+    if (newConsecutiveZero >= 3) {
+      console.log(`[FUZZY-MATCH-V1.2] ⚠️  ${newConsecutiveZero} consecutive batches with 0 matches - stopping`);
+      nextStatus = 'complete';
+    } else {
+      console.log(`[FUZZY-MATCH-V1.2] No matches this batch (${newConsecutiveZero}/3 consecutive) - continuing`);
+      nextStatus = 'pending';
+    }
   } else {
+    // Reset consecutive counter on successful match
+    newConsecutiveZero = 0;
     console.log(`[FUZZY-MATCH-V1.2] ${newUnmatchedCount} items remaining - job stays pending for next cron`);
   }
   
@@ -121,7 +133,8 @@ export async function processFuzzyMatching(
     data: {
       processedItems: itemsProcessedThisBatch,
       matchesFound: newMatchesTotal,
-      status: nextStatus
+      status: nextStatus,
+      config: { ...config, consecutiveZeroMatches: newConsecutiveZero }
     }
   });
   
