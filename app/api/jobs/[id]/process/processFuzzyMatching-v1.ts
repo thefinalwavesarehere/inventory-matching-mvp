@@ -57,7 +57,7 @@ export async function processFuzzyMatching(
   });
   
   console.log(`[FUZZY-MATCH-V1.2] Remaining unmatched items: ${remainingUnmatched}`);
-  console.log(`[FUZZY-MATCH-V1.2] Cumulative progress: ${existingProgress} items, ${existingMatches} matches`);
+  console.log(`[FUZZY-MATCH-V1.2] Cumulative matches so far: ${existingMatches}`);
   
   if (remainingUnmatched === 0) {
     console.log('[FUZZY-MATCH-V1.2] ✅ No unmatched items remaining - marking job complete');
