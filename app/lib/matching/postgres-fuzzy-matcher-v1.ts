@@ -41,13 +41,16 @@ const MIN_PART_NUMBER_LENGTH = 3; // Skip very short part numbers
  * Find fuzzy matches for unmatched store items (micro-batch processing)
  * 
  * @param projectId - Project ID
+ * @param offset - Number of items to skip (for pagination)
  * @returns Array of fuzzy matches with confidence scores
  */
 export async function findPostgresFuzzyMatches(
-  projectId: string
+  projectId: string,
+  offset: number = 0
 ): Promise<PostgresFuzzyMatch[]> {
   
   console.log('[POSTGRES_FUZZY_V1.0] === STARTING FUZZY MATCHING ===');
+  console.log(`[POSTGRES_FUZZY_V1.0] Starting from offset: ${offset}`);
   
   // Pre-flight check
   try {
@@ -94,8 +97,9 @@ export async function findPostgresFuzzyMatches(
       description: true,
     },
     take: 500, // Process 500 at a time
+    skip: offset, // CRITICAL: Skip already-attempted items
     orderBy: {
-      id: 'asc'
+      id: 'asc' // CRITICAL: Consistent ordering for pagination
     }
   });
   

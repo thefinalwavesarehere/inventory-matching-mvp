@@ -44,6 +44,9 @@ export async function processFuzzyMatching(
   const existingMatches = currentJob.matchesFound || 0;
   const config = (currentJob.config as any) || {};
   const consecutiveZeroMatches = config.consecutiveZeroMatches || 0;
+  const processedOffset = config.processedOffset || 0;
+  
+  console.log(`[FUZZY-MATCH-V1.2] Current offset: ${processedOffset}`);
   
   // Check remaining unmatched items
   const remainingUnmatched = await prisma.storeItem.count({
@@ -72,9 +75,9 @@ export async function processFuzzyMatching(
     return 0;
   }
   
-  // Process ONE batch (up to 500 items)
-  console.log(`[FUZZY-MATCH-V1.2] Finding fuzzy matches for next ${BATCH_SIZE} items...`);
-  const fuzzyMatches = await findPostgresFuzzyMatches(projectId);
+  // Process ONE batch (up to 500 items) starting from offset
+  console.log(`[FUZZY-MATCH-V1.2] Finding fuzzy matches for next ${BATCH_SIZE} items (offset: ${processedOffset})...`);
+  const fuzzyMatches = await findPostgresFuzzyMatches(projectId, processedOffset);
   
   console.log(`[FUZZY-MATCH-V1.2] Found ${fuzzyMatches.length} fuzzy matches`);
   
@@ -85,31 +88,25 @@ export async function processFuzzyMatching(
     console.log(`[FUZZY-MATCH-V1.2] Saved ${savedCount} matches`);
   }
   
-  // Calculate new progress (items processed in this batch)
-  const newUnmatchedCount = await prisma.storeItem.count({
-    where: {
-      projectId,
-      matchCandidates: {
-        none: {
-          projectId: projectId,
-          matchStage: { in: [1, 2] }
-        }
-      }
-    }
-  });
-  
-  const itemsProcessedThisBatch = remainingUnmatched - newUnmatchedCount;
+  // Calculate new offset and progress
+  // Always advance offset by BATCH_SIZE, regardless of match count
+  const newOffset = processedOffset + BATCH_SIZE;
+  const itemsProcessedThisBatch = BATCH_SIZE; // Always process full batch (or less if end reached)
   const newMatchesTotal = existingMatches + savedCount;
   
+  // Check if we've processed all items (offset >= total unmatched at start)
+  const totalUnmatched = currentJob.totalItems || remainingUnmatched;
+  const allItemsProcessed = newOffset >= totalUnmatched;
+  
   console.log(`[FUZZY-MATCH-V1.2] Batch complete: ${itemsProcessedThisBatch} items processed, ${savedCount} matches found`);
-  console.log(`[FUZZY-MATCH-V1.2] Cumulative matches: ${newMatchesTotal}, Remaining: ${newUnmatchedCount}`);
+  console.log(`[FUZZY-MATCH-V1.2] Cumulative matches: ${newMatchesTotal}, Progress: ${newOffset}/${totalUnmatched}`);
   
   // Determine next status with consecutive zero-match tracking
   let nextStatus: 'pending' | 'complete' = 'pending';
   let newConsecutiveZero = consecutiveZeroMatches;
   
-  if (newUnmatchedCount === 0) {
-    console.log('[FUZZY-MATCH-V1.2] ✅ All items processed - job complete');
+  if (allItemsProcessed) {
+    console.log(`[FUZZY-MATCH-V1.2] ✅ All items processed (offset ${newOffset} >= total ${totalUnmatched}) - job complete`);
     nextStatus = 'complete';
   } else if (savedCount === 0) {
     newConsecutiveZero = consecutiveZeroMatches + 1;
@@ -124,17 +121,21 @@ export async function processFuzzyMatching(
   } else {
     // Reset consecutive counter on successful match
     newConsecutiveZero = 0;
-    console.log(`[FUZZY-MATCH-V1.2] ${newUnmatchedCount} items remaining - job stays pending for next cron`);
+    console.log(`[FUZZY-MATCH-V1.2] Progress: ${newOffset}/${totalUnmatched} - job stays pending for next cron`);
   }
   
-  // Update job progress (processedItems = items processed in THIS batch only)
+  // Update job progress with new offset
   await prisma.matchingJob.update({
     where: { id: currentJob.id },
     data: {
-      processedItems: itemsProcessedThisBatch,
+      processedItems: newOffset, // Track cumulative offset
       matchesFound: newMatchesTotal,
       status: nextStatus,
-      config: { ...config, consecutiveZeroMatches: newConsecutiveZero }
+      config: { 
+        ...config, 
+        processedOffset: newOffset,
+        consecutiveZeroMatches: newConsecutiveZero 
+      }
     }
   });
   
