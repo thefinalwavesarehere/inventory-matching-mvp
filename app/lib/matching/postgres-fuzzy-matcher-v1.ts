@@ -33,8 +33,8 @@ export interface PostgresFuzzyMatch {
 /**
  * Configuration
  */
-const PART_NUMBER_SIMILARITY_THRESHOLD = 0.20; // 20% minimum part number similarity (lowered 50% for better coverage)
-const DESCRIPTION_SIMILARITY_THRESHOLD = 0.05; // 5% minimum description validation (lowered 50% for better coverage)
+const PART_NUMBER_SIMILARITY_THRESHOLD = 0.40; // 40% minimum part number similarity (raised from 20% to improve match quality)
+const DESCRIPTION_SIMILARITY_THRESHOLD = 0.25; // 25% minimum description validation (raised from 5% to improve match quality)
 const MIN_PART_NUMBER_LENGTH = 3; // Skip very short part numbers
 
 /**

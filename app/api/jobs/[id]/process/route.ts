@@ -100,20 +100,49 @@ export async function POST(
       });
     }
 
+    // ATOMIC LOCK: Prevent duplicate execution
+    // Only proceed if we can claim the job (status is pending OR processing with stale lock)
+    const LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    const now = new Date();
+    const lockExpiry = new Date(Date.now() - LOCK_TIMEOUT_MS);
+    
+    const lockResult = await prisma.matchingJob.updateMany({
+      where: {
+        id: jobId,
+        OR: [
+          { status: 'pending' },
+          { 
+            status: 'processing',
+            updatedAt: { lt: lockExpiry }  // Stale lock (no update in 5 min)
+          }
+        ]
+      },
+      data: {
+        status: 'processing',
+        startedAt: job.status === 'pending' ? now : job.startedAt,
+        updatedAt: now,
+      }
+    });
+    
+    if (lockResult.count === 0) {
+      // Job was already claimed by another instance
+      console.log(`[JOB-LOCK] Job ${jobId} already processing by another instance - skipping`);
+      return NextResponse.json({ 
+        success: true, 
+        status: 'already_processing',
+        message: 'Job is being processed by another instance'
+      });
+    }
+    
+    console.log(`[JOB-LOCK] Successfully acquired lock for job ${jobId}`);
+
     // Update job status to processing if it's pending
     if (job.status === 'pending') {
-      await prisma.matchingJob.update({
-        where: { id: jobId },
-        data: {
-          status: 'processing',
-          startedAt: new Date(),
-        },
-      });
       
-      // V4 Step 0: Un-match prerequisite (only for exact jobs)
       const config = job.config as any || {};
       const jobType = config.jobType || 'ai';
       
+      // V4 Step 0: Un-match prerequisite (only for exact jobs)
       if (jobType === 'exact') {
         console.log(`[V4-MATCHER] ========== EXACT MATCHER VERSION: V4 (commit 915d088) ==========`);
         console.log(`[V4-MATCHER] Interchange-First Bridge Logic Active`);

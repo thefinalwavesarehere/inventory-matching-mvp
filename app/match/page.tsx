@@ -565,10 +565,22 @@ export default function MatchPageWithBulkActions() {
                           <span className="text-xs text-gray-500 uppercase">Part Number</span>
                           <p className="font-mono text-base font-semibold">{match.storeItem.partNumber}</p>
                         </div>
+                        {match.storeItem.lineCode && (
+                          <div>
+                            <span className="text-xs text-gray-500 uppercase">Line Code</span>
+                            <p className="text-sm font-medium text-blue-600">{match.storeItem.lineCode}</p>
+                          </div>
+                        )}
                         {match.storeItem.description && (
                           <div>
                             <span className="text-xs text-gray-500 uppercase">Description</span>
                             <p className="text-sm">{match.storeItem.description}</p>
+                          </div>
+                        )}
+                        {match.storeItem.cost !== undefined && match.storeItem.cost !== null && (
+                          <div>
+                            <span className="text-xs text-gray-500 uppercase">Cost</span>
+                            <p className="text-sm font-semibold text-green-600">${match.storeItem.cost.toFixed(2)}</p>
                           </div>
                         )}
                         {match.vendor && (
@@ -591,10 +603,22 @@ export default function MatchPageWithBulkActions() {
                             <span className="text-xs text-gray-500 uppercase">Part Number</span>
                             <p className="font-mono text-base font-semibold">{match.targetItem.partNumber}</p>
                           </div>
+                          {(match.targetItem as any).lineCode && (
+                            <div>
+                              <span className="text-xs text-gray-500 uppercase">Line Code</span>
+                              <p className="text-sm font-medium text-blue-600">{(match.targetItem as any).lineCode}</p>
+                            </div>
+                          )}
                           {match.targetItem.description && (
                             <div>
                               <span className="text-xs text-gray-500 uppercase">Description</span>
                               <p className="text-sm">{match.targetItem.description}</p>
+                            </div>
+                          )}
+                          {match.targetItem.cost !== undefined && match.targetItem.cost !== null && (
+                            <div>
+                              <span className="text-xs text-gray-500 uppercase">Cost</span>
+                              <p className="text-sm font-semibold text-green-600">${match.targetItem.cost.toFixed(2)}</p>
                             </div>
                           )}
                         </div>

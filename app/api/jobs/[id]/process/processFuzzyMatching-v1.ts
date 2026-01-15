@@ -71,6 +71,19 @@ export async function processFuzzyMatching(
     console.log(`[FUZZY-MATCH-V1.1] Saved ${savedCount} matches`);
     console.log(`[FUZZY-MATCH-V1.1] Progress: ${totalMatches} total matches, ${totalUnmatched - savedCount} items remaining`);
     
+    // Update job progress in database (refresh lock and show progress in UI)
+    await prisma.matchingJob.updateMany({
+      where: { 
+        projectId,
+        config: { path: ['jobType'], equals: 'fuzzy' },
+        status: 'processing'
+      },
+      data: {
+        matchesFound: totalMatches,
+        updatedAt: new Date(), // Refresh lock
+      }
+    });
+    
     // Continue to next iteration - will check totalUnmatched at top of loop
   }
   

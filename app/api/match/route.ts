@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
       select: {
         id: true,
         partNumber: true,
+        lineCode: true,
         description: true,
         currentCost: true,
       },
