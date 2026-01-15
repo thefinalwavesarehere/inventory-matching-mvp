@@ -1,8 +1,9 @@
 /**
- * Process Fuzzy Matching V1.1
+ * Process Fuzzy Matching V1.2 - Single Batch Per Execution
  * 
- * Uses PostgreSQL Native Fuzzy Matcher with intelligent batching
- * Processes 3000 items per iteration to handle large datasets
+ * Processes ONE batch of 500 items per job execution.
+ * Cron triggers handle resumption for remaining items.
+ * No internal iteration loop to prevent timeout.
  */
 
 import { prisma } from '@/app/lib/db/prisma';
@@ -10,9 +11,10 @@ import { findPostgresFuzzyMatches } from '@/app/lib/matching/postgres-fuzzy-matc
 import { MatchMethod, MatchStatus } from '@prisma/client';
 
 /**
- * Process fuzzy matching with iteration loop (handles any dataset size)
- * Only processes items that don't already have matches from Stage 1 (exact matching)
+ * Process single batch of fuzzy matching (500 items = 10 micro-batches of 50)
  * 
+ * @param storeItems - NOT USED (kept for API compatibility)
+ * @param supplierItems - NOT USED (kept for API compatibility)
  * @param projectId - Project ID
  * @returns Number of matches saved
  */
@@ -21,162 +23,116 @@ export async function processFuzzyMatching(
   supplierItems: any[], // NOT USED - kept for API compatibility
   projectId: string
 ): Promise<number> {
-  console.log(`[FUZZY-MATCH-V1.1] Starting iterative fuzzy matching for project ${projectId}`);
+  const BATCH_SIZE = 500;
   
-  // Get total items to process (for progress tracking)
-  const totalItems = await prisma.storeItem.count({
-    where: { projectId }
+  console.log(`[FUZZY-MATCH-V1.2] Processing single batch of ${BATCH_SIZE} items for project ${projectId}`);
+  
+  // Get current job to track cumulative progress
+  const currentJob = await prisma.matchingJob.findFirst({
+    where: {
+      projectId,
+      config: { path: ['jobType'], equals: 'fuzzy' },
+      status: 'processing'
+    }
   });
   
-  let totalMatches = 0;
-  let processedCount = 0;
-  let iteration = 0;
-  const MAX_ITERATIONS = 10; // Safety limit (3000 items × 10 = 30,000 items max)
-  
-  while (iteration < MAX_ITERATIONS) {
-    iteration++;
-    
-    console.log(`[FUZZY-MATCH-V1.1] === Iteration ${iteration} ===`);
-    
-    // Check remaining unmatched items
-    const totalUnmatched = await prisma.storeItem.count({
-      where: {
-        projectId,
-        matchCandidates: {
-          none: {
-            projectId: projectId,
-            matchStage: { in: [1, 2] }
-          }
-        }
-      }
-    });
-    
-    console.log(`[FUZZY-MATCH-V1.1] Remaining unmatched items: ${totalUnmatched}`);
-    
-    if (totalUnmatched === 0) {
-      console.log('[FUZZY-MATCH-V1.1] No more items to process');
-      break;
-    }
-    
-    // Run fuzzy matching (processes next 3000 items)
-    console.log(`[FUZZY-MATCH-V1.1] Processing next batch (up to 3000 items)...`);
-    const fuzzyMatches = await findPostgresFuzzyMatches(projectId);
-    
-    if (fuzzyMatches.length === 0) {
-      console.log('[FUZZY-MATCH-V1.1] No matches found in this batch - continuing to next batch');
-      // Don't break - continue to next batch of unmatched items
-      continue;
-    }
-    
-    console.log(`[FUZZY-MATCH-V1.1] Found ${fuzzyMatches.length} fuzzy matches`);
-    
-    // Save matches
-    const savedCount = await saveMatches(fuzzyMatches, projectId);
-    totalMatches += savedCount;
-    
-    // Update processed count (items that now have matches)
-    const currentUnmatched = await prisma.storeItem.count({
-      where: {
-        projectId,
-        matchCandidates: {
-          none: {
-            projectId: projectId,
-            matchStage: { in: [1, 2] }
-          }
-        }
-      }
-    });
-    processedCount = totalItems - currentUnmatched;
-    
-    console.log(`[FUZZY-MATCH-V1.1] Saved ${savedCount} matches`);
-    console.log(`[FUZZY-MATCH-V1.1] Progress: ${processedCount}/${totalItems} items processed, ${totalMatches} total matches`);
-    
-    // Update job progress in database (refresh lock and show progress in UI)
-    await prisma.matchingJob.updateMany({
-      where: { 
-        projectId,
-        config: { path: ['jobType'], equals: 'fuzzy' },
-        status: 'processing'
-      },
-      data: {
-        processedItems: processedCount,
-        matchesFound: totalMatches,
-        updatedAt: new Date(), // Refresh lock
-      }
-    });
-    
-    console.log(`[FUZZY-MATCH-V1.1] ✅ Progress updated in database: ${processedCount}/${totalItems} items, ${totalMatches} matches`);
-    
-    // Continue to next iteration - will check totalUnmatched at top of loop
+  if (!currentJob) {
+    console.error('[FUZZY-MATCH-V1.2] ERROR: No processing job found');
+    return 0;
   }
   
-  if (iteration >= MAX_ITERATIONS) {
-    console.warn(`[FUZZY-MATCH-V1.1] WARNING: Reached maximum iterations (${MAX_ITERATIONS})`);
-  }
+  const existingProgress = currentJob.processedItems || 0;
+  const existingMatches = currentJob.matchesFound || 0;
   
-  console.log(`[FUZZY-MATCH-V1.1] ✅ COMPLETE`);
-  console.log(`[FUZZY-MATCH-V1.1] Total iterations: ${iteration}`);
-  console.log(`[FUZZY-MATCH-V1.1] Total fuzzy matches: ${totalMatches}`);
-  
-  // Auto-queue next batch if unmatched items remain
+  // Check remaining unmatched items
   const remainingUnmatched = await prisma.storeItem.count({
     where: {
       projectId,
       matchCandidates: {
         none: {
-          projectId: projectId, // CRITICAL: Add projectId to subquery
+          projectId: projectId,
           matchStage: { in: [1, 2] }
         }
       }
     }
   });
   
-  console.log(`[FUZZY-AUTO-QUEUE] Remaining unmatched items: ${remainingUnmatched}`);
+  console.log(`[FUZZY-MATCH-V1.2] Remaining unmatched items: ${remainingUnmatched}`);
+  console.log(`[FUZZY-MATCH-V1.2] Cumulative progress: ${existingProgress} items, ${existingMatches} matches`);
   
-  // Only create next job if we actually found matches AND items remain
-  if (totalMatches > 0 && remainingUnmatched > 0) {
-    console.log('[FUZZY-AUTO-QUEUE] Found matches - creating next job...');
-    
-    // Check for existing fuzzy jobs first (prevent duplicates)
-    const existingJob = await prisma.matchingJob.findFirst({
-      where: {
-        projectId,
-        config: {
-          path: ['jobType'],
-          equals: 'fuzzy'
-        },
-        status: { in: ['pending', 'processing'] }
-      }
-    });
-    
-    if (existingJob) {
-      console.log('[FUZZY-AUTO-QUEUE] Job already exists - skipping');
-      return totalMatches;
-    }
-    
-    const nextJob = await prisma.matchingJob.create({
+  if (remainingUnmatched === 0) {
+    console.log('[FUZZY-MATCH-V1.2] ✅ No unmatched items remaining - marking job complete');
+    await prisma.matchingJob.update({
+      where: { id: currentJob.id },
       data: {
-        projectId,
-        
-        status: 'pending',
-        config: { jobType: 'fuzzy', stage: 2 },
-        processedItems: 0,
-        progressPercentage: 0,
-        currentStage: 2,
-        currentStageName: 'Fuzzy Matching',
-        totalItems: remainingUnmatched,
-        
+        status: 'complete',
+        lockedAt: null
       }
     });
-    
-    console.log(`[FUZZY-AUTO-QUEUE] ✅ Created job ${nextJob.id} for ${remainingUnmatched} items`);
-  } else if (totalMatches === 0 && remainingUnmatched > 0) {
-    console.log('[FUZZY-AUTO-QUEUE] ⚠️  No matches found - stopping to prevent infinite loop');
-  } else {
-    console.log('[FUZZY-AUTO-QUEUE] ✅ All items processed - no more fuzzy matching needed');
+    return 0;
   }
   
-  return totalMatches;
+  // Process ONE batch (up to 500 items)
+  console.log(`[FUZZY-MATCH-V1.2] Finding fuzzy matches for next ${BATCH_SIZE} items...`);
+  const fuzzyMatches = await findPostgresFuzzyMatches(projectId);
+  
+  console.log(`[FUZZY-MATCH-V1.2] Found ${fuzzyMatches.length} fuzzy matches`);
+  
+  // Save matches
+  let savedCount = 0;
+  if (fuzzyMatches.length > 0) {
+    savedCount = await saveMatches(fuzzyMatches, projectId);
+    console.log(`[FUZZY-MATCH-V1.2] Saved ${savedCount} matches`);
+  }
+  
+  // Calculate new progress (items processed in this batch)
+  const newUnmatchedCount = await prisma.storeItem.count({
+    where: {
+      projectId,
+      matchCandidates: {
+        none: {
+          projectId: projectId,
+          matchStage: { in: [1, 2] }
+        }
+      }
+    }
+  });
+  
+  const itemsProcessedThisBatch = remainingUnmatched - newUnmatchedCount;
+  const newProgress = existingProgress + itemsProcessedThisBatch;
+  const newMatchesTotal = existingMatches + savedCount;
+  
+  console.log(`[FUZZY-MATCH-V1.2] Batch complete: ${itemsProcessedThisBatch} items processed, ${savedCount} matches found`);
+  console.log(`[FUZZY-MATCH-V1.2] New cumulative progress: ${newProgress} items, ${newMatchesTotal} matches`);
+  
+  // Determine next status
+  let nextStatus: 'pending' | 'complete' = 'pending';
+  
+  if (newUnmatchedCount === 0) {
+    console.log('[FUZZY-MATCH-V1.2] ✅ All items processed - job complete');
+    nextStatus = 'complete';
+  } else if (savedCount === 0) {
+    console.log('[FUZZY-MATCH-V1.2] ⚠️  No matches found - stopping to prevent infinite loop');
+    nextStatus = 'complete';
+  } else {
+    console.log(`[FUZZY-MATCH-V1.2] ${newUnmatchedCount} items remaining - job stays pending for next cron`);
+  }
+  
+  // Update job progress and release lock
+  await prisma.matchingJob.update({
+    where: { id: currentJob.id },
+    data: {
+      processedItems: newProgress,
+      matchesFound: newMatchesTotal,
+      status: nextStatus,
+      lockedAt: null, // Release lock for next cron trigger
+      updatedAt: new Date()
+    }
+  });
+  
+  console.log(`[FUZZY-MATCH-V1.2] ✅ Job updated: status=${nextStatus}, progress=${newProgress}, matches=${newMatchesTotal}`);
+  
+  return savedCount;
 }
 
 /**
@@ -197,7 +153,7 @@ async function saveMatches(
         storeItemId: match.storeItemId,
         targetType: 'SUPPLIER' as const,
         targetId: match.supplierItemId,
-        method: MatchMethod.FUZZY_SUBSTRING, // Using existing enum value
+        method: MatchMethod.FUZZY_SUBSTRING,
         confidence: match.confidence,
         matchStage: 2, // Stage 2 = Fuzzy matching
         status: MatchStatus.PENDING,
@@ -221,7 +177,7 @@ async function saveMatches(
       
       savedCount += batch.length;
     } catch (error) {
-      console.error(`[FUZZY-MATCH-V1.1] ERROR: Failed to save fuzzy batch`);
+      console.error(`[FUZZY-MATCH-V1.2] ERROR: Failed to save fuzzy batch`);
       console.error(error);
       throw error;
     }
