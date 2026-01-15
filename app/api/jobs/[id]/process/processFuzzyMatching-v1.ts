@@ -41,7 +41,6 @@ export async function processFuzzyMatching(
     return 0;
   }
   
-  const existingProgress = currentJob.processedItems || 0;
   const existingMatches = currentJob.matchesFound || 0;
   
   // Check remaining unmatched items
@@ -98,11 +97,10 @@ export async function processFuzzyMatching(
   });
   
   const itemsProcessedThisBatch = remainingUnmatched - newUnmatchedCount;
-  const newProgress = existingProgress + itemsProcessedThisBatch;
   const newMatchesTotal = existingMatches + savedCount;
   
   console.log(`[FUZZY-MATCH-V1.2] Batch complete: ${itemsProcessedThisBatch} items processed, ${savedCount} matches found`);
-  console.log(`[FUZZY-MATCH-V1.2] New cumulative progress: ${newProgress} items, ${newMatchesTotal} matches`);
+  console.log(`[FUZZY-MATCH-V1.2] Cumulative matches: ${newMatchesTotal}, Remaining: ${newUnmatchedCount}`);
   
   // Determine next status
   let nextStatus: 'pending' | 'complete' = 'pending';
@@ -117,17 +115,17 @@ export async function processFuzzyMatching(
     console.log(`[FUZZY-MATCH-V1.2] ${newUnmatchedCount} items remaining - job stays pending for next cron`);
   }
   
-  // Update job progress
+  // Update job progress (processedItems = items processed in THIS batch only)
   await prisma.matchingJob.update({
     where: { id: currentJob.id },
     data: {
-      processedItems: newProgress,
+      processedItems: itemsProcessedThisBatch,
       matchesFound: newMatchesTotal,
       status: nextStatus
     }
   });
   
-  console.log(`[FUZZY-MATCH-V1.2] ✅ Job updated: status=${nextStatus}, progress=${newProgress}, matches=${newMatchesTotal}`);
+  console.log(`[FUZZY-MATCH-V1.2] ✅ Job updated: status=${nextStatus}, processed=${itemsProcessedThisBatch}, matches=${newMatchesTotal}`);
   
   return savedCount;
 }

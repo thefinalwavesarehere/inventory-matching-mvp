@@ -324,47 +324,44 @@ export async function POST(
         newMatches = 0;
       }
     } else if (jobType === 'fuzzy') {
-      // V1.0: Single-pass processing (no chunking)
-      // Check if this is the first chunk - only run once
-      if (job.processedItems === 0) {
-        console.log(`[JOB-PROCESS-V1.0] Running single-pass fuzzy matching for unmatched items`);
-        const { processFuzzyMatching } = await import('./processFuzzyMatching-v1');
-        newMatches = await processFuzzyMatching(chunk, supplierItems, job.projectId);
-        const processingTime = Date.now() - processingStartTime;
-        console.log(`[JOB-PROCESS-V1.0] Fuzzy matching complete in ${processingTime}ms, found ${newMatches} matches`);
-        
-        // Mark job as complete immediately
-        const totalItems = job.totalItems || 0;
-        await prisma.matchingJob.update({
-          where: { id: jobId },
-          data: {
-            status: 'completed',
-            completedAt: new Date(),
-            processedItems: totalItems,
-            progressPercentage: 100,
-            matchesFound: newMatches,
-            matchRate: totalItems > 0 ? (newMatches / totalItems) * 100 : 0,
+      // V1.2: Batch processing - fuzzy matcher controls job status
+      console.log(`[JOB-PROCESS-V1.2] Running fuzzy matching batch`);
+      const { processFuzzyMatching } = await import('./processFuzzyMatching-v1');
+      newMatches = await processFuzzyMatching(chunk, supplierItems, job.projectId);
+      const processingTime = Date.now() - processingStartTime;
+      console.log(`[JOB-PROCESS-V1.2] Fuzzy matching batch complete in ${processingTime}ms, found ${newMatches} matches`);
+      
+      // Check final job status (fuzzy matcher sets it to 'pending' or 'complete')
+      const updatedJob = await prisma.matchingJob.findUnique({
+        where: { id: jobId }
+      });
+      
+      if (updatedJob?.status === 'pending') {
+        console.log(`[JOB-PROCESS-V1.2] More items to process - job stays pending for next cron`);
+        return NextResponse.json({
+          success: true,
+          complete: false,
+          job: {
+            id: updatedJob.id,
+            status: 'pending',
+            processedItems: updatedJob.processedItems,
+            totalItems: updatedJob.totalItems,
+            matchesFound: updatedJob.matchesFound,
           },
         });
-        
-        console.log(`[JOB-PROCESS-V1.0] Job marked as complete`);
-        
+      } else if (updatedJob?.status === 'complete') {
+        console.log(`[JOB-PROCESS-V1.2] All items processed - job complete`);
         return NextResponse.json({
           success: true,
           complete: true,
           job: {
-            id: job.id,
-            status: 'completed',
-            processedItems: totalItems,
-            totalItems: totalItems,
-            progressPercentage: 100,
-            matchesFound: newMatches,
-            matchRate: totalItems > 0 ? (newMatches / totalItems) * 100 : 0,
+            id: updatedJob.id,
+            status: 'complete',
+            processedItems: updatedJob.processedItems,
+            totalItems: updatedJob.totalItems,
+            matchesFound: updatedJob.matchesFound,
           },
         });
-      } else {
-        console.log(`[JOB-PROCESS-V1.0] Skipping - fuzzy matching already completed in first pass`);
-        newMatches = 0;
       }
     } else if (jobType === 'ai') {
       console.log(`[JOB-PROCESS] Calling processAIMatching...`);
