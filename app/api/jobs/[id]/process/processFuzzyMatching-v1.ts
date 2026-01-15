@@ -23,7 +23,13 @@ export async function processFuzzyMatching(
 ): Promise<number> {
   console.log(`[FUZZY-MATCH-V1.1] Starting iterative fuzzy matching for project ${projectId}`);
   
+  // Get total items to process (for progress tracking)
+  const totalItems = await prisma.storeItem.count({
+    where: { projectId }
+  });
+  
   let totalMatches = 0;
+  let processedCount = 0;
   let iteration = 0;
   const MAX_ITERATIONS = 10; // Safety limit (3000 items × 10 = 30,000 items max)
   
@@ -68,8 +74,22 @@ export async function processFuzzyMatching(
     const savedCount = await saveMatches(fuzzyMatches, projectId);
     totalMatches += savedCount;
     
+    // Update processed count (items that now have matches)
+    const currentUnmatched = await prisma.storeItem.count({
+      where: {
+        projectId,
+        matchCandidates: {
+          none: {
+            projectId: projectId,
+            matchStage: { in: [1, 2] }
+          }
+        }
+      }
+    });
+    processedCount = totalItems - currentUnmatched;
+    
     console.log(`[FUZZY-MATCH-V1.1] Saved ${savedCount} matches`);
-    console.log(`[FUZZY-MATCH-V1.1] Progress: ${totalMatches} total matches, ${totalUnmatched - savedCount} items remaining`);
+    console.log(`[FUZZY-MATCH-V1.1] Progress: ${processedCount}/${totalItems} items processed, ${totalMatches} total matches`);
     
     // Update job progress in database (refresh lock and show progress in UI)
     await prisma.matchingJob.updateMany({
@@ -79,10 +99,13 @@ export async function processFuzzyMatching(
         status: 'processing'
       },
       data: {
+        processedItems: processedCount,
         matchesFound: totalMatches,
         updatedAt: new Date(), // Refresh lock
       }
     });
+    
+    console.log(`[FUZZY-MATCH-V1.1] ✅ Progress updated in database: ${processedCount}/${totalItems} items, ${totalMatches} matches`);
     
     // Continue to next iteration - will check totalUnmatched at top of loop
   }

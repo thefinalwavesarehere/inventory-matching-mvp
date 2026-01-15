@@ -171,7 +171,9 @@ export async function findPostgresFuzzyMatches(
     `;
     
     try {
+      const startTime = Date.now();
       const batchMatches = await prisma.$queryRawUnsafe<any[]>(sql, projectId, batchIds);
+      const queryDuration = Date.now() - startTime;
       
       const mappedMatches = batchMatches.map(row => {
         const partSim = parseFloat(row.partNumberSimilarity) || 0;
@@ -197,10 +199,16 @@ export async function findPostgresFuzzyMatches(
       });
       
       allMatches.push(...mappedMatches);
-      console.log(`[POSTGRES_FUZZY_V1.0] Micro-batch ${Math.floor(i/50) + 1}: Found ${mappedMatches.length} matches`);
+      console.log(`[POSTGRES_FUZZY_V1.0] Micro-batch ${Math.floor(i/50) + 1}: Found ${mappedMatches.length} matches in ${queryDuration}ms`);
       
     } catch (error: any) {
-      console.error(`[POSTGRES_FUZZY_V1.0] Error in micro-batch ${Math.floor(i/50) + 1}:`, error.message);
+      console.error(`[POSTGRES_FUZZY_V1.0] ❌ MICRO-BATCH ${Math.floor(i/50) + 1} FAILED`);
+      console.error(`[POSTGRES_FUZZY_V1.0] Error name: ${error?.name || 'Unknown'}`);
+      console.error(`[POSTGRES_FUZZY_V1.0] Error message: ${error?.message || 'No message'}`);
+      console.error(`[POSTGRES_FUZZY_V1.0] Error code: ${error?.code || 'No code'}`);
+      if (error?.stack) {
+        console.error(`[POSTGRES_FUZZY_V1.0] Error stack: ${error.stack}`);
+      }
       // Continue with next batch instead of failing entirely
     }
   }
