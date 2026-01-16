@@ -12,8 +12,14 @@ export async function processAIMatching(job: any, projectId: string) {
   const startTime = Date.now();
   
   try {
-    // Run AI matching
-    const result = await runAIMatching(projectId, AI_CONFIG.BATCH_SIZE);
+    // Get offset from job config
+    const config = (job.config || {}) as any;
+    const processedOffset = config.aiProcessedOffset || 0;
+    
+    console.log(`[AI_MATCHING_V1] Current offset: ${processedOffset}`);
+    
+    // Run AI matching with offset
+    const result = await runAIMatching(projectId, AI_CONFIG.BATCH_SIZE, processedOffset);
     
     const duration = Date.now() - startTime;
     
@@ -45,13 +51,17 @@ export async function processAIMatching(job: any, projectId: string) {
       console.log(`[AI_MATCHING_V1] Job complete`);
     }
     
-    // Update job
+    // Calculate new offset
+    const newOffset = processedOffset + result.itemsProcessed;
+    
+    // Update job with new offset
     await prisma.matchingJob.update({
       where: { id: job.id },
       data: {
         status: status,
-        processedItems: result.itemsProcessed,
+        processedItems: newOffset,
         matchesFound: result.matchesFound,
+        config: { ...config, aiProcessedOffset: newOffset },
       },
     });
     

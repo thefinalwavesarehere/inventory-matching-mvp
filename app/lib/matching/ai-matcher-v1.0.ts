@@ -313,7 +313,8 @@ async function processItem(storeItem: StoreItem, projectId: string): Promise<any
  */
 export async function runAIMatching(
   projectId: string,
-  batchSize: number = AI_CONFIG.BATCH_SIZE
+  batchSize: number = AI_CONFIG.BATCH_SIZE,
+  offset: number = 0
 ): Promise<{ matchesFound: number; itemsProcessed: number; estimatedCost: number }> {
   console.log(`[AI_MATCHER] Starting AI matching for project ${projectId}`);
   
@@ -336,6 +337,8 @@ export async function runAIMatching(
       currentCost: true,
     },
     take: batchSize,
+    skip: offset,
+    orderBy: { id: 'asc' },
   });
   
   console.log(`[AI_MATCHER] Found ${unmatchedItems.length} unmatched items`);
