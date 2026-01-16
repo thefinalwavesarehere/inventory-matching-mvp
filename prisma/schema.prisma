@@ -20,7 +20,6 @@ model User {
   passwordHash String?  // For credentials auth
   role         Role     @default(REVIEWER)
   sessions     Session[]
-  matchDecisions MatchCandidate[] @relation("DecidedBy")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -298,7 +297,7 @@ model MatchCandidate {
   interchangeId    String?    // Reference to interchange row used
   status           MatchStatus @default(PENDING)
   decidedById      String?
-  decidedBy        User?      @relation("DecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedBy        UserProfile?      @relation("DecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
   decidedAt        DateTime?
   note             String?
   // Excel review fields
@@ -700,6 +699,7 @@ model UserProfile {
   // Relations
   activityLogs        ActivityLog[]
   auditLogs           AuditLog[]
+  matchDecisions      MatchCandidate[] @relation("DecidedBy")
   
   @@map("user_profiles")
   @@index([email])
