@@ -63,9 +63,10 @@ async function searchWebForPart(storeItem: StoreItem): Promise<TavilySearchResul
   try {
     console.log(`[WEB_SEARCH] Tavily search: ${searchQuery}`);
     
-    const response = await tavilyClient.search(searchQuery, {
-      searchDepth: 'basic',
-      maxResults: 5,
+    const response = await tavilyClient.search({
+      query: searchQuery,
+      search_depth: 'basic',
+      max_results: 5,
     });
 
     if (!response || !response.results || response.results.length === 0) {
