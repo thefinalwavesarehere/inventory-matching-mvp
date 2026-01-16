@@ -222,7 +222,7 @@ ${webContext}${tavilyAnswer}
     .filter((lc): lc is string => lc !== null && lc !== undefined);
   
   const supplierItems = lineCodes.length > 0
-    ? allSuppliers.filter(s => lineCodes.includes(s.lineCode)).slice(0, 100)
+    ? allSuppliers.filter(s => s.lineCode && lineCodes.includes(s.lineCode)).slice(0, 100)
     : allSuppliers.slice(0, 100);
 
   const suppliersContext = supplierItems.map(s => 
