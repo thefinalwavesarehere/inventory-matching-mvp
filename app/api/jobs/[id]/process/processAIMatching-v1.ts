@@ -52,7 +52,6 @@ export async function processAIMatching(job: any, projectId: string) {
         status: status,
         processedItems: result.itemsProcessed,
         matchesFound: result.matchesFound,
-        progress: result.itemsProcessed,
       },
     });
     
