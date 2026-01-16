@@ -233,7 +233,7 @@ export async function runHumanReviewClassification(
       data: classifications.map(c => ({
         projectId: projectId,
         storeItemId: c.storeItemId,
-        targetId: null, // No target for human review
+        targetId: '', // No target for human review
         targetType: 'SUPPLIER',
         matchStage: 5,
         method: 'HUMAN_REVIEW',
