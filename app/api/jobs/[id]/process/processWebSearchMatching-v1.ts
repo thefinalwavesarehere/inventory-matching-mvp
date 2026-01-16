@@ -45,13 +45,13 @@ export async function processWebSearchMatching(job: any, projectId: string) {
       console.log(`[WEB_SEARCH_MATCHING_V1] Job complete`);
     }
     
-    // Update job
+    // Update job (increment counters)
     await prisma.matchingJob.update({
       where: { id: job.id },
       data: {
         status: status,
-        processedItems: result.itemsProcessed,
-        matchesFound: result.matchesFound,
+        processedItems: (job.processedItems || 0) + result.itemsProcessed,
+        matchesFound: (job.matchesFound || 0) + result.matchesFound,
       },
     });
     
