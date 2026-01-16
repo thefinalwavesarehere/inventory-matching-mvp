@@ -19,7 +19,7 @@ export const AI_CONFIG = {
   MODEL: 'gpt-4o',
   MAX_COST: 100,
   COST_PER_ITEM: 0.015,
-  MIN_CONFIDENCE: 0.6,
+  MIN_CONFIDENCE: 0.5,
 };
 
 interface StoreItem {
@@ -178,15 +178,21 @@ MATCHING GUIDELINES:
 - Same core number with different manufacturer codes (e.g., "12066" = "ABH12066")
 - Matching description keywords + similar part numbers
 
-**MODERATE MATCH indicators (confidence 0.70-0.84):**
+**MODERATE MATCH indicators (confidence 0.60-0.84):**
 - Part numbers share 4+ digits in sequence
 - Descriptions match but part numbers differ slightly
 - Known interchange patterns (e.g., service chambers: "24SC" ↔ "GC2424")
 
-**WEAK/NO MATCH indicators (reject or confidence <0.70):**
-- Part numbers share only 2-3 digits
+**ACCEPTABLE MATCH indicators (confidence 0.50-0.59):**
+- Part numbers share 3+ digits
+- Description keywords overlap significantly
+- Same product category (e.g., both filters, both gaskets)
+- Price within reasonable range (<150% difference)
+
+**REJECT indicators (confidence <0.50):**
+- Part numbers completely different
 - Descriptions describe different product types
-- Significant price difference (>100%) without explanation
+- Significant price difference (>150%) without explanation
 
 **COMMON PATTERNS:**
 - "C" suffix often indicates remanufactured/Cardone parts

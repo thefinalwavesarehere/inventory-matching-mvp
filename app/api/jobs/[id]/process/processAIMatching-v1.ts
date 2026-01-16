@@ -51,16 +51,17 @@ export async function processAIMatching(job: any, projectId: string) {
       console.log(`[AI_MATCHING_V1] Job complete`);
     }
     
-    // Calculate new offset
+    // Calculate new offset and cumulative matches
     const newOffset = processedOffset + result.itemsProcessed;
+    const cumulativeMatches = (job.matchesFound || 0) + result.matchesFound;
     
-    // Update job with new offset
+    // Update job with new offset and cumulative matches
     await prisma.matchingJob.update({
       where: { id: job.id },
       data: {
         status: status,
         processedItems: newOffset,
-        matchesFound: result.matchesFound,
+        matchesFound: cumulativeMatches,
         config: { ...config, aiProcessedOffset: newOffset },
       },
     });
