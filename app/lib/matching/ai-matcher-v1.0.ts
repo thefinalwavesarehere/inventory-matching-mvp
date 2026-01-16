@@ -106,13 +106,16 @@ async function getCandidates(storeItem: StoreItem, projectId: string): Promise<S
     return [];
   }
   
-  const keywordConditions = keywords.map(k => `description ILIKE '%${k}%'`).join(' OR ');
+  // Build OR conditions for keywords
+  const orConditions = keywords.map(k => 
+    Prisma.sql`description ILIKE ${`%${k}%`}`
+  );
   
   const descMatches = await prisma.$queryRaw<SupplierItem[]>`
     SELECT id, "partNumber", "lineCode", description, "currentCost"
     FROM supplier_items 
     WHERE "projectId" = ${projectId}
-    AND (${keywordConditions})
+    AND (${Prisma.join(orConditions, ' OR ')})
     LIMIT 30
   `;
   
@@ -168,7 +171,10 @@ Respond ONLY with valid JSON:
       return null;
     }
 
-    const result = JSON.parse(content) as AIMatchResult;
+    // Strip markdown code blocks if present
+    const cleanContent = content.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+    
+    const result = JSON.parse(cleanContent) as AIMatchResult;
     return result;
   } catch (error: any) {
     console.error('[AI_MATCHER] OpenAI error:', error.message);
