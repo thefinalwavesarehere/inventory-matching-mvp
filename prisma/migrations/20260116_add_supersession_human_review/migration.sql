@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "MatchMethod" ADD VALUE 'SUPERSESSION';
+ALTER TYPE "MatchMethod" ADD VALUE 'HUMAN_REVIEW';

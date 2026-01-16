@@ -340,6 +340,8 @@ enum MatchMethod {
   AI
   WEB_SEARCH
   RULE_BASED
+  SUPERSESSION
+  HUMAN_REVIEW
 }
 
 enum MatchStatus {
