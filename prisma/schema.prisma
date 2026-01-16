@@ -20,7 +20,6 @@ model User {
   passwordHash String?  // For credentials auth
   role         Role     @default(REVIEWER)
   sessions     Session[]
-  auditLogs    AuditLog[]
   matchDecisions MatchCandidate[] @relation("DecidedBy")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -700,6 +699,7 @@ model UserProfile {
   
   // Relations
   activityLogs        ActivityLog[]
+  auditLogs           AuditLog[]
   
   @@map("user_profiles")
   @@index([email])
