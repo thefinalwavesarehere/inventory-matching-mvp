@@ -240,7 +240,7 @@ export async function runAIEnhancedFuzzyMatching(
         targetId: m.supplierId,
         targetType: 'SUPPLIER',
         matchStage: 3,
-        method: 'AI_FUZZY',
+        method: 'FUZZY',
         confidence: m.confidence,
         status: 'PENDING',
         features: {
