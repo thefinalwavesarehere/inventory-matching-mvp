@@ -7,13 +7,13 @@
 import prisma from '@/app/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import OpenAI from 'openai';
-import { tavily } from 'tavily';
+import { TavilyClient } from 'tavily';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY });
+const tavilyClient = new TavilyClient({ apiKey: process.env.TAVILY_API_KEY });
 
 export const WEB_SEARCH_CONFIG = {
   MAX_CONFIDENCE: 0.8,
