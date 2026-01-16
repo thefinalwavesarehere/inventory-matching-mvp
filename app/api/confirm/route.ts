@@ -6,21 +6,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { authOptions, getCurrentUser } from '@/app/lib/auth';
+import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 
 export async function POST(req: NextRequest) {
   try {
     // Require authentication
-    await requireAuth();
-
-    const user = await getCurrentUser(session);
-    if (!user) {
-      return NextResponse.json(
-        { success: false, error: 'User not found' },
-        { status: 404 }
-      );
-    }
+    const { profile } = await requireAuth();
 
     const body = await req.json();
     const { matchId, action, notes } = body;
@@ -66,7 +58,7 @@ export async function POST(req: NextRequest) {
         where: { id: matchId },
         data: { 
           status: 'CONFIRMED',
-          decidedById: user.id,
+          decidedById: profile.id,
           decidedAt: new Date(),
           note: notes || null,
         },
@@ -87,7 +79,7 @@ export async function POST(req: NextRequest) {
       // Log audit
       await prisma.auditLog.create({
         data: {
-          userId: user.id,
+          userId: profile.id,
           projectId: match.projectId,
           entity: 'MatchCandidate',
           entityId: matchId,
@@ -117,7 +109,7 @@ export async function POST(req: NextRequest) {
         where: { id: matchId },
         data: { 
           status: 'REJECTED',
-          decidedById: user.id,
+          decidedById: profile.id,
           decidedAt: new Date(),
           note: notes || null,
         },
@@ -138,7 +130,7 @@ export async function POST(req: NextRequest) {
       // Log audit
       await prisma.auditLog.create({
         data: {
-          userId: user.id,
+          userId: profile.id,
           projectId: match.projectId,
           entity: 'MatchCandidate',
           entityId: matchId,
