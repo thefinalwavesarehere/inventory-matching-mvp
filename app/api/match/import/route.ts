@@ -43,13 +43,9 @@ function parseCSV(content: string): any[] {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const userId = (session.user as any).id;
+    // Require authentication
+    const { profile } = await requireAuth();
+    const userId = profile.id;
 
     // Get form data
     const formData = await request.formData();

@@ -11,7 +11,7 @@ import prisma from '@/app/lib/db/prisma';
 export async function POST(req: NextRequest) {
   try {
     // Require authentication
-    await requireAuth();
+    const { profile } = await requireAuth();
 
     const body = await req.json();
     const { projectId, jobType, config } = body;
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
     const job = await prisma.matchingJob.create({
       data: {
         projectId,
-        createdBy: session.user?.email || null,
+        createdBy: profile.email || null,
         status: 'pending',
         currentStage: 0,
         currentStageName: 
