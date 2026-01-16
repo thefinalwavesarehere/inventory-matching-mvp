@@ -12,6 +12,9 @@ import { authOptions } from '@/app/lib/auth';
 import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
 import { processExactMatching } from './processExactMatching-v2';
+import { processFuzzyMatching } from './processFuzzyMatching-v1';
+import { processAIMatching } from './processAIMatching-v1';
+import { processWebSearchMatching } from './processWebSearchMatching-v1';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -364,15 +367,81 @@ export async function POST(
         });
       }
     } else if (jobType === 'ai') {
-      console.log(`[JOB-PROCESS] Calling processAIMatching...`);
-      const { processAIMatching } = await import('../processors');
-      newMatches = await processAIMatching(chunk, supplierItems, job.projectId);
-      console.log(`[JOB-PROCESS] AI chunk complete in ${Date.now() - processingStartTime}ms, found ${newMatches} matches`);
+      console.log(`[JOB-PROCESS-AI] Running AI matching batch`);
+      const result = await processAIMatching(job, job.projectId);
+      const processingTime = Date.now() - processingStartTime;
+      console.log(`[JOB-PROCESS-AI] AI matching batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
+      
+      // Check final job status
+      const updatedJob = await prisma.matchingJob.findUnique({
+        where: { id: jobId }
+      });
+      
+      if (updatedJob?.status === 'pending') {
+        console.log(`[JOB-PROCESS-AI] More items to process - job stays pending`);
+        return NextResponse.json({
+          success: true,
+          complete: false,
+          job: {
+            id: updatedJob.id,
+            status: 'pending',
+            processedItems: updatedJob.processedItems,
+            totalItems: updatedJob.totalItems,
+            matchesFound: updatedJob.matchesFound,
+          },
+        });
+      } else if (updatedJob?.status === 'complete') {
+        console.log(`[JOB-PROCESS-AI] All items processed - job complete`);
+        return NextResponse.json({
+          success: true,
+          complete: true,
+          job: {
+            id: updatedJob.id,
+            status: 'complete',
+            processedItems: updatedJob.processedItems,
+            totalItems: updatedJob.totalItems,
+            matchesFound: updatedJob.matchesFound,
+          },
+        });
+      }
     } else if (jobType === 'web-search') {
-      console.log(`[JOB-PROCESS] Calling processWebSearchMatching...`);
-      const { processWebSearchMatching } = await import('../processors');
-      newMatches = await processWebSearchMatching(chunk, supplierItems, job.projectId);
-      console.log(`[JOB-PROCESS] Web search chunk complete in ${Date.now() - processingStartTime}ms, found ${newMatches} matches`);
+      console.log(`[JOB-PROCESS-WEB] Running web search matching batch`);
+      const result = await processWebSearchMatching(job, job.projectId);
+      const processingTime = Date.now() - processingStartTime;
+      console.log(`[JOB-PROCESS-WEB] Web search batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
+      
+      // Check final job status
+      const updatedJob = await prisma.matchingJob.findUnique({
+        where: { id: jobId }
+      });
+      
+      if (updatedJob?.status === 'pending') {
+        console.log(`[JOB-PROCESS-WEB] More items to process - job stays pending`);
+        return NextResponse.json({
+          success: true,
+          complete: false,
+          job: {
+            id: updatedJob.id,
+            status: 'pending',
+            processedItems: updatedJob.processedItems,
+            totalItems: updatedJob.totalItems,
+            matchesFound: updatedJob.matchesFound,
+          },
+        });
+      } else if (updatedJob?.status === 'complete') {
+        console.log(`[JOB-PROCESS-WEB] All items processed - job complete`);
+        return NextResponse.json({
+          success: true,
+          complete: true,
+          job: {
+            id: updatedJob.id,
+            status: 'complete',
+            processedItems: updatedJob.processedItems,
+            totalItems: updatedJob.totalItems,
+            matchesFound: updatedJob.matchesFound,
+          },
+        });
+      }
     } else {
       console.error(`[JOB-PROCESS] Unknown job type: ${jobType}`);
       throw new Error(`Unknown job type: ${jobType}`);

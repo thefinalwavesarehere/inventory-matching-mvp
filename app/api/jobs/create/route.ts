@@ -29,18 +29,47 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get total unmatched items
-    const existingMatches = await prisma.matchCandidate.findMany({
-      where: { projectId },
-      select: { storeItemId: true },
-    });
-    const matchedIds = new Set(existingMatches.map((m) => m.storeItemId));
-
-    const totalStoreItems = await prisma.storeItem.count({
-      where: { projectId },
-    });
-
-    const totalUnmatched = totalStoreItems - matchedIds.size;
+    // Get total unmatched items based on job type
+    let totalUnmatched = 0;
+    
+    if (jobType === 'exact' || jobType === 'fuzzy') {
+      // Exact/Fuzzy: Count all items without any matches
+      const existingMatches = await prisma.matchCandidate.findMany({
+        where: { projectId },
+        select: { storeItemId: true },
+      });
+      const matchedIds = new Set(existingMatches.map((m) => m.storeItemId));
+      const totalStoreItems = await prisma.storeItem.count({
+        where: { projectId },
+      });
+      totalUnmatched = totalStoreItems - matchedIds.size;
+    } else if (jobType === 'ai') {
+      // AI: Count items not matched by stages 1 or 2
+      totalUnmatched = await prisma.storeItem.count({
+        where: {
+          projectId,
+          matchCandidates: {
+            none: {
+              projectId,
+              matchStage: { in: [1, 2] },
+            },
+          },
+        },
+      });
+    } else if (jobType === 'web-search') {
+      // Web Search: Count items not matched by stages 1, 2, or 3
+      totalUnmatched = await prisma.storeItem.count({
+        where: {
+          projectId,
+          matchCandidates: {
+            none: {
+              projectId,
+              matchStage: { in: [1, 2, 3] },
+            },
+          },
+        },
+      });
+    }
 
     // Create job record
     const job = await prisma.matchingJob.create({
@@ -60,7 +89,7 @@ export async function POST(req: NextRequest) {
         progressPercentage: 0,
         matchesFound: 0,
         matchRate: 0,
-        config: config || {},
+        config: { ...config, jobType },
       },
     });
 
