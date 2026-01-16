@@ -45,6 +45,16 @@ export const WEB_SEARCH_CONFIG = {
   TAVILY_MAX_RESULTS: 8,
   TAVILY_SEARCH_DEPTH: 'advanced',
   MIN_SEARCH_RESULTS: 2,
+  // Domain targeting for higher quality results
+  AUTOMOTIVE_DOMAINS: [
+    'rockauto.com',
+    'autozone.com',
+    'carparts.com',
+    'napaonline.com',
+    'oreillyauto.com',
+    'parts.acdelco.com',
+    'mopar.com',
+  ],
 };
 
 interface StoreItem {
@@ -162,6 +172,7 @@ async function searchWebForPart(storeItem: StoreItem): Promise<TavilyResponse | 
       search_depth: WEB_SEARCH_CONFIG.TAVILY_SEARCH_DEPTH as 'basic' | 'advanced',
       max_results: WEB_SEARCH_CONFIG.TAVILY_MAX_RESULTS,
       include_answer: true,
+      include_domains: WEB_SEARCH_CONFIG.AUTOMOTIVE_DOMAINS, // Target automotive sites
     });
 
     if (!response || !response.results || response.results.length === 0) {

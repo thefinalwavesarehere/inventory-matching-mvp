@@ -314,8 +314,40 @@ async function processItem(storeItem: StoreItem, projectId: string): Promise<any
 }
 
 /**
+ * Score item for AI matching suitability
+ * Higher scores = more likely to match via AI
+ */
+function scoreItemForAIMatching(item: StoreItem): number {
+  let score = 0;
+  
+  // High-value indicators
+  if (item.lineCode) score += 30; // Manufacturer code present
+  if (item.description && item.description.length > 20) score += 20; // Detailed description
+  if (/\d{4,}/.test(item.partNumber)) score += 15; // Structured part number
+  
+  // Automotive-specific patterns
+  const automotivePatterns = [
+    /filter|belt|pump|sensor|brake|clutch/i,
+    /bearing|gasket|seal|hose|valve/i,
+    /rotor|caliper|pad|disc|drum/i,
+  ];
+  
+  if (item.description && automotivePatterns.some(p => p.test(item.description))) {
+    score += 25;
+  }
+  
+  // Penalty for generic items
+  if (item.description && /^(nut|bolt|screw|washer|clip)$/i.test(item.description)) {
+    score -= 50;
+  }
+  
+  return score;
+}
+
+/**
  * Main AI matching function
  * Processes items in batches with rate limiting and cost tracking
+ * Now includes pre-filtering to skip low-probability items
  */
 export async function runAIMatching(
   projectId: string,
@@ -349,6 +381,19 @@ export async function runAIMatching(
   
   console.log(`[AI_MATCHER] Found ${unmatchedItems.length} unmatched items`);
   
+  // Pre-filter: Only send high-scoring items to AI (30-40% cost reduction)
+  const aiCandidates = unmatchedItems.filter(item => scoreItemForAIMatching(item) > 50);
+  const filteredCount = unmatchedItems.length - aiCandidates.length;
+  
+  if (filteredCount > 0) {
+    console.log(`[AI_MATCHER] Pre-filtered ${filteredCount} low-probability items (score ≤ 50)`);
+  }
+  console.log(`[AI_MATCHER] Processing ${aiCandidates.length} high-probability items`);
+  
+  if (aiCandidates.length === 0) {
+    return { matchesFound: 0, itemsProcessed: unmatchedItems.length, estimatedCost: 0 };
+  }
+  
   if (unmatchedItems.length === 0) {
     return { matchesFound: 0, itemsProcessed: 0, estimatedCost: 0 };
   }
@@ -357,8 +402,8 @@ export async function runAIMatching(
   let totalCost = 0;
   
   // Process in concurrent batches
-  for (let i = 0; i < unmatchedItems.length; i += AI_CONFIG.CONCURRENT_CALLS) {
-    const batch = unmatchedItems.slice(i, i + AI_CONFIG.CONCURRENT_CALLS);
+  for (let i = 0; i < aiCandidates.length; i += AI_CONFIG.CONCURRENT_CALLS) {
+    const batch = aiCandidates.slice(i, i + AI_CONFIG.CONCURRENT_CALLS);
     
     console.log(`[AI_MATCHER] Processing batch ${Math.floor(i / AI_CONFIG.CONCURRENT_CALLS) + 1} (${batch.length} items)`);
     
@@ -386,7 +431,7 @@ export async function runAIMatching(
     }
     
     // Rate limit between batches
-    if (i + AI_CONFIG.CONCURRENT_CALLS < unmatchedItems.length) {
+    if (i + AI_CONFIG.CONCURRENT_CALLS < aiCandidates.length) {
       await new Promise(resolve => setTimeout(resolve, AI_CONFIG.DELAY_BETWEEN_BATCHES));
     }
   }
