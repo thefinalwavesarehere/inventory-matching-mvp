@@ -1,25 +1,22 @@
 /**
  * Web Search Matching Stage (Stage 4)
- * Uses web search to find alternate part numbers, then validates against catalog
+ * Uses Tavily API to search for part cross-references and validate matches
  * Two-phase: 1) Search for interchanges, 2) Validate matches
  */
 
 import prisma from '@/app/lib/db/prisma';
 import { Prisma } from '@prisma/client';
-import OpenAI from 'openai';
+import { tavily } from 'tavily';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY });
 
 export const WEB_SEARCH_CONFIG = {
   MAX_CONFIDENCE: 0.8,
   MIN_CONFIDENCE: 0.5,
   BATCH_SIZE: 50,
   MAX_COST: 30,
-  COST_PER_SEARCH: 0.03,
-  COST_PER_VALIDATION: 0.01,
-  MODEL: 'gpt-4o',
+  COST_PER_SEARCH: 0.008, // Tavily basic search cost
+  COST_PER_VALIDATION: 0.008, // Additional search for validation
 };
 
 interface StoreItem {
@@ -31,59 +28,86 @@ interface StoreItem {
 
 interface SearchResult {
   manufacturer: string | null;
-  oem_numbers: string[];
-  interchange_numbers: string[];
-  alternate_names: string[];
+  alternate_numbers: string[];
   confidence: number;
-}
-
-interface ValidationResult {
-  is_match: boolean;
-  confidence: number;
-  reasoning: string;
 }
 
 /**
- * Phase 1: Search for part information and alternates
+ * Phase 1: Search for part information and alternates using Tavily
  */
 async function searchForAlternates(storeItem: StoreItem): Promise<SearchResult | null> {
-  const searchPrompt = `Search for automotive part cross-references:
-
-Part Number: ${storeItem.partNumber}
-Line Code: ${storeItem.lineCode || 'N/A'}
-Description: ${storeItem.description || 'N/A'}
-
-Find:
-1. Manufacturer who makes this part
-2. OEM part numbers this replaces
-3. Interchange/equivalent part numbers from other brands
-4. Common alternate names or numbers
-
-Return JSON:
-{
-  "manufacturer": "string or null",
-  "oem_numbers": ["array of OEM part numbers"],
-  "interchange_numbers": ["array of equivalent part numbers"],
-  "alternate_names": ["array"],
-  "confidence": 0.0-1.0
-}`;
+  // Construct search query
+  const searchQuery = [
+    storeItem.partNumber,
+    storeItem.lineCode,
+    storeItem.description,
+    'automotive part cross reference interchange',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   try {
-    const response = await openai.chat.completions.create({
-      model: WEB_SEARCH_CONFIG.MODEL,
-      messages: [{ role: 'user', content: searchPrompt }],
-      temperature: 0.3,
-      max_tokens: 300,
+    console.log(`[WEB_SEARCH] Searching: ${searchQuery}`);
+    
+    const response = await tavilyClient.search(searchQuery, {
+      searchDepth: 'basic',
+      maxResults: 5,
     });
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      console.error('[WEB_SEARCH] No response from OpenAI');
+    if (!response || !response.results || response.results.length === 0) {
+      console.log('[WEB_SEARCH] No search results found');
       return null;
     }
 
-    const result = JSON.parse(content) as SearchResult;
-    return result;
+    // Extract part numbers from search results
+    const alternateNumbers = new Set<string>();
+    let manufacturer: string | null = null;
+
+    for (const result of response.results) {
+      const content = `${result.title} ${result.content}`.toLowerCase();
+      
+      // Extract manufacturer if mentioned
+      if (!manufacturer) {
+        const manufacturerPatterns = [
+          /(?:made by|manufactured by|from)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i,
+          /([A-Z][A-Z]+)\s+(?:part|brand)/i,
+        ];
+        for (const pattern of manufacturerPatterns) {
+          const match = content.match(pattern);
+          if (match) {
+            manufacturer = match[1].trim();
+            break;
+          }
+        }
+      }
+
+      // Extract part numbers (alphanumeric with hyphens, 4-20 chars)
+      const partNumberPattern = /\b[A-Z0-9][-A-Z0-9]{3,19}\b/gi;
+      const matches = content.match(partNumberPattern);
+      if (matches) {
+        matches.forEach(num => {
+          const cleaned = num.trim().toUpperCase();
+          // Avoid common false positives
+          if (cleaned.length >= 4 && cleaned.length <= 20 && !/^(HTTP|HTTPS|WWW)/.test(cleaned)) {
+            alternateNumbers.add(cleaned);
+          }
+        });
+      }
+    }
+
+    // Calculate confidence based on result quality
+    const confidence = Math.min(
+      0.3 + (response.results.length * 0.1) + (alternateNumbers.size * 0.05),
+      0.9
+    );
+
+    console.log(`[WEB_SEARCH] Found ${alternateNumbers.size} alternate numbers, confidence: ${confidence.toFixed(2)}`);
+
+    return {
+      manufacturer,
+      alternate_numbers: Array.from(alternateNumbers),
+      confidence,
+    };
   } catch (error: any) {
     console.error('[WEB_SEARCH] Search error:', error.message);
     return null;
@@ -100,15 +124,14 @@ async function findSupplierMatches(
 ): Promise<any[]> {
   const allPossibleNumbers = [
     storeItem.partNumber,
-    ...searchResult.oem_numbers,
-    ...searchResult.interchange_numbers,
+    ...searchResult.alternate_numbers,
   ].filter(n => n && n.length > 0);
 
   if (allPossibleNumbers.length === 0) {
     return [];
   }
 
-  console.log(`[WEB_SEARCH] Searching catalog for: ${allPossibleNumbers.join(', ')}`);
+  console.log(`[WEB_SEARCH] Searching catalog for: ${allPossibleNumbers.slice(0, 10).join(', ')}${allPossibleNumbers.length > 10 ? '...' : ''}`);
 
   const supplierMatches = await prisma.supplierItem.findMany({
     where: {
@@ -128,51 +151,73 @@ async function findSupplierMatches(
 }
 
 /**
- * Phase 3: Validate match with AI
+ * Phase 3: Validate match with additional search
  */
 async function validateMatch(
   storeItem: StoreItem,
-  supplierItem: any
-): Promise<ValidationResult | null> {
-  const validationPrompt = `Verify this automotive parts match:
-
-Store Item: ${storeItem.partNumber} - ${storeItem.description || 'N/A'}
-Potential Match: ${supplierItem.partNumber} - ${supplierItem.description || 'N/A'}
-
-Are these the same part? Consider part numbers, descriptions, and typical automotive usage.
-
-Return JSON:
-{
-  "is_match": true/false,
-  "confidence": 0.0-0.8,
-  "reasoning": "explanation"
-}`;
-
+  supplierItem: any,
+  searchResult: SearchResult
+): Promise<{ confidence: number; reasoning: string } | null> {
   try {
-    const response = await openai.chat.completions.create({
-      model: WEB_SEARCH_CONFIG.MODEL,
-      messages: [{ role: 'user', content: validationPrompt }],
-      temperature: 0.3,
-      max_tokens: 150,
+    // Build validation query
+    const validationQuery = `${storeItem.partNumber} ${supplierItem.partNumber} automotive part equivalent interchange`;
+    
+    console.log(`[WEB_SEARCH] Validating: ${storeItem.partNumber} vs ${supplierItem.partNumber}`);
+    
+    const response = await tavilyClient.search(validationQuery, {
+      searchDepth: 'basic',
+      maxResults: 3,
     });
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      console.error('[WEB_SEARCH] No validation response');
-      return null;
+    if (!response || !response.results || response.results.length === 0) {
+      return {
+        confidence: 0.5, // Default confidence if no validation results
+        reasoning: 'Match found via alternate part numbers',
+      };
     }
 
-    const result = JSON.parse(content) as ValidationResult;
-    
-    // Cap confidence at MAX_CONFIDENCE
-    if (result.confidence > WEB_SEARCH_CONFIG.MAX_CONFIDENCE) {
-      result.confidence = WEB_SEARCH_CONFIG.MAX_CONFIDENCE;
+    // Check if both part numbers appear together in results
+    let mentionsTogether = 0;
+    let mentionsEither = 0;
+
+    for (const result of response.results) {
+      const content = `${result.title} ${result.content}`.toLowerCase();
+      const hasStore = content.includes(storeItem.partNumber.toLowerCase());
+      const hasSupplier = content.includes(supplierItem.partNumber.toLowerCase());
+      
+      if (hasStore && hasSupplier) {
+        mentionsTogether++;
+      }
+      if (hasStore || hasSupplier) {
+        mentionsEither++;
+      }
     }
+
+    // Calculate confidence based on validation
+    let confidence = 0.5; // Base confidence
     
-    return result;
+    if (mentionsTogether > 0) {
+      confidence = Math.min(0.7 + (mentionsTogether * 0.1), WEB_SEARCH_CONFIG.MAX_CONFIDENCE);
+    } else if (mentionsEither > 0) {
+      confidence = 0.6;
+    }
+
+    // Factor in search result confidence
+    confidence = Math.min(confidence * searchResult.confidence, WEB_SEARCH_CONFIG.MAX_CONFIDENCE);
+
+    const reasoning = mentionsTogether > 0
+      ? `Parts mentioned together in ${mentionsTogether} source(s)`
+      : `Found via cross-reference search (${searchResult.alternate_numbers.length} alternates)`;
+
+    console.log(`[WEB_SEARCH] Validation confidence: ${confidence.toFixed(2)} - ${reasoning}`);
+
+    return { confidence, reasoning };
   } catch (error: any) {
     console.error('[WEB_SEARCH] Validation error:', error.message);
-    return null;
+    return {
+      confidence: 0.5,
+      reasoning: 'Match found via alternate part numbers (validation unavailable)',
+    };
   }
 }
 
@@ -204,17 +249,17 @@ async function processItem(
   }
   
   // Phase 3: Validate best match
-  const validation = await validateMatch(storeItem, supplierMatches[0]);
+  const validation = await validateMatch(storeItem, supplierMatches[0], searchResult);
   cost += WEB_SEARCH_CONFIG.COST_PER_VALIDATION;
   
-  if (!validation || !validation.is_match) {
+  if (!validation) {
     console.log(`[WEB_SEARCH] Validation failed for ${storeItem.partNumber}`);
     return { match: null, cost };
   }
   
   // Check confidence threshold
   if (validation.confidence < WEB_SEARCH_CONFIG.MIN_CONFIDENCE) {
-    console.log(`[WEB_SEARCH] Low validation confidence (${validation.confidence}) for ${storeItem.partNumber}`);
+    console.log(`[WEB_SEARCH] Low validation confidence (${validation.confidence.toFixed(2)}) for ${storeItem.partNumber}`);
     return { match: null, cost };
   }
   
@@ -228,7 +273,7 @@ async function processItem(
       reasoning: validation.reasoning,
       searchData: {
         manufacturer: searchResult.manufacturer,
-        alternatesFound: searchResult.oem_numbers.length + searchResult.interchange_numbers.length,
+        alternatesFound: searchResult.alternate_numbers.length,
       },
     },
     cost,
