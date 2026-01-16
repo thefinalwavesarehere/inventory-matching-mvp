@@ -305,7 +305,7 @@ export async function runAIMatching(
         targetId: m.supplierId,
         targetType: 'SUPPLIER',
         matchStage: 3,
-        method: 'AI_GPT4',
+        method: 'AI',
         confidence: m.confidence,
         status: 'PENDING',
         features: {
