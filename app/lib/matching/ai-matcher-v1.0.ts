@@ -381,14 +381,26 @@ export async function runAIMatching(
   
   console.log(`[AI_MATCHER] Found ${unmatchedItems.length} unmatched items`);
   
-  // Pre-filter: Only send high-scoring items to AI (30-40% cost reduction)
-  const aiCandidates = unmatchedItems.filter(item => scoreItemForAIMatching(item) > 50);
-  const filteredCount = unmatchedItems.length - aiCandidates.length;
-  
-  if (filteredCount > 0) {
-    console.log(`[AI_MATCHER] Pre-filtered ${filteredCount} low-probability items (score ≤ 50)`);
-  }
-  console.log(`[AI_MATCHER] Processing ${aiCandidates.length} high-probability items`);
+  // Pre-filter: Only skip items with NO usable information
+  const aiCandidates = unmatchedItems.filter(item => {
+    // Skip only if missing ALL critical fields
+    const hasPartNumber = item.partNumber && item.partNumber.length >= 2;
+    const hasDescription = item.description && item.description.length >= 3;
+    const hasLineCode = !!item.lineCode;
+    
+    // Keep if has ANY useful information
+    const isMatchable = hasPartNumber || hasDescription || hasLineCode;
+    
+    if (!isMatchable) {
+      console.log(`[AI_MATCHER] ⏭️ Skipping ${item.id}: No usable data`);
+    }
+    
+    return isMatchable;
+  });
+
+  const skippedCount = unmatchedItems.length - aiCandidates.length;
+  console.log(`[AI_MATCHER] Filtered ${skippedCount} items with insufficient data`);
+  console.log(`[AI_MATCHER] Processing ${aiCandidates.length} items with AI`);
   
   if (aiCandidates.length === 0) {
     return { matchesFound: 0, itemsProcessed: unmatchedItems.length, estimatedCost: 0 };
