@@ -25,6 +25,7 @@ import prisma from '@/app/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import OpenAI from 'openai';
 import { TavilyClient } from 'tavily';
+import { getSupplierCatalog } from './supplier-catalog-cache';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -212,25 +213,17 @@ ${webContext}${tavilyAnswer}
 `;
   }).join('\n---\n');
 
-  // Get supplier catalog for matching
-  // Sample relevant suppliers based on line codes
+  // Get supplier catalog for matching (CACHED - egress optimization)
+  const allSuppliers = await getSupplierCatalog(projectId);
+  
+  // Filter relevant suppliers based on line codes
   const lineCodes = searchResults
     .map(sr => sr.item.lineCode)
     .filter((lc): lc is string => lc !== null && lc !== undefined);
   
-  const supplierItems = await prisma.supplierItem.findMany({
-    where: {
-      projectId: projectId,
-      ...(lineCodes.length > 0 ? { lineCode: { in: lineCodes } } : {}),
-    },
-    select: {
-      id: true,
-      partNumber: true,
-      lineCode: true,
-      description: true,
-    },
-    take: 100,
-  });
+  const supplierItems = lineCodes.length > 0
+    ? allSuppliers.filter(s => lineCodes.includes(s.lineCode)).slice(0, 100)
+    : allSuppliers.slice(0, 100);
 
   const suppliersContext = supplierItems.map(s => 
     `${s.id}|${s.partNumber}|${s.lineCode || ''}|${s.description || ''}`
