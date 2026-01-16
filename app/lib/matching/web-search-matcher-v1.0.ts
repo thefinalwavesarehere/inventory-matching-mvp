@@ -214,7 +214,9 @@ ${webContext}${tavilyAnswer}
 
   // Get supplier catalog for matching
   // Sample relevant suppliers based on line codes
-  const lineCodes = searchResults.map(sr => sr.item.lineCode).filter(Boolean);
+  const lineCodes = searchResults
+    .map(sr => sr.item.lineCode)
+    .filter((lc): lc is string => lc !== null && lc !== undefined);
   
   const supplierItems = await prisma.supplierItem.findMany({
     where: {
