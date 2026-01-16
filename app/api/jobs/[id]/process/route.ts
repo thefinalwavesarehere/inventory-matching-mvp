@@ -7,8 +7,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/lib/auth';
+// Migrated to Supabase auth
+import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
 import { processExactMatching } from './processExactMatching-v2';
@@ -70,14 +70,8 @@ export async function POST(
     const isInternalCall = internalCall === process.env.CRON_SECRET;
     
     if (!isInternalCall) {
-      const session = await getServerSession(authOptions);
-      
-      if (!session) {
-        return NextResponse.json(
-          { success: false, error: 'Unauthorized' },
-          { status: 401 }
-        );
-      }
+      // Require authentication
+    await requireAuth();
     }
 
     const jobId = params.id;

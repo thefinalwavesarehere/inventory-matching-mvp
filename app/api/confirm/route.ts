@@ -5,20 +5,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
+// Migrated to Supabase auth
 import { authOptions, getCurrentUser } from '@/app/lib/auth';
 import prisma from '@/app/lib/db/prisma';
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    // Require authentication
+    await requireAuth();
 
     const user = await getCurrentUser(session);
     if (!user) {

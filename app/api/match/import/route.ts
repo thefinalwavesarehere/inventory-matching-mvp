@@ -5,8 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/app/lib/db/prisma';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/lib/auth';
+// Migrated to Supabase auth
+import { requireAuth } from '@/app/lib/auth-helpers';
 
 interface ImportRow {
   matchId: string;

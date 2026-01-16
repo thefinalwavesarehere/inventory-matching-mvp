@@ -6,8 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/lib/auth';
+// Migrated to Supabase auth
+import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 
 export async function GET(
@@ -15,14 +15,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    // Require authentication
+    await requireAuth();
 
     const project = await prisma.project.findUnique({
       where: { id: params.id },
@@ -63,14 +57,8 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    // Require authentication
+    await requireAuth();
 
     const body = await req.json();
     const { name, description } = body;
@@ -102,14 +90,8 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    // Require authentication
+    await requireAuth();
 
     // Delete all related data first (cascade)
     await prisma.$transaction([

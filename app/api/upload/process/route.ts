@@ -7,8 +7,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/lib/auth';
+// Migrated to Supabase auth
+import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import * as XLSX from 'xlsx';
 import { normalizePartNumber, extractLineCode, excelLeft, excelMid } from '@/app/lib/normalization';
@@ -337,14 +337,8 @@ function processInterchangeFile(data: any[], projectId: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    // Require authentication
+    await requireAuth();
 
     const body = await req.json();
     const { projectId, fileUrl, fileType, fileName } = body;

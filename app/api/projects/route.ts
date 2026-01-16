@@ -6,20 +6,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/lib/auth';
+// Migrated to Supabase auth
+import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    // Require authentication
+    await requireAuth();
 
     const projects = await prisma.project.findMany({
       orderBy: { createdAt: 'desc' },
@@ -117,14 +111,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    // Require authentication
+    await requireAuth();
 
     const body = await req.json();
     const { name, description } = body;
