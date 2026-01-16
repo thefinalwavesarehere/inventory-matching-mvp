@@ -160,34 +160,58 @@ async function getCandidates(storeItem: StoreItem, projectId: string): Promise<S
  * Call OpenAI to evaluate candidates
  */
 async function evaluateWithAI(storeItem: StoreItem, candidates: SupplierItem[]): Promise<AIMatchResult | null> {
-  const prompt = `You are an automotive parts matching expert for an auto parts store.
+  const prompt = `You are an expert automotive parts matcher for Arnold Motor Supply, matching store inventory against the CarQuest supplier catalog.
 
-STORE ITEM (what we currently stock):
+STORE ITEM TO MATCH:
 - Part Number: ${storeItem.partNumber}
 - Line Code: ${storeItem.lineCode || 'N/A'}
 - Description: ${storeItem.description || 'N/A'}
-- Our Cost: $${storeItem.currentCost ? storeItem.currentCost.toNumber().toFixed(2) : 'N/A'}
+- Store Cost: $${storeItem.currentCost ? storeItem.currentCost.toNumber().toFixed(2) : 'N/A'}
 
-SUPPLIER CANDIDATES (potential matches from CarQuest catalog):
-${candidates.map((c, i) => `
-${i + 1}. Part#: ${c.partNumber} | Line: ${c.lineCode || 'N/A'} | Desc: ${c.description || 'N/A'} | Cost: $${c.currentCost ? c.currentCost.toNumber().toFixed(2) : 'N/A'}
-`).join('')}
+SUPPLIER CANDIDATES:
+${candidates.map((c, i) => `${i + 1}. Part#: ${c.partNumber} | Line: ${c.lineCode || 'N/A'} | Desc: ${c.description || 'N/A'} | Cost: $${c.currentCost ? c.currentCost.toNumber().toFixed(2) : 'N/A'}`).join('\n')}
 
-MATCHING RULES:
-1. Part numbers often have different prefixes but same core number (e.g., "FEL1003" vs "1003")
-2. Line codes may differ between distributors (store uses internal codes, supplier uses manufacturer codes)
-3. Descriptions use abbreviations: GSKT=gasket, CTRL=control, JNT=joint, ARM=arm, HD=heavy duty
-4. Price differences up to 50% are normal between distributors
-5. Same part may have different levels of detail in description
+MATCHING GUIDELINES:
 
-EVALUATE each candidate and select the BEST match (if any exists).
+**STRONG MATCH indicators (confidence 0.85-0.95):**
+- Identical or near-identical part numbers (ignoring prefixes/suffixes)
+- Same core number with different manufacturer codes (e.g., "12066" = "ABH12066")
+- Matching description keywords + similar part numbers
 
-Respond ONLY with valid JSON:
+**MODERATE MATCH indicators (confidence 0.70-0.84):**
+- Part numbers share 4+ digits in sequence
+- Descriptions match but part numbers differ slightly
+- Known interchange patterns (e.g., service chambers: "24SC" ↔ "GC2424")
+
+**WEAK/NO MATCH indicators (reject or confidence <0.70):**
+- Part numbers share only 2-3 digits
+- Descriptions describe different product types
+- Significant price difference (>100%) without explanation
+
+**COMMON PATTERNS:**
+- "C" suffix often indicates remanufactured/Cardone parts
+- Numbers like "961-305D" are Dorman-style part numbers
+- "GC" prefix = Gladhand/coupling products
+- "MID" prefix = Midland brake products
+
+**EXAMPLES:**
+
+Good Match (accept):
+- Store: "12066" (BODY BOLT) → Supplier: "12066" (BODY BOLT) ✓ Confidence: 0.95
+- Store: "8101569C" → Supplier: "963-017D" ✓ Confidence: 0.85 (both are door lock actuators)
+
+Bad Match (reject):
+- Store: "1R12-568" (AIR BAG) → Supplier: "10568" (A/C CONDENSER) ✗ Different products
+- Store: "AC460" → Supplier: "AC470" ✗ Different part numbers, likely different applications
+
+TASK: Evaluate each candidate and select the BEST match. If no candidate is a good match, return match_found: false.
+
+Respond with ONLY valid JSON (no markdown, no explanation outside JSON):
 {
-  "match_found": true/false,
-  "best_match_index": 1-${candidates.length} or null,
-  "confidence": 0.0-1.0,
-  "match_reasoning": "brief explanation of why this matches or why no match exists"
+  "match_found": true or false,
+  "best_match_index": 1 to ${candidates.length} or null if no match,
+  "confidence": 0.60 to 0.99,
+  "match_reasoning": "One sentence explaining why this matches or why no match exists"
 }`;
 
   try {
