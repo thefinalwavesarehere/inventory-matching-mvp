@@ -7,6 +7,12 @@
  * - Improved query construction (manufacturer-aware)
  * - Pre-filtering of unmatchable items
  * - Removed restrictive "cross reference interchange" terminology
+ * 
+ * PHASE 2 OPTIMIZATIONS:
+ * - Advanced search depth (higher quality results)
+ * - Increased max_results from 5 to 8
+ * - Include Tavily AI answer for better context
+ * - Quality threshold: minimum 2 results required
  */
 
 import prisma from '@/app/lib/db/prisma';
@@ -25,9 +31,12 @@ export const WEB_SEARCH_CONFIG = {
   MIN_CONFIDENCE: 0.5,
   BATCH_SIZE: 50,
   MAX_COST: 30,
-  COST_PER_SEARCH: 0.008, // Tavily basic search
+  COST_PER_SEARCH: 0.016, // Tavily advanced search (2 credits)
   COST_PER_EVALUATION: 0.015, // GPT-4o evaluation
   MODEL: 'gpt-4o',
+  TAVILY_MAX_RESULTS: 8, // Increased from 5
+  TAVILY_SEARCH_DEPTH: 'advanced', // Upgraded from 'basic'
+  MIN_SEARCH_RESULTS: 2, // Skip if < 2 results
 };
 
 interface StoreItem {
@@ -42,6 +51,11 @@ interface TavilySearchResult {
   url: string;
   content: string;
   score: number;
+}
+
+interface TavilyResponse {
+  results: TavilySearchResult[];
+  answer?: string;
 }
 
 interface MatchEvaluation {
@@ -125,8 +139,9 @@ function isMatchableViaWebSearch(item: StoreItem): boolean {
 
 /**
  * Phase 1: Search web using Tavily
+ * PHASE 2: Now uses advanced search depth + more results + AI answer
  */
-async function searchWebForPart(storeItem: StoreItem): Promise<TavilySearchResult[] | null> {
+async function searchWebForPart(storeItem: StoreItem): Promise<TavilyResponse | null> {
   // Use improved query construction
   const searchQuery = constructTavilyQuery(storeItem);
 
@@ -135,12 +150,19 @@ async function searchWebForPart(storeItem: StoreItem): Promise<TavilySearchResul
     
     const response = await tavilyClient.search({
       query: searchQuery,
-      search_depth: 'basic',
-      max_results: 5,
+      search_depth: WEB_SEARCH_CONFIG.TAVILY_SEARCH_DEPTH as 'basic' | 'advanced',
+      max_results: WEB_SEARCH_CONFIG.TAVILY_MAX_RESULTS,
+      include_answer: true, // Get Tavily's AI summary
     });
 
     if (!response || !response.results || response.results.length === 0) {
       console.log('[WEB_SEARCH] No Tavily results found');
+      return null;
+    }
+
+    // PHASE 2: Quality threshold - require minimum results
+    if (response.results.length < WEB_SEARCH_CONFIG.MIN_SEARCH_RESULTS) {
+      console.log(`[WEB_SEARCH] ⚠️ Only ${response.results.length} results (min ${WEB_SEARCH_CONFIG.MIN_SEARCH_RESULTS}), skipping`);
       return null;
     }
 
@@ -151,8 +173,12 @@ async function searchWebForPart(storeItem: StoreItem): Promise<TavilySearchResul
       score: r.score || 0,
     }));
 
-    console.log(`[WEB_SEARCH] Found ${results.length} web results`);
-    return results;
+    console.log(`[WEB_SEARCH] Found ${results.length} web results${response.answer ? ' + AI answer' : ''}`);
+    
+    return {
+      results,
+      answer: response.answer,
+    };
   } catch (error: any) {
     console.error('[WEB_SEARCH] Tavily search error:', error.message);
     return null;
@@ -195,13 +221,18 @@ async function getPotentialSupplierMatches(
  */
 async function evaluateMatchWithGPT(
   storeItem: StoreItem,
-  webResults: TavilySearchResult[],
+  webResponse: TavilyResponse,
   supplierCandidates: any[]
 ): Promise<MatchEvaluation | null> {
   // Format web search results for prompt
-  const webResultsSummary = webResults
+  const webResultsSummary = webResponse.results
     .map((r, i) => `Result ${i + 1}: ${r.title}\n${r.content.substring(0, 200)}...`)
     .join('\n\n');
+  
+  // PHASE 2: Include Tavily AI answer if available
+  const tavilyAnswer = webResponse.answer 
+    ? `\n\nTAVILY AI SUMMARY:\n${webResponse.answer}` 
+    : '';
 
   // Format supplier candidates
   const supplierList = supplierCandidates
@@ -216,7 +247,7 @@ Line Code: ${storeItem.lineCode || 'N/A'}
 Description: ${storeItem.description || 'N/A'}
 
 WEB SEARCH RESULTS:
-${webResultsSummary}
+${webResultsSummary}${tavilyAnswer}
 
 SUPPLIER CANDIDATES:
 ${supplierList}
@@ -279,10 +310,10 @@ async function processItem(
   let cost = 0;
   
   // Phase 1: Search web with Tavily
-  const webResults = await searchWebForPart(storeItem);
+  const webResponse = await searchWebForPart(storeItem);
   cost += WEB_SEARCH_CONFIG.COST_PER_SEARCH;
   
-  if (!webResults || webResults.length === 0) {
+  if (!webResponse || !webResponse.results || webResponse.results.length === 0) {
     console.log(`[WEB_SEARCH] No web results for ${storeItem.partNumber}`);
     return { match: null, cost };
   }
@@ -296,7 +327,7 @@ async function processItem(
   }
   
   // Phase 3: Evaluate with GPT-4o
-  const evaluation = await evaluateMatchWithGPT(storeItem, webResults, supplierCandidates);
+  const evaluation = await evaluateMatchWithGPT(storeItem, webResponse, supplierCandidates);
   cost += WEB_SEARCH_CONFIG.COST_PER_EVALUATION;
   
   if (!evaluation || !evaluation.has_match || !evaluation.supplier_id) {
@@ -319,8 +350,9 @@ async function processItem(
       confidence: evaluation.confidence,
       reasoning: evaluation.reasoning,
       searchData: {
-        webResultsCount: webResults.length,
+        webResultsCount: webResponse.results.length,
         candidatesEvaluated: supplierCandidates.length,
+        hasAiAnswer: !!webResponse.answer,
       },
     },
     cost,
