@@ -47,7 +47,8 @@ interface TavilyResult {
   title: string;
   url: string;
   content: string;
-  score: number;
+  score: string; // Tavily returns score as string
+  raw_content?: string;
 }
 
 interface TavilySearchResponse {
