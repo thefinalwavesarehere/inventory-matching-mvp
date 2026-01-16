@@ -46,6 +46,34 @@ interface AIMatchResult {
 }
 
 /**
+ * Generate part number variants for better matching
+ */
+function getPartNumberVariants(partNumber: string): string[] {
+  const variants = [partNumber];
+  
+  // Strip common suffixes (C, A, R, etc.)
+  if (/[A-Z]$/.test(partNumber)) {
+    variants.push(partNumber.slice(0, -1));
+  }
+  
+  // Remove dashes/spaces
+  const noDashes = partNumber.replace(/[-\s]/g, '');
+  if (noDashes !== partNumber) {
+    variants.push(noDashes);
+  }
+  
+  // Add dashes if none exist (try common patterns)
+  if (!partNumber.includes('-') && partNumber.length > 4) {
+    variants.push(partNumber.slice(0, 4) + '-' + partNumber.slice(4));
+    if (partNumber.length > 6) {
+      variants.push(partNumber.slice(0, 3) + '-' + partNumber.slice(3));
+    }
+  }
+  
+  return [...new Set(variants)];
+}
+
+/**
  * Extract keywords from description for fallback search
  */
 function extractKeywords(description: string | null): string[] {
@@ -84,12 +112,17 @@ async function getCandidates(storeItem: StoreItem, projectId: string): Promise<S
     }
   }
   
-  // Strategy 2: Any LINE with high part number similarity
+  // Strategy 2: Any LINE with high part number similarity (try variants)
+  const variants = getPartNumberVariants(storeItem.partNumber);
+  const variantConditions = variants.map(v => 
+    Prisma.sql`SIMILARITY(UPPER("partNumber"), UPPER(${v})) >= 0.5`
+  );
+  
   const partMatches = await prisma.$queryRaw<SupplierItem[]>`
     SELECT id, "partNumber", "lineCode", description, "currentCost"
     FROM supplier_items 
     WHERE "projectId" = ${projectId}
-    AND SIMILARITY(UPPER("partNumber"), UPPER(${storeItem.partNumber})) >= 0.5
+    AND (${Prisma.join(variantConditions, ' OR ')})
     ORDER BY SIMILARITY(UPPER("partNumber"), UPPER(${storeItem.partNumber})) DESC
     LIMIT 20
   `;
@@ -116,7 +149,7 @@ async function getCandidates(storeItem: StoreItem, projectId: string): Promise<S
     FROM supplier_items 
     WHERE "projectId" = ${projectId}
     AND (${Prisma.join(orConditions, ' OR ')})
-    LIMIT 30
+    LIMIT 50
   `;
   
   console.log(`[AI_MATCHER] Strategy 3: Found ${descMatches.length} keyword matches`);
@@ -189,16 +222,39 @@ async function processItem(storeItem: StoreItem, projectId: string): Promise<any
   const startTime = Date.now();
   
   // Get candidates
-  const candidates = await getCandidates(storeItem, projectId);
+  let candidates = await getCandidates(storeItem, projectId);
+  
+  // Fallback: If no candidates found, try broader description-only search
   if (candidates.length === 0) {
-    console.log(`[AI_MATCHER] No candidates for ${storeItem.partNumber}`);
+    const keywords = extractKeywords(storeItem.description);
+    if (keywords.length > 0) {
+      const orConditions = keywords.slice(0, 3).map(k => // Use top 3 keywords
+        Prisma.sql`description ILIKE ${`%${k}%`}`
+      );
+      
+      candidates = await prisma.$queryRaw<SupplierItem[]>`
+        SELECT id, "partNumber", "lineCode", description, "currentCost"
+        FROM supplier_items 
+        WHERE "projectId" = ${projectId}
+        AND (${Prisma.join(orConditions, ' OR ')})
+        LIMIT 30
+      `;
+      
+      if (candidates.length > 0) {
+        console.log(`[AI_MATCHER] Fallback found ${candidates.length} candidates for ${storeItem.partNumber}`);
+      }
+    }
+  }
+  
+  if (candidates.length === 0) {
+    console.log(`[AI_MATCHER] No match for ${storeItem.partNumber}: NO_CANDIDATES_FOUND`);
     return null;
   }
   
   // Evaluate with AI
   const result = await evaluateWithAI(storeItem, candidates);
   if (!result || !result.match_found || result.best_match_index === null) {
-    console.log(`[AI_MATCHER] No match found for ${storeItem.partNumber}`);
+    console.log(`[AI_MATCHER] No match for ${storeItem.partNumber}: AI_REJECTED_ALL_CANDIDATES (${candidates.length} evaluated)`);
     return null;
   }
   
