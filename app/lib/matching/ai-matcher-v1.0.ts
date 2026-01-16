@@ -5,6 +5,7 @@
  */
 
 import prisma from '@/app/lib/db/prisma';
+import { Prisma } from '@prisma/client';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
@@ -26,7 +27,7 @@ interface StoreItem {
   partNumber: string;
   lineCode: string | null;
   description: string | null;
-  currentCost: number | null;
+  currentCost: Prisma.Decimal | null;
 }
 
 interface SupplierItem {
@@ -34,7 +35,7 @@ interface SupplierItem {
   partNumber: string;
   lineCode: string | null;
   description: string | null;
-  currentCost: number | null;
+  currentCost: Prisma.Decimal | null;
 }
 
 interface AIMatchResult {
@@ -129,11 +130,11 @@ STORE ITEM (what we currently stock):
 - Part Number: ${storeItem.partNumber}
 - Line Code: ${storeItem.lineCode || 'N/A'}
 - Description: ${storeItem.description || 'N/A'}
-- Our Cost: $${storeItem.currentCost?.toFixed(2) || 'N/A'}
+- Our Cost: $${storeItem.currentCost ? storeItem.currentCost.toNumber().toFixed(2) : 'N/A'}
 
 SUPPLIER CANDIDATES (potential matches from CarQuest catalog):
 ${candidates.map((c, i) => `
-${i + 1}. Part#: ${c.partNumber} | Line: ${c.lineCode || 'N/A'} | Desc: ${c.description || 'N/A'} | Cost: $${c.currentCost?.toFixed(2) || 'N/A'}
+${i + 1}. Part#: ${c.partNumber} | Line: ${c.lineCode || 'N/A'} | Desc: ${c.description || 'N/A'} | Cost: $${c.currentCost ? c.currentCost.toNumber().toFixed(2) : 'N/A'}
 `).join('')}
 
 MATCHING RULES:

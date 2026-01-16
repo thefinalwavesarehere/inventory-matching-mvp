@@ -5,6 +5,7 @@
  */
 
 import prisma from '@/app/lib/db/prisma';
+import { Prisma } from '@prisma/client';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
