@@ -2,6 +2,11 @@
  * Web Search Matching Stage (Stage 4)
  * Uses Tavily API for web searches, then GPT-4o to evaluate matches
  * Architecture: Tavily → GPT-4o → Match Decision
+ * 
+ * PHASE 1 OPTIMIZATIONS:
+ * - Improved query construction (manufacturer-aware)
+ * - Pre-filtering of unmatchable items
+ * - Removed restrictive "cross reference interchange" terminology
  */
 
 import prisma from '@/app/lib/db/prisma';
@@ -47,18 +52,83 @@ interface MatchEvaluation {
 }
 
 /**
+ * PHASE 1 OPTIMIZATION: Improved query construction
+ * - Line codes are manufacturer identifiers (critical for automotive)
+ * - Remove generic noise words from descriptions
+ * - Remove restrictive "cross reference interchange" terminology
+ * - Add "automotive OEM" context instead
+ */
+function constructTavilyQuery(item: StoreItem): string {
+  const parts: string[] = [];
+  
+  // Part number (required)
+  if (item.partNumber) {
+    parts.push(item.partNumber);
+  }
+  
+  // Line code = manufacturer (critical for automotive parts)
+  if (item.lineCode) {
+    parts.push(item.lineCode);
+  }
+  
+  // Description (clean and abbreviated)
+  if (item.description) {
+    const cleanDesc = item.description
+      .replace(/\b(ASSY|ASSEMBLY)\b/gi, '')
+      .replace(/\b(automotive|part)\b/gi, '')
+      .trim();
+    if (cleanDesc.length > 0) {
+      parts.push(cleanDesc);
+    }
+  }
+  
+  // Add context (broader than "cross reference interchange")
+  parts.push('automotive OEM');
+  
+  return parts.join(' ');
+}
+
+/**
+ * PHASE 1 OPTIMIZATION: Pre-filter unmatchable items
+ * - Skip items with no description
+ * - Skip pure generic fasteners (too common, no distinguishing features)
+ * - Skip very short generic descriptions
+ * Expected savings: 25-30% of searches skipped
+ */
+function isMatchableViaWebSearch(item: StoreItem): boolean {
+  const desc = item.description?.toUpperCase() || '';
+  
+  // Skip if no description
+  if (!desc || desc.length < 5) {
+    return false;
+  }
+  
+  // Skip pure generic fasteners (too common, no distinguishing features)
+  const pureGeneric = /^(NUT|BOLT|SCREW|WASHER|CLIP|PIN|RIVET)$/;
+  if (pureGeneric.test(desc.trim())) {
+    console.log(`[WEB_SEARCH] ⏭️ Skipping generic: ${item.partNumber}`);
+    return false;
+  }
+  
+  // Skip very short generic descriptions like "U NUT", "J NUT"
+  const words = desc.split(/\s+/).filter(w => w.length > 0);
+  if (words.length <= 2) {
+    const genericTerms = ['NUT', 'BOLT', 'CLIP', 'SCREW', 'WASHER'];
+    if (words.some(w => genericTerms.includes(w))) {
+      console.log(`[WEB_SEARCH] ⏭️ Skipping short generic: ${item.partNumber}`);
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+/**
  * Phase 1: Search web using Tavily
  */
 async function searchWebForPart(storeItem: StoreItem): Promise<TavilySearchResult[] | null> {
-  // Construct search query
-  const searchQuery = [
-    storeItem.partNumber,
-    storeItem.lineCode,
-    storeItem.description,
-    'automotive part cross reference interchange',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  // Use improved query construction
+  const searchQuery = constructTavilyQuery(storeItem);
 
   try {
     console.log(`[WEB_SEARCH] Tavily search: ${searchQuery}`);
@@ -292,12 +362,17 @@ export async function runWebSearchMatching(
     return { matchesFound: 0, itemsProcessed: 0, estimatedCost: 0 };
   }
   
+  // PHASE 1 OPTIMIZATION: Apply pre-filter
+  const matchableItems = unmatchedItems.filter(isMatchableViaWebSearch);
+  console.log(`[WEB_SEARCH] Filtered ${unmatchedItems.length - matchableItems.length} unmatchable items`);
+  console.log(`[WEB_SEARCH] Processing ${matchableItems.length} matchable items`);
+  
   const matches: any[] = [];
   let totalCost = 0;
   let itemsProcessed = 0;
   
   // Process sequentially (web search is expensive)
-  for (const item of unmatchedItems) {
+  for (const item of matchableItems) {
     if (totalCost >= WEB_SEARCH_CONFIG.MAX_COST) {
       console.log(`[WEB_SEARCH] ⚠️ Budget exhausted at $${totalCost.toFixed(2)}`);
       break;
@@ -311,7 +386,7 @@ export async function runWebSearchMatching(
       matches.push(result.match);
     }
     
-    console.log(`[WEB_SEARCH] Progress: ${itemsProcessed}/${unmatchedItems.length}, Cost: $${totalCost.toFixed(2)}/${WEB_SEARCH_CONFIG.MAX_COST}`);
+    console.log(`[WEB_SEARCH] Progress: ${itemsProcessed}/${matchableItems.length}, Cost: $${totalCost.toFixed(2)}/${WEB_SEARCH_CONFIG.MAX_COST}`);
     
     // Small delay between items
     await new Promise(resolve => setTimeout(resolve, 500));
