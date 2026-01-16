@@ -332,7 +332,7 @@ function scoreItemForAIMatching(item: StoreItem): number {
     /rotor|caliper|pad|disc|drum/i,
   ];
   
-  if (item.description && automotivePatterns.some(p => p.test(item.description))) {
+  if (item.description && automotivePatterns.some(p => p.test(item.description!))) {
     score += 25;
   }
   
