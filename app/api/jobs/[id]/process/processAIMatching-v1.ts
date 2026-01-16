@@ -73,7 +73,7 @@ export async function processAIMatching(job: any, projectId: string) {
       where: { id: job.id },
       data: {
         status: 'failed',
-        error: error.message,
+        errorMessage: error.message,
       },
     });
     
