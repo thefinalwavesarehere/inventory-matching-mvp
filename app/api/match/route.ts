@@ -28,6 +28,8 @@ export async function GET(req: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
     const search = searchParams.get('search') || '';
+    const sortBy = searchParams.get('sortBy') || 'confidence';
+    const sortOrder = searchParams.get('sortOrder') || 'desc';
 
     if (!projectId) {
       return NextResponse.json(
@@ -58,6 +60,16 @@ export async function GET(req: NextRequest) {
     // Get total count first
     const total = await prisma.matchCandidate.count({ where });
 
+    // Build orderBy based on sortBy and sortOrder
+    let orderBy: any = [];
+    if (sortBy === 'confidence') {
+      orderBy = [{ confidence: sortOrder as 'asc' | 'desc' }, { id: 'asc' }];
+    } else if (sortBy === 'method') {
+      orderBy = [{ method: sortOrder as 'asc' | 'desc' }, { id: 'asc' }];
+    } else {
+      orderBy = [{ confidence: 'desc' }, { id: 'asc' }];
+    }
+
     // Fetch matches with deduplication
     const matches = await prisma.matchCandidate.findMany({
       where,
@@ -71,10 +83,7 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: [
-        { confidence: 'desc' },
-        { id: 'asc' },
-      ],
+      orderBy,
       skip: (page - 1) * limit,
       take: limit,
     });

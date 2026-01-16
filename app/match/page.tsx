@@ -78,7 +78,7 @@ export default function MatchPageWithBulkActions() {
     if (projectId) {
       loadMatches();
     }
-  }, [projectId, filter, methodFilter, currentPage, rowsPerPage, searchQuery]);
+  }, [projectId, filter, methodFilter, currentPage, rowsPerPage, searchQuery, sortBy, sortOrder]);
 
   const loadMatches = async () => {
     try {
@@ -86,8 +86,9 @@ export default function MatchPageWithBulkActions() {
       const statusParam = filter === 'all' ? 'all' : filter.toUpperCase();
       const methodParam = methodFilter === 'all' ? 'all' : methodFilter.toUpperCase();
       const searchParam = searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : '';
+      const sortParam = `&sortBy=${sortBy}&sortOrder=${sortOrder}`;
       const res = await fetch(
-        `/api/match?projectId=${projectId}&status=${statusParam}&method=${methodParam}&page=${currentPage}&limit=${rowsPerPage}${searchParam}`
+        `/api/match?projectId=${projectId}&status=${statusParam}&method=${methodParam}&page=${currentPage}&limit=${rowsPerPage}${searchParam}${sortParam}`
       );
       if (!res.ok) throw new Error('Failed to load matches');
       const data = await res.json();
@@ -312,7 +313,7 @@ export default function MatchPageWithBulkActions() {
             <h1 className="text-2xl font-bold">Match Review</h1>
             <p className="text-gray-600 text-sm mt-1">Review and confirm inventory matches</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             <a
               href={`/api/match/export?projectId=${projectId}&status=confirmed`}
               download
@@ -327,6 +328,24 @@ export default function MatchPageWithBulkActions() {
             >
               📥 Export Pending
             </a>
+            {selectedMatches.size > 0 && (
+              <a
+                href={`/api/match/export?projectId=${projectId}&ids=${Array.from(selectedMatches).join(',')}`}
+                download
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium inline-flex items-center gap-2"
+              >
+                📥 Export Selected ({selectedMatches.size})
+              </a>
+            )}
+            {methodFilter !== 'all' && (
+              <a
+                href={`/api/match/export?projectId=${projectId}&method=${methodFilter}&status=${filter === 'all' ? 'all' : filter.toUpperCase()}`}
+                download
+                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium inline-flex items-center gap-2"
+              >
+                📥 Export {methodFilter === 'EXACT_NORMALIZED' ? 'Exact' : methodFilter === 'FUZZY_SUBSTRING' ? 'Fuzzy' : methodFilter === 'AI' ? 'AI' : methodFilter === 'WEB_SEARCH' ? 'Web Search' : methodFilter}
+              </a>
+            )}
             <label className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium inline-flex items-center gap-2 cursor-pointer">
               📄 Import CSV
               <input
@@ -400,7 +419,7 @@ export default function MatchPageWithBulkActions() {
               >
                 <option value="all">All Methods</option>
                 <option value="INTERCHANGE">Interchange</option>
-                <option value="EXACT_NORM">Exact Match</option>
+                <option value="EXACT_NORMALIZED">Exact Match</option>
                 <option value="FUZZY_SUBSTRING">Fuzzy Match</option>
                 <option value="AI">AI Match</option>
                 <option value="WEB_SEARCH">Web Search</option>
@@ -506,7 +525,7 @@ export default function MatchPageWithBulkActions() {
                       <option value="none">Choose...</option>
                       <optgroup label="By Method">
                         <option value="INTERCHANGE">Interchange Matches</option>
-                        <option value="EXACT_NORM">Exact Matches</option>
+                        <option value="EXACT_NORMALIZED">Exact Matches</option>
                         <option value="FUZZY_SUBSTRING">Fuzzy Matches</option>
                         <option value="AI">AI Matches</option>
                         <option value="WEB_SEARCH">Web Search Matches</option>
@@ -659,15 +678,17 @@ export default function MatchPageWithBulkActions() {
                 <select
                   value={rowsPerPage}
                   onChange={(e) => {
-                    setRowsPerPage(Number(e.target.value));
+                    const value = Number(e.target.value);
+                    setRowsPerPage(value === 0 ? totalCount : value);
                     setCurrentPage(1);
                   }}
                   className="border rounded px-2 py-1 text-sm"
                 >
-                  <option value="25">25</option>
+                  <option value="20">20</option>
                   <option value="50">50</option>
                   <option value="100">100</option>
                   <option value="200">200</option>
+                  <option value="0">ALL</option>
                 </select>
               </div>
             </div>

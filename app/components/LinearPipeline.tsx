@@ -171,7 +171,7 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
                   <div className="w-full bg-blue-200 rounded-full h-3 mb-2">
                     <div
                       className="bg-gradient-to-r from-blue-600 to-indigo-600 h-3 rounded-full transition-all duration-300"
-                      style={{ width: `${job.progressPercentage}%` }}
+                      style={{ width: `${job.totalItems > 0 ? (job.matchesFound / job.totalItems) * 100 : 0}%` }}
                     ></div>
                   </div>
                   <div className="flex justify-between text-sm text-blue-800">

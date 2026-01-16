@@ -19,6 +19,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get('projectId');
     const status = searchParams.get('status'); // 'confirmed', 'pending', 'rejected', or 'all'
+    const method = searchParams.get('method'); // 'EXACT_NORMALIZED', 'FUZZY_SUBSTRING', etc.
+    const selectedIds = searchParams.get('ids'); // comma-separated match IDs
     
     if (!projectId) {
       return NextResponse.json({ error: 'Project ID required' }, { status: 400 });
@@ -26,10 +28,16 @@ export async function GET(request: NextRequest) {
 
     console.log(`[EXPORT] Exporting matches for project: ${projectId}, status: ${status}`);
 
-    // Build where clause based on status filter
+    // Build where clause based on filters
     const whereClause: any = { projectId };
     if (status && status !== 'all') {
       whereClause.status = status.toUpperCase();
+    }
+    if (method && method !== 'all') {
+      whereClause.method = method;
+    }
+    if (selectedIds) {
+      whereClause.id = { in: selectedIds.split(',') };
     }
 
     // Helper function to escape CSV fields

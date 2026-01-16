@@ -129,7 +129,7 @@ export default function WorkflowStatus({ projectId }: { projectId: string }) {
                 {index < stages.length - 1 && (
                   <div
                     className={`w-0.5 h-12 ${
-                      isCompleted ? 'bg-green-500' : 'bg-gray-200'
+                      isCompleted || (index === 0 && progress.currentStage !== 'UPLOAD') ? 'bg-green-500' : 'bg-gray-200'
                     }`}
                   />
                 )}
