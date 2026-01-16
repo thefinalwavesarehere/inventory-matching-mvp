@@ -15,6 +15,9 @@ import { processExactMatching } from './processExactMatching-v2';
 import { processFuzzyMatching } from './processFuzzyMatching-v1';
 import { processAIMatching } from './processAIMatching-v1';
 import { processWebSearchMatching } from './processWebSearchMatching-v1';
+import { processAIFuzzyMatching } from './processAIFuzzyMatching-v1';
+import { processSupersessionMatching } from './processSupersessionMatching-v1';
+import { processHumanReview } from './processHumanReview-v1';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -25,8 +28,11 @@ const openai = new OpenAI({
 const CHUNK_SIZES: Record<string, number> = {
   'exact': 500,   // V8.1: Increased to 500 for V8.0 direct index matching (1.2s per 50 items = 12s per 500)
   'fuzzy': 300,   // V9.0: Increased to 300 for optimized fuzzy matching
+  'ai-fuzzy': 100, // AI-enhanced fuzzy
+  'supersession': 50, // Supersession lookup
   'ai': 100,      // AI processes 100 items in ~3-4 minutes
   'web-search': 20, // Web search processes 20 items in ~1-2 minutes
+  'human-review': 100, // Human review classification
 };
 
 function getChunkSize(jobType: string): number {
@@ -441,6 +447,42 @@ export async function POST(
             matchesFound: updatedJob.matchesFound,
           },
         });
+      }
+    } else if (jobType === 'ai-fuzzy') {
+      console.log(`[JOB-PROCESS-AI-FUZZY] Running AI-enhanced fuzzy matching batch`);
+      const result = await processAIFuzzyMatching(job, job.projectId);
+      const processingTime = Date.now() - processingStartTime;
+      console.log(`[JOB-PROCESS-AI-FUZZY] Batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
+      
+      const updatedJob = await prisma.matchingJob.findUnique({ where: { id: jobId } });
+      if (updatedJob?.status === 'pending') {
+        return NextResponse.json({ success: true, complete: false, job: updatedJob });
+      } else if (updatedJob?.status === 'complete') {
+        return NextResponse.json({ success: true, complete: true, job: updatedJob });
+      }
+    } else if (jobType === 'supersession') {
+      console.log(`[JOB-PROCESS-SUPERSESSION] Running supersession matching batch`);
+      const result = await processSupersessionMatching(job, job.projectId);
+      const processingTime = Date.now() - processingStartTime;
+      console.log(`[JOB-PROCESS-SUPERSESSION] Batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
+      
+      const updatedJob = await prisma.matchingJob.findUnique({ where: { id: jobId } });
+      if (updatedJob?.status === 'pending') {
+        return NextResponse.json({ success: true, complete: false, job: updatedJob });
+      } else if (updatedJob?.status === 'complete') {
+        return NextResponse.json({ success: true, complete: true, job: updatedJob });
+      }
+    } else if (jobType === 'human-review') {
+      console.log(`[JOB-PROCESS-REVIEW] Running human review classification batch`);
+      const result = await processHumanReview(job, job.projectId);
+      const processingTime = Date.now() - processingStartTime;
+      console.log(`[JOB-PROCESS-REVIEW] Batch complete in ${processingTime}ms, classified ${result.itemsClassified} items`);
+      
+      const updatedJob = await prisma.matchingJob.findUnique({ where: { id: jobId } });
+      if (updatedJob?.status === 'pending') {
+        return NextResponse.json({ success: true, complete: false, job: updatedJob });
+      } else if (updatedJob?.status === 'complete') {
+        return NextResponse.json({ success: true, complete: true, job: updatedJob });
       }
     } else {
       console.error(`[JOB-PROCESS] Unknown job type: ${jobType}`);
