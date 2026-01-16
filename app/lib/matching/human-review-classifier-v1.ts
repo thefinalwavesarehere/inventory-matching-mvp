@@ -176,7 +176,7 @@ export async function runHumanReviewClassification(
       matchCandidates: {
         none: {
           projectId: projectId,
-          status: 'APPROVED', // No approved matches
+          status: 'CONFIRMED', // No confirmed matches
         },
       },
     },
