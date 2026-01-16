@@ -11,7 +11,7 @@
  * Cost: $0.015-0.02 per item
  */
 
-import prisma from '@/app/lib/db/prisma';
+import prisma, { Prisma } from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
 import { getSupplierCatalog } from './supplier-catalog-cache';
 
@@ -36,7 +36,7 @@ interface StoreItem {
   partNumber: string;
   lineCode: string | null;
   description: string | null;
-  currentCost?: number | null;
+  currentCost?: Prisma.Decimal | null;
 }
 
 interface SupplierItem {
@@ -44,7 +44,7 @@ interface SupplierItem {
   partNumber: string;
   lineCode: string | null;
   description: string | null;
-  currentCost?: number | null;
+  currentCost?: Prisma.Decimal | null;
 }
 
 function levenshteinDistance(a: string, b: string): number {
@@ -81,7 +81,7 @@ function calculateCandidateScore(store: StoreItem, supplier: SupplierItem): numb
     score += matches.length * 5;
   }
   if (store.currentCost && supplier.currentCost) {
-    const priceDiff = Math.abs(store.currentCost - supplier.currentCost);
+    const priceDiff = Math.abs(store.currentCost.toNumber() - supplier.currentCost.toNumber());
     if (priceDiff < 5) score += 20;
     else if (priceDiff < 20) score += 10;
   }
