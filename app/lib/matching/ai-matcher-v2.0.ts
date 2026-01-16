@@ -11,7 +11,8 @@
  * Cost: $0.015-0.02 per item
  */
 
-import prisma, { Prisma } from '@/app/lib/db/prisma';
+import prisma from '@/app/lib/db/prisma';
+import { Prisma } from '@prisma/client';
 import OpenAI from 'openai';
 import { getSupplierCatalog } from './supplier-catalog-cache';
 
