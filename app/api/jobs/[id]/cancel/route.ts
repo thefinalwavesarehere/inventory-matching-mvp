@@ -23,7 +23,14 @@ export async function POST(
   try {
     const { profile } = await requireAuth();
     const { id: jobId } = params;
-    const body = await req.json();
+
+    // Handle missing body gracefully
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch (e) {
+      // No body provided, use defaults
+    }
     const { type = 'GRACEFUL' } = body;
 
     // Validate cancellation type
