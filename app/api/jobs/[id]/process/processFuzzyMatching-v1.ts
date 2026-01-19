@@ -21,7 +21,8 @@ import { MatchMethod, MatchStatus } from '@prisma/client';
 export async function processFuzzyMatching(
   storeItems: any[], // NOT USED - kept for API compatibility
   supplierItems: any[], // NOT USED - kept for API compatibility
-  projectId: string
+  projectId: string,
+  jobId?: string // Optional for cancellation checks
 ): Promise<number> {
   const BATCH_SIZE = 500;
   
@@ -75,9 +76,25 @@ export async function processFuzzyMatching(
     return 0;
   }
   
+  // Check for cancellation before starting fuzzy matching
+  if (jobId) {
+    const { isJobCancelled, markJobCancelled, getJobCancellationType } = await import('@/app/lib/job-queue-manager');
+    if (await isJobCancelled(jobId)) {
+      const cancelType = await getJobCancellationType(jobId);
+      console.log(`[FUZZY-MATCH-V1.2] Job ${jobId} cancelled before fuzzy matching (${cancelType})`);
+      await markJobCancelled(
+        jobId,
+        cancelType === 'IMMEDIATE'
+          ? 'Job cancelled immediately by user'
+          : 'Job cancelled gracefully after current stage'
+      );
+      throw new Error('Job cancelled by user');
+    }
+  }
+  
   // Process ONE batch (up to 500 items) starting from offset
   console.log(`[FUZZY-MATCH-V1.2] Finding fuzzy matches for next ${BATCH_SIZE} items (offset: ${processedOffset})...`);
-  const fuzzyMatches = await findPostgresFuzzyMatches(projectId, processedOffset);
+  const fuzzyMatches = await findPostgresFuzzyMatches(projectId, processedOffset, jobId);
   
   console.log(`[FUZZY-MATCH-V1.2] Found ${fuzzyMatches.length} fuzzy matches`);
   

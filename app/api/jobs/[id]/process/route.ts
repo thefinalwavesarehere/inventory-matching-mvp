@@ -370,7 +370,7 @@ export async function POST(
       // V1.2: Batch processing - fuzzy matcher controls job status
       console.log(`[JOB-PROCESS-V1.2] Running fuzzy matching batch`);
       const { processFuzzyMatching } = await import('./processFuzzyMatching-v1');
-      newMatches = await processFuzzyMatching(chunk, supplierItems, job.projectId);
+      newMatches = await processFuzzyMatching(chunk, supplierItems, job.projectId, jobId);
       const processingTime = Date.now() - processingStartTime;
       console.log(`[JOB-PROCESS-V1.2] Fuzzy matching batch complete in ${processingTime}ms, found ${newMatches} matches`);
       

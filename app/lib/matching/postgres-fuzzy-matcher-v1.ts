@@ -46,7 +46,8 @@ const MIN_PART_NUMBER_LENGTH = 3; // Skip very short part numbers
  */
 export async function findPostgresFuzzyMatches(
   projectId: string,
-  offset: number = 0
+  offset: number = 0,
+  jobId?: string // Optional for cancellation checks
 ): Promise<PostgresFuzzyMatch[]> {
   
   console.log('[POSTGRES_FUZZY_V1.0] === STARTING FUZZY MATCHING ===');
@@ -119,6 +120,15 @@ export async function findPostgresFuzzyMatches(
   const allMatches: PostgresFuzzyMatch[] = [];
   
   for (let i = 0; i < validItems.length; i += 50) {
+    // Check for cancellation before each micro-batch
+    if (jobId) {
+      const { isJobCancelled } = await import('@/app/lib/job-queue-manager');
+      if (await isJobCancelled(jobId)) {
+        console.log(`[POSTGRES_FUZZY_V1.0] Job ${jobId} cancelled during micro-batch processing`);
+        throw new Error('Job cancelled by user');
+      }
+    }
+    
     const batch = validItems.slice(i, i + 50);
     const batchIds = batch.map(item => item.id);
     
