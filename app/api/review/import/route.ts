@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       columns: true,
       skip_empty_lines: true,
       trim: true,
-    });
+    }) as Array<Record<string, string>>;
     
     console.log(`[REVIEW-IMPORT] Parsed ${records.length} rows from CSV`);
     

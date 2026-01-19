@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useCurrentUser } from '@/app/lib/auth-helpers';
+import { useCurrentUser } from '@/app/hooks/useCurrentUser';
 
 interface MasterRule {
   id: string;
