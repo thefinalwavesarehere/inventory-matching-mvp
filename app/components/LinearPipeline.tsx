@@ -42,7 +42,7 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
 
   const loadActiveJobs = async () => {
     try {
-      const res = await fetch(`/api/jobs?projectId=${projectId}&status=processing,queued`);
+      const res = await fetch(`/api/jobs?projectId=${projectId}&status=processing,queued,pending`);
       if (!res.ok) return;
       const data = await res.json();
       setActiveJobs(data.jobs || []);
