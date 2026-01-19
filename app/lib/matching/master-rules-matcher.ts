@@ -136,7 +136,21 @@ export async function applyMasterRules(projectId: string): Promise<number> {
   // Apply NEGATIVE_BLOCK rules (prevent matches)
   for (const rule of negativeRules) {
     try {
-      // Delete any existing matches that violate this block rule
+       // Delete any existing matches that violate this rule
+      // First, find the supplier item ID
+      const supplierItem = await prisma.supplierItem.findFirst({
+        where: {
+          projectId,
+          partNumber: rule.supplierPartNumber!
+        },
+        select: { id: true }
+      });
+      
+      if (!supplierItem) {
+        console.log(`[MASTER-RULES-MATCHER] ⚠️ Supplier item not found for NEGATIVE_BLOCK: ${rule.supplierPartNumber}`);
+        continue;
+      }
+      
       const deleted = await prisma.matchCandidate.deleteMany({
         where: {
           projectId,
@@ -144,11 +158,7 @@ export async function applyMasterRules(projectId: string): Promise<number> {
             partNumber: rule.storePartNumber
           },
           targetType: 'SUPPLIER',
-          target: {
-            supplierItem: {
-              partNumber: rule.supplierPartNumber!
-            }
-          }
+          targetId: supplierItem.id
         }
       });
       
