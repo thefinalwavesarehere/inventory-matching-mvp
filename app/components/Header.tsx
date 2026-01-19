@@ -126,6 +126,15 @@ export default function Header() {
               Interchange & Rules
             </button>
 
+            {/* Master Rules Button */}
+            <button
+              onClick={() => router.push('/master-rules')}
+              className="px-3 py-2 text-sm font-medium text-white bg-white/10 hover:bg-white/20 rounded-md transition-colors backdrop-blur-md"
+              title="Manage learned rules from manual review decisions"
+            >
+              Master Rules
+            </button>
+
             {/* Admin Button (if admin) */}
             {profile.role === 'ADMIN' && (
               <button
