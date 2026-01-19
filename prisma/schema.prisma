@@ -614,9 +614,10 @@ model MatchStageMetrics {
 model MatchingJob {
   id                    String   @id @default(cuid())
   projectId             String
-  createdBy             String?
+  userId                String?  // User who created the job (for per-user concurrency limits)
+  createdBy             String?  // Deprecated: use userId instead
   // Status
-  status                String   // 'pending', 'processing', 'completed', 'failed', 'cancelled'
+  status                String   // 'queued', 'processing', 'completed', 'failed', 'cancelled'
   currentStage          Int?     // 0-4
   currentStageName      String?
   // Progress
@@ -627,9 +628,17 @@ model MatchingJob {
   matchesFound          Int      @default(0)
   matchRate             Float    @default(0)
   // Timing
-  startedAt             DateTime?
+  queuedAt              DateTime @default(now()) // When job was queued
+  startedAt             DateTime? // When processing actually started
   completedAt           DateTime?
   estimatedCompletion   DateTime?
+  // Queue Management
+  priority              Int      @default(0) // For future priority-based queueing
+  // Cancellation
+  cancellationRequested Boolean  @default(false)
+  cancellationType      String?  // 'GRACEFUL' or 'IMMEDIATE'
+  cancelledBy           String?  // User who requested cancellation
+  cancelledAt           DateTime?
   // Configuration
   config                Json?    // Which stages to run, thresholds, etc.
   // Metrics
@@ -642,8 +651,10 @@ model MatchingJob {
 
   @@map("matching_jobs")
   @@index([projectId, status])
+  @@index([userId])
   @@index([createdBy])
   @@index([status, createdAt])
+  @@index([status, queuedAt])
 }
 
 /// Project settings (thresholds, AI toggle, etc.)
