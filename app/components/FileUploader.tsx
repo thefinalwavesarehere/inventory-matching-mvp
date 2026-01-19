@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import FormatKey from './FormatKey';
 
 const BUCKET_NAME = 'inventory-files';
 
@@ -168,7 +169,12 @@ export default function FileUploader({
   };
 
   return (
-    <div className="relative">
+    <div className="space-y-4">
+      {/* Format Key */}
+      <FormatKey fileType={fileType} />
+      
+      {/* File Upload */}
+      <div className="relative">
       <input
         type="file"
         accept=".xlsx,.xls,.csv"
@@ -220,6 +226,7 @@ export default function FileUploader({
           {message}
         </p>
       )}
+      </div>
     </div>
   );
 }

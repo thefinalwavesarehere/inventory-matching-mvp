@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useCurrentUser } from '@/app/hooks/useCurrentUser';
+import FormatKey from '@/app/components/FormatKey';
 
 function InterchangeRulesPageContent() {
   const { user, loading } = useCurrentUser();
@@ -98,6 +99,9 @@ function InterchangeRulesPageContent() {
         <p className="text-gray-600 mb-4">
           Current mappings: <strong>{interchangeCount.toLocaleString()}</strong>
         </p>
+        
+        {/* Format Key */}
+        <FormatKey fileType="interchange" className="mb-4" />
         
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">
