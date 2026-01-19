@@ -40,7 +40,7 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
 
   const loadActiveJobs = async () => {
     try {
-      const res = await fetch(`/api/jobs?projectId=${projectId}&status=processing,pending`);
+      const res = await fetch(`/api/jobs?projectId=${projectId}&status=processing,queued`);
       if (!res.ok) return;
       const data = await res.json();
       setActiveJobs(data.jobs || []);
@@ -171,12 +171,12 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
                   <div className="w-full bg-blue-200 rounded-full h-3 mb-2">
                     <div
                       className="bg-gradient-to-r from-blue-600 to-indigo-600 h-3 rounded-full transition-all duration-300"
-                      style={{ width: `${job.totalItems > 0 ? (job.matchesFound / job.totalItems) * 100 : 0}%` }}
+                      style={{ width: `${(job.totalItems || 0) > 0 ? ((job.matchesFound || 0) / (job.totalItems || 1)) * 100 : 0}%` }}
                     ></div>
                   </div>
                   <div className="flex justify-between text-sm text-blue-800">
-                    <span>{job.processedItems.toLocaleString()} / {job.totalItems.toLocaleString()} items</span>
-                    <span>{job.matchesFound.toLocaleString()} matches found</span>
+                    <span>{(job.processedItems || 0).toLocaleString()} / {(job.totalItems || 0).toLocaleString()} items</span>
+                    <span>{(job.matchesFound || 0).toLocaleString()} matches found</span>
                   </div>
                 </div>
               ))}

@@ -45,14 +45,14 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
 
   const loadActiveJobs = async () => {
     try {
-      const res = await fetch(`/api/jobs?projectId=${projectId}&status=processing,pending`);
+      const res = await fetch(`/api/jobs?projectId=${projectId}&status=processing,queued`);
       if (!res.ok) return;
-      
+
       const data = await res.json();
       const jobs = data.jobs || [];
-      
+
       setActiveJobs(jobs);
-      
+
       // Jobs are now processed by Vercel Cron, we just monitor status
     } catch (err) {
       console.error('Failed to load jobs:', err);
@@ -146,17 +146,17 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
               <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
                 <div
                   className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${job.progressPercentage}%` }}
+                  style={{ width: `${job.progressPercentage || 0}%` }}
                 ></div>
               </div>
               
               {/* Stats */}
               <div className="grid grid-cols-3 gap-4 text-sm text-gray-600">
                 <div>
-                  <span className="font-medium">Progress:</span> {job.processedItems}/{job.totalItems}
+                  <span className="font-medium">Progress:</span> {job.processedItems || 0}/{job.totalItems || 0}
                 </div>
                 <div>
-                  <span className="font-medium">Matches:</span> {job.matchesFound} ({job.matchRate.toFixed(1)}%)
+                  <span className="font-medium">Matches:</span> {job.matchesFound || 0} ({(job.matchRate || 0).toFixed(1)}%)
                 </div>
                 {job.estimatedCompletion && (
                   <div>
