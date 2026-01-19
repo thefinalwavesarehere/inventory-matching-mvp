@@ -64,6 +64,7 @@ model Project {
   activityLogs ActivityLog[]
   lineCodeMappings ProjectLineCodeMapping[]
   matchRules   ProjectMatchRule[]
+  masterRules  MasterRule[]
   
   // Prompt 2: Config toggles (safe defaults)
   enableArnoldLineCodeSplit    Boolean @default(false)
@@ -328,6 +329,7 @@ enum TargetType {
 }
 
 enum MatchMethod {
+  MASTER_RULE      // Learned from manual review decisions
   INTERCHANGE
   EXACT_NORM
   EXACT_NORMALIZED
@@ -796,4 +798,55 @@ enum MatchRuleStatus {
   SUGGESTED
   APPROVED
   REJECTED
+}
+
+
+/// Master Rules - Self-Learning System
+/// Learns from manual review decisions to improve future matching
+model MasterRule {
+  id                 String    @id @default(cuid())
+  
+  // Rule identification
+  ruleType           MasterRuleType
+  scope              MasterRuleScope @default(GLOBAL)
+  
+  // Matching criteria
+  storePartNumber    String
+  supplierPartNumber String?   // Null for NEGATIVE_BLOCK rules
+  lineCode           String?   // Optional line code filter
+  
+  // Metadata
+  confidence         Float     @default(1.0)
+  enabled            Boolean   @default(true)
+  
+  // Provenance tracking
+  createdBy          String    // User ID
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  projectId          String?   // Source project (null for global)
+  matchCandidateId   String?   // Original match that created this rule
+  
+  // Usage statistics
+  appliedCount       Int       @default(0)
+  lastAppliedAt      DateTime?
+  
+  // Relations
+  project            Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  
+  @@map("master_rules")
+  @@index([storePartNumber])
+  @@index([supplierPartNumber])
+  @@index([enabled])
+  @@index([ruleType])
+  @@index([projectId])
+}
+
+enum MasterRuleType {
+  POSITIVE_MAP    // "Always match these two part numbers"
+  NEGATIVE_BLOCK  // "Never match these two part numbers"
+}
+
+enum MasterRuleScope {
+  GLOBAL           // Apply to all projects
+  PROJECT_SPECIFIC // Only apply to specific project
 }

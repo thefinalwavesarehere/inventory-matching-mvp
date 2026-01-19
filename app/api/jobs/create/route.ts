@@ -31,7 +31,12 @@ export async function POST(req: NextRequest) {
     // Get total unmatched items based on job type
     let totalUnmatched = 0;
     
-    if (jobType === 'exact' || jobType === 'fuzzy') {
+    if (jobType === 'master-rules') {
+      // Master Rules: Count all store items (rules apply to everything)
+      totalUnmatched = await prisma.storeItem.count({
+        where: { projectId },
+      });
+    } else if (jobType === 'exact' || jobType === 'fuzzy') {
       // Exact/Fuzzy: Count all items without any matches
       const existingMatches = await prisma.matchCandidate.findMany({
         where: { projectId },
@@ -74,7 +79,8 @@ export async function POST(req: NextRequest) {
     const jobConfig = {
       ...config,
       jobType,
-      stageName: jobType === 'exact' ? 'Exact Matching' :
+      stageName: jobType === 'master-rules' ? 'Master Rules' :
+                 jobType === 'exact' ? 'Exact Matching' :
                  jobType === 'fuzzy' ? 'Fuzzy Matching' :
                  jobType === 'ai' ? 'AI Matching' :
                  jobType === 'web-search' ? 'Web Search' :

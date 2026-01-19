@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
 import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
+import { learnFromBulkDecisions, ReviewDecision } from '@/app/lib/master-rules-learner';
 
 export async function POST(req: NextRequest) {
   try {
@@ -80,6 +81,24 @@ export async function POST(req: NextRequest) {
 
     console.log(`[BULK-CONFIRM] Updated ${result.count} matches to ${newStatus}`);
     console.log(`[BULK-CONFIRM] Logged ${historyRecords.length} records to match history`);
+
+    // Learn from decisions and create master rules
+    const { profile } = await requireAuth();
+    const decisions: ReviewDecision[] = matches.map(match => {
+      const supplierItem = supplierItemsMap.get(match.targetId);
+      return {
+        matchCandidateId: match.id,
+        storePartNumber: match.storeItem.partNumber,
+        supplierPartNumber: supplierItem?.partNumber || '',
+        lineCode: supplierItem?.lineCode,
+        decision: action as 'approve' | 'reject',
+        projectId: match.projectId,
+        userId: profile.id,
+      };
+    });
+    
+    const learningResult = await learnFromBulkDecisions(decisions);
+    console.log(`[BULK-CONFIRM] Master rules learning: ${learningResult.created} created, ${learningResult.skipped} skipped`);
 
     return NextResponse.json({
       success: true,

@@ -324,7 +324,49 @@ export async function POST(
     // Set timeout protection (Vercel has 300s limit, we'll use 240s to be safe)
     const TIMEOUT_MS = 240000; // 4 minutes
     
-    if (jobType === 'exact') {
+    if (jobType === 'master-rules') {
+      // Master Rules: Single-pass application of learned rules
+      if (job.processedItems === 0) {
+        console.log(`[JOB-PROCESS] Running master rules matcher...`);
+        const { applyMasterRules } = await import('@/app/lib/matching/master-rules-matcher');
+        newMatches = await applyMasterRules(job.projectId);
+        const processingTime = Date.now() - processingStartTime;
+        console.log(`[JOB-PROCESS] Master rules complete in ${processingTime}ms, found ${newMatches} matches`);
+        
+        // Mark job as complete immediately
+        const totalItems = job.totalItems || 0;
+        await prisma.matchingJob.update({
+          where: { id: jobId },
+          data: {
+            status: 'completed',
+            completedAt: new Date(),
+            processedItems: totalItems,
+            progressPercentage: 100,
+            matchesFound: newMatches,
+            matchRate: totalItems > 0 ? (newMatches / totalItems) * 100 : 0,
+          },
+        });
+        
+        console.log(`[JOB-PROCESS] Master rules job marked as complete`);
+        
+        return NextResponse.json({
+          success: true,
+          complete: true,
+          job: {
+            id: job.id,
+            status: 'completed',
+            processedItems: totalItems,
+            totalItems: totalItems,
+            progressPercentage: 100,
+            matchesFound: newMatches,
+            matchRate: totalItems > 0 ? (newMatches / totalItems) * 100 : 0,
+          },
+        });
+      } else {
+        console.log(`[JOB-PROCESS] Skipping - master rules already applied`);
+        newMatches = 0;
+      }
+    } else if (jobType === 'exact') {
       // V3.0: Single-pass processing (no chunking)
       // Check if this is the first chunk - only run once
       if (job.processedItems === 0) {
