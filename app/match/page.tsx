@@ -15,6 +15,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import BulkApprovalModal from '../components/BulkApprovalModal';
 import BulkActionBar, { VendorAction } from '../components/BulkActionBar';
+import FormatKey from '../components/FormatKey';
 
 interface MatchCandidate {
   id: string;
@@ -369,6 +370,9 @@ export default function MatchPageWithBulkActions() {
             </button>
           </div>
         </div>
+
+        {/* Format Key for Manual Review CSV */}
+        <FormatKey fileType="review" className="mb-6" />
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow p-4 mb-6">
