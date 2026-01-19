@@ -135,6 +135,7 @@ export async function POST(
         id: jobId,
         OR: [
           { status: 'queued' },
+          { status: 'pending' },  // Include pending jobs (waiting for next batch)
           {
             status: 'processing',
             updatedAt: { lt: lockExpiry }  // Stale lock (no update in 5 min)
