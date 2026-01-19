@@ -7,6 +7,11 @@ import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
 import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
+import {
+  createQueuedJob,
+  tryStartNextQueuedJob,
+  getProjectQueueStatus,
+} from '@/app/lib/job-queue-manager';
 
 export async function POST(req: NextRequest) {
   try {
@@ -65,30 +70,34 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Create job record
-    const job = await prisma.matchingJob.create({
-      data: {
-        projectId,
-        createdBy: profile.email || null,
-        status: 'pending',
-        currentStage: 0,
-        currentStageName: 
-          jobType === 'exact' ? 'Exact Matching' :
-          jobType === 'fuzzy' ? 'Fuzzy Matching' :
-          jobType === 'ai' ? 'AI Matching' :
-          jobType === 'web-search' ? 'Web Search' :
-          'Unknown',
-        totalItems: totalUnmatched,
-        processedItems: 0,
-        progressPercentage: 0,
-        matchesFound: 0,
-        matchRate: 0,
-        config: { ...config, jobType },
-      },
-    });
+    // Create job using queue manager
+    const jobConfig = {
+      ...config,
+      jobType,
+      stageName: jobType === 'exact' ? 'Exact Matching' :
+                 jobType === 'fuzzy' ? 'Fuzzy Matching' :
+                 jobType === 'ai' ? 'AI Matching' :
+                 jobType === 'web-search' ? 'Web Search' :
+                 'Unknown',
+      totalItems: totalUnmatched,
+    };
+
+    const job = await createQueuedJob(projectId, profile.id, jobConfig);
 
     console.log(`[JOB-CREATE] Created job ${job.id} for project ${projectId}, type: ${jobType}`);
     console.log(`[JOB-CREATE] Total unmatched items: ${totalUnmatched}`);
+    console.log(`[JOB-CREATE] Job status: ${job.status}`);
+
+    // Try to start the job if concurrency limits allow
+    const startedJob = await tryStartNextQueuedJob();
+    if (startedJob?.id === job.id) {
+      console.log(`[JOB-CREATE] Job ${job.id} started immediately`);
+    } else {
+      console.log(`[JOB-CREATE] Job ${job.id} queued (concurrency limits reached)`);
+    }
+
+    // Get queue status for this project
+    const queueStatus = await getProjectQueueStatus(projectId);
 
     return NextResponse.json({
       success: true,
@@ -96,7 +105,10 @@ export async function POST(req: NextRequest) {
         id: job.id,
         projectId: job.projectId,
         status: job.status,
-        totalItems: job.totalItems,
+        totalItems: totalUnmatched,
+        queuePosition: queueStatus.position,
+        runningJob: queueStatus.running?.id,
+        queuedJobs: queueStatus.queued.length,
       },
     });
   } catch (error: any) {
