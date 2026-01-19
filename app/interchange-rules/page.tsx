@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import { useCurrentUser } from '@/app/hooks/useCurrentUser';
 
 function InterchangeRulesPageContent() {
-  const { data: session, status } = useSession();
+  const { user, loading } = useCurrentUser();
   const router = useRouter();
   const [interchangeCount, setInterchangeCount] = useState(0);
   const [rulesCount, setRulesCount] = useState(0);
@@ -14,14 +14,16 @@ function InterchangeRulesPageContent() {
   const [uploadMessage, setUploadMessage] = useState('');
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
+    if (!loading && !user) {
       router.push('/login');
     }
-  }, [status, router]);
+  }, [loading, user, router]);
 
   useEffect(() => {
-    loadCounts();
-  }, []);
+    if (user) {
+      loadCounts();
+    }
+  }, [user]);
 
   async function loadCounts() {
     try {
@@ -71,11 +73,11 @@ function InterchangeRulesPageContent() {
     }
   }
 
-  if (status === 'loading') {
+  if (loading) {
     return <div className="p-8">Loading...</div>;
   }
 
-  if (!session) {
+  if (!user) {
     return null;
   }
 
