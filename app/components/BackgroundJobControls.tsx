@@ -17,6 +17,8 @@ interface Job {
   matchesFound: number;
   matchRate: number;
   estimatedCompletion?: string;
+  cancellationRequested?: boolean;
+  cancellationType?: string;
 }
 
 export default function BackgroundJobControls({ projectId, onJobComplete }: BackgroundJobControlsProps) {
@@ -139,14 +141,15 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
                 <div>
                   <span className="font-medium">{job.currentStageName}</span>
                   <span className="ml-2 text-sm text-gray-500">
-                    ({job.status})
+                    ({job.cancellationRequested ? 'cancelling...' : job.status})
                   </span>
                 </div>
                 <button
                   onClick={() => cancelJob(job.id)}
-                  className="text-red-600 hover:text-red-800 text-sm"
+                  disabled={job.cancellationRequested}
+                  className="text-red-600 hover:text-red-800 text-sm disabled:text-gray-400 disabled:cursor-not-allowed"
                 >
-                  Cancel
+                  {job.cancellationRequested ? 'Cancelling...' : 'Cancel'}
                 </button>
               </div>
               
