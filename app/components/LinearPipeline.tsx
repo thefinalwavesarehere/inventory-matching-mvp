@@ -24,6 +24,8 @@ interface Job {
   totalItems: number;
   progressPercentage: number;
   matchesFound: number;
+  cancellationRequested?: boolean;
+  cancellationType?: string;
 }
 
 export default function LinearPipeline({ projectId, project, onRefresh }: LinearPipelineProps) {
@@ -167,12 +169,15 @@ export default function LinearPipeline({ projectId, project, onRefresh }: Linear
                   <div className="flex justify-between items-center mb-2">
                     <span className="font-semibold text-blue-900">{job.currentStageName}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-blue-700">{job.status}</span>
+                      <span className="text-sm text-blue-700">
+                        {job.cancellationRequested ? 'cancelling...' : job.status}
+                      </span>
                       <button
                         onClick={() => cancelJob(job.id)}
-                        className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 font-medium"
+                        disabled={job.cancellationRequested}
+                        className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
                       >
-                        ✕ Cancel
+                        ✕ {job.cancellationRequested ? 'Cancelling...' : 'Cancel'}
                       </button>
                     </div>
                   </div>
