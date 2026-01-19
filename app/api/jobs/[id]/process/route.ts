@@ -18,6 +18,13 @@ import { processWebSearchMatching } from './processWebSearchMatching-v1';
 import { processAIFuzzyMatching } from './processAIFuzzyMatching-v1';
 import { processSupersessionMatching } from './processSupersessionMatching-v1';
 import { processHumanReview } from './processHumanReview-v1';
+import {
+  isJobCancelled,
+  getJobCancellationType,
+  markJobCancelled,
+  markJobCompleted,
+  markJobFailed,
+} from '@/app/lib/job-queue-manager';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -103,18 +110,32 @@ export async function POST(
       });
     }
 
+    // Check for cancellation before starting
+    if (await isJobCancelled(jobId)) {
+      const cancelType = await getJobCancellationType(jobId);
+      console.log(`[JOB-CANCEL] Job ${jobId} already cancelled (${cancelType})`);
+      return NextResponse.json({
+        success: true,
+        job: {
+          id: job.id,
+          status: job.status,
+          message: 'Job was cancelled',
+        },
+      });
+    }
+
     // ATOMIC LOCK: Prevent duplicate execution
-    // Only proceed if we can claim the job (status is pending OR processing with stale lock)
+    // Only proceed if we can claim the job (status is queued OR processing with stale lock)
     const LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
     const now = new Date();
     const lockExpiry = new Date(Date.now() - LOCK_TIMEOUT_MS);
-    
+
     const lockResult = await prisma.matchingJob.updateMany({
       where: {
         id: jobId,
         OR: [
-          { status: 'pending' },
-          { 
+          { status: 'queued' },
+          {
             status: 'processing',
             updatedAt: { lt: lockExpiry }  // Stale lock (no update in 5 min)
           }
@@ -122,7 +143,7 @@ export async function POST(
       },
       data: {
         status: 'processing',
-        startedAt: job.status === 'pending' ? now : job.startedAt,
+        startedAt: job.status === 'queued' ? now : job.startedAt,
         updatedAt: now,
       }
     });
@@ -139,9 +160,9 @@ export async function POST(
     
     console.log(`[JOB-LOCK] Successfully acquired lock for job ${jobId}`);
 
-    // Update job status to processing if it's pending
-    if (job.status === 'pending') {
-      
+    // Update job status to processing if it's queued (first time running)
+    if (job.status === 'queued') {
+
       const config = job.config as any || {};
       const jobType = config.jobType || 'ai';
       
@@ -205,16 +226,12 @@ export async function POST(
     console.log(`[JOB-PROCESS-V5.6] Processing ${chunk.length} items (idempotent - never restarts from 0)`);
 
     if (chunk.length === 0) {
-      // Job is complete
-      await prisma.matchingJob.update({
-        where: { id: jobId },
-        data: {
-          status: 'completed',
-          completedAt: new Date(),
-          processedItems: job.totalItems || 0,
-          progressPercentage: 100,
-        },
-      });
+      // Job is complete - use queue manager to mark complete
+      const finalMatchesFound = job.matchesFound || 0;
+      const totalItems = job.totalItems || 0;
+      const finalMatchRate = totalItems > 0 ? (finalMatchesFound / totalItems) * 100 : 0;
+
+      await markJobCompleted(jobId, finalMatchesFound, finalMatchRate);
 
       // Update matchingProgress based on job type
       const progressUpdate: any = {};
@@ -273,6 +290,28 @@ export async function POST(
     const supplierItems = await prisma.supplierItem.findMany({
       where: { projectId: job.projectId },
     });
+
+    // Check for cancellation before processing chunk
+    if (await isJobCancelled(jobId)) {
+      const cancelType = await getJobCancellationType(jobId);
+      console.log(`[JOB-CANCEL] Job ${jobId} cancelled during processing (${cancelType})`);
+
+      await markJobCancelled(
+        jobId,
+        cancelType === 'IMMEDIATE'
+          ? 'Job cancelled immediately by user'
+          : 'Job cancelled gracefully after current stage'
+      );
+
+      return NextResponse.json({
+        success: true,
+        job: {
+          id: jobId,
+          status: 'cancelled',
+          message: 'Job was cancelled',
+        },
+      });
+    }
 
     let newMatches = 0;
 
@@ -513,6 +552,29 @@ export async function POST(
     console.log(`[JOB-PROCESS] Chunk complete. Progress: ${newProcessedItems}/${totalItems} (${progressPercentage.toFixed(1)}%)`);
     console.log(`[JOB-PROCESS] New matches: ${newMatches}, Total matches: ${newMatchesFound}`);
 
+    // Check for cancellation after processing chunk (graceful cancellation)
+    if (await isJobCancelled(jobId)) {
+      const cancelType = await getJobCancellationType(jobId);
+      console.log(`[JOB-CANCEL] Job ${jobId} cancelled after completing chunk (${cancelType})`);
+
+      await markJobCancelled(
+        jobId,
+        'Job cancelled after completing current batch'
+      );
+
+      return NextResponse.json({
+        success: true,
+        job: {
+          id: jobId,
+          status: 'cancelled',
+          processedItems: newProcessedItems,
+          totalItems: totalItems,
+          matchesFound: newMatchesFound,
+          message: 'Job cancelled after completing batch',
+        },
+      });
+    }
+
     // V9.2: SELF-DRIVING FIRE-AND-FORGET RECURSION
     // V10.0: Add safety check to prevent infinite loop
     const hasMoreWork = totalUnmatchedCount > chunk.length && newProcessedItems < totalItems;
@@ -546,30 +608,25 @@ export async function POST(
 
     // Check if it's a timeout error
     const isTimeout = error.message?.includes('timeout') || error.message?.includes('ETIMEDOUT');
-    
-    // Update job status - mark as failed but preserve progress
+    const errorMessage = isTimeout
+      ? 'Processing timeout - reduce chunk size or supplier catalog'
+      : error.message;
+
+    // Use queue manager to mark job as failed (will trigger next queued job)
     try {
       const job = await prisma.matchingJob.findUnique({ where: { id: params.id } });
-      
-      await prisma.matchingJob.update({
-        where: { id: params.id },
-        data: {
-          status: 'failed',
-          completedAt: new Date(),
-        },
-      });
-      
+      await markJobFailed(params.id, errorMessage);
       console.error(`[JOB-PROCESS] Job ${params.id} marked as failed. Progress preserved: ${job?.processedItems}/${job?.totalItems}`);
     } catch (updateError) {
       console.error('[JOB-PROCESS] Failed to update job status:', updateError);
     }
 
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         error: error.message,
         isTimeout,
-        message: isTimeout ? 'Processing timeout - reduce chunk size or supplier catalog' : error.message
+        message: errorMessage
       },
       { status: 500 }
     );

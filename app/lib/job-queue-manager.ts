@@ -176,6 +176,13 @@ export async function createQueuedJob(
       userId,
       status: JobStatus.QUEUED,
       queuedAt: new Date(),
+      currentStage: 0,
+      currentStageName: config?.stageName || 'Unknown',
+      totalItems: config?.totalItems || 0,
+      processedItems: 0,
+      progressPercentage: 0,
+      matchesFound: 0,
+      matchRate: 0,
       config,
     },
   });
