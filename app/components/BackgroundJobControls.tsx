@@ -101,13 +101,21 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
 
   const cancelJob = async (jobId: string) => {
     try {
-      await fetch(`/api/jobs/${jobId}/cancel`, {
+      const res = await fetch(`/api/jobs/${jobId}/cancel`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'GRACEFUL' }),
       });
-      
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to cancel job');
+      }
+
       loadActiveJobs();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to cancel job:', err);
+      setError(err.message || 'Failed to cancel job');
     }
   };
 
