@@ -13,6 +13,7 @@ import { MatchStatus, VendorAction } from '@prisma/client';
 import { prisma } from '@/app/lib/db/prisma';
 import { requireAuth } from '@/app/lib/auth-helpers';
 import { logActivity, ActivityType } from '@/app/lib/logger';
+import { createMasterRulesFromDecisions } from '@/app/lib/master-rules-learner';
 
 
 export const dynamic = 'force-dynamic';
@@ -210,6 +211,28 @@ async function handleUpdateStatus(
   console.log(
     `[BULK_OPERATIONS] Updated ${matches.length} matches to ${status} for project ${projectId}`
   );
+
+  // Create master rules from these decisions
+  try {
+    const decisions = matches.map((match) => {
+      const supplierItem = supplierItemMap.get(match.targetId);
+      return {
+        matchId: match.id,
+        storePartNumber: match.storeItem.partNumber,
+        supplierPartNumber: supplierItem?.partNumber || '',
+        lineCode: supplierItem?.lineCode || null,
+        decision: status === 'ACCEPTED' ? 'approve' : 'reject',
+      };
+    }).filter(d => d.supplierPartNumber); // Only create rules if we have supplier part number
+
+    if (decisions.length > 0) {
+      await createMasterRulesFromDecisions(decisions, projectId, userId);
+      console.log(`[BULK_OPERATIONS] Created ${decisions.length} master rules from bulk ${status}`);
+    }
+  } catch (error) {
+    console.error('[BULK_OPERATIONS] Error creating master rules:', error);
+    // Don't fail the whole operation if rule creation fails
+  }
 
   // Log activity
   await logActivity({
