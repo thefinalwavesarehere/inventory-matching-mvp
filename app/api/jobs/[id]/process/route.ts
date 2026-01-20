@@ -371,7 +371,7 @@ export async function POST(
       // Check if this is the first chunk - only run once
       if (job.processedItems === 0) {
         console.log(`[JOB-PROCESS-V3.0] Running single-pass exact matching for entire dataset`);
-        newMatches = await processExactMatching(chunk, supplierItems, job.projectId);
+        newMatches = await processExactMatching(chunk, supplierItems, job.projectId, jobId);
         const processingTime = Date.now() - processingStartTime;
         console.log(`[JOB-PROCESS-V3.0] Exact matching complete in ${processingTime}ms, found ${newMatches} matches`);
         

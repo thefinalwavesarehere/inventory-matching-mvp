@@ -1,6 +1,6 @@
 /**
  * Process Exact Matching V3.0
- * 
+ *
  * Uses Postgres Native Exact Matcher with description similarity validation
  * Single-pass processing (no batching) with deduplication
  */
@@ -8,17 +8,22 @@
 import { prisma } from '@/app/lib/db/prisma';
 import { findPostgresExactMatches, findInterchangeMatches } from '@/app/lib/matching/postgres-exact-matcher-v2';
 import { MatchMethod, MatchStatus } from '@prisma/client';
+import { isJobCancelled } from '@/app/lib/job-queue-manager';
 
 /**
  * Process exact matching for entire project (V3.0 handles all items at once)
- * 
+ *
+ * @param storeItems - NOT USED (kept for API compatibility)
+ * @param supplierItems - NOT USED (kept for API compatibility)
  * @param projectId - Project ID
+ * @param jobId - Optional job ID for cancellation support
  * @returns Number of matches saved
  */
 export async function processExactMatching(
   storeItems: any[], // NOT USED - kept for API compatibility
   supplierItems: any[], // NOT USED - kept for API compatibility
-  projectId: string
+  projectId: string,
+  jobId?: string
 ): Promise<number> {
   console.log(`[EXACT-MATCH-V3.0] Starting single-pass matching for project ${projectId}`);
   
@@ -34,19 +39,25 @@ export async function processExactMatching(
   // Save interchange matches
   let interchangeSavedCount = 0;
   if (interchangeMatches.length > 0) {
-    interchangeSavedCount = await saveMatches(interchangeMatches, projectId, 'INTERCHANGE');
+    interchangeSavedCount = await saveMatches(interchangeMatches, projectId, 'INTERCHANGE', jobId);
     console.log(`[EXACT-MATCH-V3.0] Saved ${interchangeSavedCount} interchange matches`);
   }
-  
+
+  // Check for cancellation between phases
+  if (jobId && await isJobCancelled(jobId)) {
+    console.log(`[EXACT-MATCH-V3.0] Job ${jobId} cancelled after interchange phase`);
+    return interchangeSavedCount;
+  }
+
   // PHASE 2: EXACT MATCHING (V3.0 with description validation & deduplication)
   console.log(`[EXACT-MATCH-V3.0] === PHASE 2: EXACT MATCHING (DESCRIPTION-VALIDATED) ===`);
   const exactMatches = await findPostgresExactMatches(projectId);
   console.log(`[EXACT-MATCH-V3.0] Found ${exactMatches.length} exact matches (deduplicated, one per store item)`);
-  
+
   // Save exact matches
   let exactSavedCount = 0;
   if (exactMatches.length > 0) {
-    exactSavedCount = await saveMatches(exactMatches, projectId, 'EXACT');
+    exactSavedCount = await saveMatches(exactMatches, projectId, 'EXACT', jobId);
     console.log(`[EXACT-MATCH-V3.0] Saved ${exactSavedCount} exact matches`);
   }
   
@@ -67,13 +78,20 @@ export async function processExactMatching(
 async function saveMatches(
   matches: any[],
   projectId: string,
-  matchType: 'INTERCHANGE' | 'EXACT'
+  matchType: 'INTERCHANGE' | 'EXACT',
+  jobId?: string
 ): Promise<number> {
   let savedCount = 0;
-  
+
   for (let i = 0; i < matches.length; i += 100) {
+    // Check for cancellation between batches
+    if (jobId && await isJobCancelled(jobId)) {
+      console.log(`[EXACT-MATCH-V3.0] Job ${jobId} cancelled during ${matchType} save - ${savedCount}/${matches.length} matches saved`);
+      return savedCount;
+    }
+
     const batch = matches.slice(i, i + 100);
-    
+
     try {
       const dataToInsert = batch.map((match) => ({
         projectId,
@@ -96,12 +114,12 @@ async function saveMatches(
           descriptionSimilarity: match.descriptionSimilarity,
         },
       }));
-      
+
       await prisma.matchCandidate.createMany({
         data: dataToInsert,
         skipDuplicates: true,
       });
-      
+
       savedCount += batch.length;
     } catch (error) {
       console.error(`[EXACT-MATCH-V3.0] ERROR: Failed to save ${matchType} batch`);
@@ -109,6 +127,6 @@ async function saveMatches(
       throw error;
     }
   }
-  
+
   return savedCount;
 }
