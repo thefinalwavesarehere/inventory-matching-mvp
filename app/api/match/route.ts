@@ -108,10 +108,54 @@ export async function GET(req: NextRequest) {
 
     const supplierItemsMap = new Map(supplierItems.map(item => [item.id, item]));
 
-    // Attach target items to matches
+    // P3: Fetch flag data for interchange matches
+    const interchangeMatches = deduplicatedMatches.filter(m => m.method === 'INTERCHANGE');
+    const flagsMap = new Map<string, { flagType: string | null; flagMessage: string | null }>();
+
+    if (interchangeMatches.length > 0) {
+      // For each interchange match, look up the corresponding interchange record
+      for (const match of interchangeMatches) {
+        const storeItem = match.storeItem;
+        const targetItem = supplierItemsMap.get(match.targetId);
+
+        if (storeItem && targetItem) {
+          // Look up interchange record that matches this mapping
+          const interchange = await prisma.interchange.findFirst({
+            where: {
+              projectId,
+              OR: [
+                {
+                  merrillPartNumberNorm: storeItem.partNumber,
+                  vendorPartNumberNorm: targetItem.partNumber,
+                },
+                {
+                  merrillPartNumber: storeItem.partNumber,
+                  vendorPartNumber: targetItem.partNumber,
+                },
+              ],
+            },
+            select: {
+              flagType: true,
+              flagMessage: true,
+            },
+          });
+
+          if (interchange && (interchange.flagType || interchange.flagMessage)) {
+            flagsMap.set(match.id, {
+              flagType: interchange.flagType,
+              flagMessage: interchange.flagMessage,
+            });
+          }
+        }
+      }
+    }
+
+    // Attach target items and flags to matches
     const enrichedMatches = deduplicatedMatches.map(match => ({
       ...match,
       targetItem: supplierItemsMap.get(match.targetId) || null,
+      flagType: flagsMap.get(match.id)?.flagType || null,
+      flagMessage: flagsMap.get(match.id)?.flagMessage || null,
     }));
 
     return NextResponse.json({
