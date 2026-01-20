@@ -43,6 +43,10 @@ export async function POST(req: NextRequest) {
       const vendor = rowData['VENDOR'] || rowData['Vendor'] || rowData['vendor'];
       const subCategory = rowData['SUB CATEGORY'] || rowData['Sub Category'] || rowData['subCategory'];
 
+      // P3: Optional manufacturer rule flags
+      const flagType = rowData['FLAG_TYPE'] || rowData['Flag Type'] || rowData['flagType'] || rowData['flag_type'];
+      const flagMessage = rowData['FLAG_MESSAGE'] || rowData['Flag Message'] || rowData['flagMessage'] || rowData['flag_message'];
+
       if (!vendorPart || !merrillPart) {
         continue; // Skip invalid rows
       }
@@ -63,6 +67,9 @@ export async function POST(req: NextRequest) {
         merrillPartNumberNorm: canonicalNormalize(merrillPart),
         vendor: vendor ? String(vendor) : null,
         subCategory: subCategory ? String(subCategory) : null,
+        // P3: Manufacturer rule flags
+        flagType: flagType ? String(flagType) : null,
+        flagMessage: flagMessage ? String(flagMessage) : null,
         confidence: 1.0,
         source: 'global_upload',
       });

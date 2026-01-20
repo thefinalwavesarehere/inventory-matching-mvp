@@ -265,6 +265,9 @@ model Interchange {
   notes                 String?   // Notes from CSV
   source        String?   // "client", "vendor", "file", "ai_confirmed"
   confidence    Float     @default(1.0)
+  // P3: Manufacturer rule flags
+  flagType              String?   // Optional flag type (e.g., "CONTACT_VENDOR", "VERIFY_FIT")
+  flagMessage           String?   // Optional flag message for reviewers
   createdAt     DateTime  @default(now())
 
   @@map("interchanges")
