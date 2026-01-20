@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
           mappedManufacturer: manufacturerName || null,
           mappedArnoldLineCode: manufacturerLineCode.trim().toUpperCase(),
           confidence,
-          status: source === 'manual' ? 'MANUAL' : 'AUTO',
+          status: source === 'manual' ? 'MANUAL' : 'SUGGESTED',
         },
         include: {
           project: {
