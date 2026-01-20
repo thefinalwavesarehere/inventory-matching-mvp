@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import FileUploader from '@/app/components/FileUploader';
 import WorkflowStatus from '@/app/components/WorkflowStatus';
 import LinearPipeline from '@/app/components/LinearPipeline';
+import BudgetManager from '@/app/components/BudgetManager';
 
 interface Project {
   id: string;
@@ -587,6 +588,9 @@ export default function ProjectDetailPage() {
 
         {/* Workflow Status Dashboard */}
         <WorkflowStatus projectId={projectId} />
+
+        {/* Budget Manager - P4 */}
+        <BudgetManager projectId={projectId} />
 
         {/* Uploaded Files Section */}
         <div className="glass-panel p-6 mb-6">
