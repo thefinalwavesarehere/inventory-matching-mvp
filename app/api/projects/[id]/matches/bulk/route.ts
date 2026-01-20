@@ -13,7 +13,7 @@ import { MatchStatus, VendorAction } from '@prisma/client';
 import { prisma } from '@/app/lib/db/prisma';
 import { requireAuth } from '@/app/lib/auth-helpers';
 import { logActivity, ActivityType } from '@/app/lib/logger';
-import { createMasterRulesFromDecisions } from '@/app/lib/master-rules-learner';
+import { learnFromBulkDecisions } from '@/app/lib/master-rules-learner';
 
 
 export const dynamic = 'force-dynamic';
@@ -217,17 +217,19 @@ async function handleUpdateStatus(
     const decisions = matches.map((match) => {
       const supplierItem = supplierItemMap.get(match.targetId);
       return {
-        matchId: match.id,
+        matchCandidateId: match.id,
         storePartNumber: match.storeItem.partNumber,
         supplierPartNumber: supplierItem?.partNumber || '',
         lineCode: supplierItem?.lineCode || null,
-        decision: status === 'ACCEPTED' ? 'approve' : 'reject',
+        decision: (status === 'ACCEPTED' ? 'approve' : 'reject') as 'approve' | 'reject',
+        projectId,
+        userId,
       };
     }).filter(d => d.supplierPartNumber); // Only create rules if we have supplier part number
 
     if (decisions.length > 0) {
-      await createMasterRulesFromDecisions(decisions, projectId, userId);
-      console.log(`[BULK_OPERATIONS] Created ${decisions.length} master rules from bulk ${status}`);
+      const result = await learnFromBulkDecisions(decisions);
+      console.log(`[BULK_OPERATIONS] Created ${result.created} master rules from bulk ${status} (${result.skipped} skipped, ${result.errors} errors)`);
     }
   } catch (error) {
     console.error('[BULK_OPERATIONS] Error creating master rules:', error);
