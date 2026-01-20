@@ -72,7 +72,7 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
   const startJob = async (jobType: 'fuzzy' | 'ai' | 'web-search') => {
     setLoading(true);
     setError('');
-    
+
     try {
       const res = await fetch('/api/jobs/create', {
         method: 'POST',
@@ -83,17 +83,26 @@ export default function BackgroundJobControls({ projectId, onJobComplete }: Back
           config: { jobType },
         }),
       });
-      
+
+      const data = await res.json();
+
+      // P4: Check for budget errors (402 Payment Required)
       if (!res.ok) {
-        const data = await res.json();
+        if (res.status === 402 && data.budgetStatus) {
+          const { budgetStatus, estimatedCost } = data;
+          const budgetMsg = budgetStatus.budgetLimit !== null
+            ? `Budget: $${budgetStatus.totalSpent.toFixed(2)} / $${budgetStatus.budgetLimit.toFixed(2)}`
+            : '';
+          throw new Error(
+            `${data.error || 'Budget limit exceeded'}\nEstimated cost: $${estimatedCost?.toFixed(2) || '0.00'}\n${budgetMsg}`
+          );
+        }
         throw new Error(data.error || 'Failed to create job');
       }
-      
-      const data = await res.json();
-      
+
       // Job created, it will be picked up by polling
       loadActiveJobs();
-      
+
     } catch (err: any) {
       setError(err.message);
     } finally {
