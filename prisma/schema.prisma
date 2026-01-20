@@ -230,7 +230,12 @@ model StoreItem {
   arnoldLineCodeRaw    String? // First 3 chars when split enabled (e.g., "MEV")
   manufacturerPartRaw  String? // Remainder after line code (e.g., "ES409LT")
   manufacturerPartNorm String? @db.Text // Canonical normalized manufacturer part
-  
+
+  // P3: Line code preprocessing
+  manufacturerName       String? // Manufacturer name from data
+  manufacturerLineCode   String? // Normalized line code from mapping
+  lineCodePreprocessed   Boolean @default(false) // Whether preprocessing has been applied
+
   rawData        Json?    // Store original row data
   matchCandidates MatchCandidate[]
   createdAt      DateTime @default(now())
