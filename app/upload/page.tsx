@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import FormatKey from '@/app/components/FormatKey';
 
 const BUCKET_NAME = 'inventory-files';
 
@@ -273,12 +274,30 @@ export default function UploadPage() {
             </div>
 
             {/* File Uploads */}
-            <div className="space-y-4">
+            <div className="space-y-6">
               {/* Store File */}
               <div>
                 <label className="block text-sm font-medium mb-2">
                   Store Inventory File (Excel/CSV) *
                 </label>
+
+                <FormatKey
+                  fileType="store-inventory"
+                  columns={[
+                    { name: 'partNumber', required: true, dataType: 'Text', description: 'Store part number or SKU', example: 'ABC123' },
+                    { name: 'lineCode', required: false, dataType: 'Text', description: 'Manufacturer line code', example: 'PPG' },
+                    { name: 'description', required: false, dataType: 'Text', description: 'Part description', example: 'Red Paint 1 Gallon' },
+                    { name: 'cost', required: false, dataType: 'Number', description: 'Current cost or price', example: '29.99' },
+                    { name: 'uom', required: false, dataType: 'Text', description: 'Unit of measure', example: 'EA' },
+                    { name: 'qtyOnHand', required: false, dataType: 'Number', description: 'Quantity on hand', example: '50' },
+                  ]}
+                  notes={[
+                    'partNumber must be unique for each row',
+                    'First row must contain column headers',
+                    'File must be in Excel (.xlsx) format',
+                  ]}
+                />
+
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
@@ -300,6 +319,25 @@ export default function UploadPage() {
                 <label className="block text-sm font-medium mb-2">
                   Supplier Catalog File (Excel/CSV) *
                 </label>
+
+                <FormatKey
+                  fileType="supplier-catalog"
+                  columns={[
+                    { name: 'partNumber', required: true, dataType: 'Text', description: 'Supplier part number', example: 'SUP-789' },
+                    { name: 'lineCode', required: false, dataType: 'Text', description: 'Manufacturer line code', example: 'PPG' },
+                    { name: 'description', required: false, dataType: 'Text', description: 'Part description', example: 'Red Paint 1 Gallon' },
+                    { name: 'currentCost', required: false, dataType: 'Number', description: 'Current supplier cost', example: '24.50' },
+                    { name: 'uom', required: false, dataType: 'Text', description: 'Unit of measure', example: 'EA' },
+                    { name: 'category', required: false, dataType: 'Text', description: 'Product category', example: 'Paint' },
+                    { name: 'subcategory', required: false, dataType: 'Text', description: 'Product subcategory', example: 'Interior' },
+                  ]}
+                  notes={[
+                    'partNumber must be unique for each row',
+                    'First row must contain column headers',
+                    'File must be in Excel (.xlsx) format',
+                  ]}
+                />
+
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
