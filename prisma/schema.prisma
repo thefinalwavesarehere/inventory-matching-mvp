@@ -65,13 +65,18 @@ model Project {
   lineCodeMappings ProjectLineCodeMapping[]
   matchRules   ProjectMatchRule[]
   masterRules  MasterRule[]
-  
+  costLogs     CostLog[]
+
   // Prompt 2: Config toggles (safe defaults)
   enableArnoldLineCodeSplit    Boolean @default(false)
   enableRuleBasedFuzzyBoosts   Boolean @default(false)
   enablePunctuationEquivalence Boolean @default(true)
   fuzzyHardRejectEnabled       Boolean @default(true)
-  
+
+  // P4: Budget tracking
+  budgetLimit  Decimal? @db.Decimal(10, 2) // Maximum spend allowed (null = unlimited)
+  currentSpend Decimal  @default(0) @db.Decimal(10, 2) // Current spend
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -230,7 +235,12 @@ model StoreItem {
   arnoldLineCodeRaw    String? // First 3 chars when split enabled (e.g., "MEV")
   manufacturerPartRaw  String? // Remainder after line code (e.g., "ES409LT")
   manufacturerPartNorm String? @db.Text // Canonical normalized manufacturer part
-  
+
+  // P3: Line code preprocessing
+  manufacturerName       String? // Manufacturer name from data
+  manufacturerLineCode   String? // Normalized line code from mapping
+  lineCodePreprocessed   Boolean @default(false) // Whether preprocessing has been applied
+
   rawData        Json?    // Store original row data
   matchCandidates MatchCandidate[]
   createdAt      DateTime @default(now())
@@ -265,6 +275,9 @@ model Interchange {
   notes                 String?   // Notes from CSV
   source        String?   // "client", "vendor", "file", "ai_confirmed"
   confidence    Float     @default(1.0)
+  // P3: Manufacturer rule flags
+  flagType              String?   // Optional flag type (e.g., "CONTACT_VENDOR", "VERIFY_FIT")
+  flagMessage           String?   // Optional flag message for reviewers
   createdAt     DateTime  @default(now())
 
   @@map("interchanges")
@@ -849,4 +862,21 @@ enum MasterRuleType {
 enum MasterRuleScope {
   GLOBAL           // Apply to all projects
   PROJECT_SPECIFIC // Only apply to specific project
+}
+
+// P4: Cost tracking model
+model CostLog {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  operation       String   // 'ai_match' or 'web_search'
+  cost            Decimal  @db.Decimal(10, 4) // Cost in USD
+  itemsProcessed  Int      // Number of items processed
+  tokensUsed      Int?     // Tokens used (for AI operations)
+  createdAt       DateTime @default(now())
+
+  @@map("cost_logs")
+  @@index([projectId])
+  @@index([operation])
+  @@index([createdAt])
 }

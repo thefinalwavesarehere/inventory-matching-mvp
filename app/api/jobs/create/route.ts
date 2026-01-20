@@ -75,6 +75,29 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // P4: Check budget for AI and web-search operations
+    if (jobType === 'ai' || jobType === 'web-search') {
+      const { estimateCost, checkBudget } = await import('@/app/lib/budget-tracker');
+
+      const operation = jobType === 'ai' ? 'ai_match' : 'web_search';
+      const costEstimate = estimateCost(operation, totalUnmatched);
+      const budgetCheck = await checkBudget(projectId, costEstimate.estimatedCost);
+
+      if (!budgetCheck.allowed) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: budgetCheck.reason || 'Budget limit exceeded',
+            budgetStatus: budgetCheck.budgetStatus,
+            estimatedCost: costEstimate.estimatedCost,
+          },
+          { status: 402 } // Payment Required
+        );
+      }
+
+      console.log(`[JOB-CREATE] Budget check passed. Estimated cost: $${costEstimate.estimatedCost.toFixed(2)}`);
+    }
+
     // Create job using queue manager
     const jobConfig = {
       ...config,

@@ -151,6 +151,17 @@ export async function POST(req: NextRequest) {
         skipDuplicates: true,
       });
       importedCount = items.length;
+
+      // P3: Apply line code preprocessing after store items uploaded
+      try {
+        console.log('[UPLOAD] Applying line code preprocessing...');
+        const { applyLineCodePreprocessing } = await import('@/app/lib/line-code-preprocessor');
+        const preprocessResult = await applyLineCodePreprocessing(project.id);
+        console.log(`[UPLOAD] Line code preprocessing: ${preprocessResult.itemsMapped}/${preprocessResult.totalItems} items mapped`);
+      } catch (error) {
+        console.error('[UPLOAD] Line code preprocessing failed:', error);
+        // Don't fail the upload if preprocessing fails
+      }
     } else if (fileType === 'supplier') {
       // Import supplier catalog items
       const items = data.map((row: any) => {

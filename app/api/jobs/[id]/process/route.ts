@@ -234,6 +234,24 @@ export async function POST(
 
       await markJobCompleted(jobId, finalMatchesFound, finalMatchRate);
 
+      // P4: Record cost for AI and web-search operations
+      if (jobType === 'ai' || jobType === 'web-search') {
+        try {
+          const { recordCost, estimateCost } = await import('@/app/lib/budget-tracker');
+          const operation = jobType === 'ai' ? 'ai_match' : 'web_search';
+          const itemsProcessed = job.processedItems || 0;
+
+          // Calculate actual cost based on items processed
+          const costEstimate = estimateCost(operation, itemsProcessed);
+          await recordCost(job.projectId, operation, costEstimate.estimatedCost, itemsProcessed);
+
+          console.log(`[JOB-PROCESS] Recorded ${operation} cost: $${costEstimate.estimatedCost.toFixed(4)} for ${itemsProcessed} items`);
+        } catch (error) {
+          console.error(`[JOB-PROCESS] Failed to record cost:`, error);
+          // Don't fail the job if cost recording fails
+        }
+      }
+
       // Update matchingProgress based on job type
       const progressUpdate: any = {};
       if (jobType === 'exact') {

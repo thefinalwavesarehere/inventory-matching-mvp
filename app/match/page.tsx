@@ -47,6 +47,9 @@ interface MatchCandidate {
   transformationSignature?: string;
   costDifference?: number;
   costSimilarity?: number;
+  // P3: Manufacturer rule flags
+  flagType?: string;
+  flagMessage?: string;
 }
 
 export default function MatchPageWithBulkActions() {
@@ -567,7 +570,17 @@ export default function MatchPageWithBulkActions() {
                       className="w-5 h-5 rounded border-gray-300"
                     />
                     <span className="text-sm text-gray-600">Select this match</span>
-                    
+
+                    {/* Manufacturer Flag - P3 */}
+                    {match.flagType && (
+                      <span
+                        className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium flex items-center gap-1"
+                        title={match.flagMessage || match.flagType}
+                      >
+                        ⚠️ {match.flagType}
+                      </span>
+                    )}
+
                     {/* Vendor Action Badge */}
                     {match.vendorAction && match.vendorAction !== 'NONE' && (
                       <span className="ml-auto px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
