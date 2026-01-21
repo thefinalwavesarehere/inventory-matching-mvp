@@ -139,15 +139,12 @@ export async function applyVendorActionsToMatches(projectId: string): Promise<{
 }> {
   const rules = await loadVendorActionRules(projectId);
 
-  // Get all matches for this project
+  // Get all matches for this project with vendor info
   const matches = await prisma.matchCandidate.findMany({
     where: { projectId },
     select: {
       id: true,
-      supplierLineCode: true,
-      supplierManufacturer: true,
-      category: true,
-      subcategory: true,
+      vendor: true, // Vendor from interchange
     },
   });
 
@@ -163,7 +160,13 @@ export async function applyVendorActionsToMatches(projectId: string): Promise<{
 
   // Evaluate and update each match
   for (const match of matches) {
-    const action = evaluateVendorAction(match, rules);
+    const matchContext: MatchContext = {
+      supplierLineCode: match.vendor,
+      supplierManufacturer: match.vendor,
+      category: null,
+      subcategory: null,
+    };
+    const action = evaluateVendorAction(matchContext, rules);
 
     if (action !== 'NONE') {
       // Update the match with the vendor action
