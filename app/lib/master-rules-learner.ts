@@ -73,6 +73,20 @@ export async function learnFromDecision(
     return { ruleId: existingRule.id, ruleType: existingRule.ruleType };
   }
   
+  // Validate projectId exists before creating rule
+  let validatedProjectId: string | null = null;
+  if (projectId) {
+    const projectExists = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true }
+    });
+    if (projectExists) {
+      validatedProjectId = projectId;
+    } else {
+      console.warn(`[MASTER-RULES] Project ${projectId} does not exist, creating rule without project reference`);
+    }
+  }
+  
   // Create new master rule
   const rule = await prisma.masterRule.create({
     data: {
@@ -84,7 +98,7 @@ export async function learnFromDecision(
       confidence: 1.0, // Full confidence from manual decision
       enabled: true,
       createdBy: userId,
-      projectId, // Track source project
+      projectId: validatedProjectId, // Use validated project ID
       matchCandidateId, // Track original match
       updatedAt: new Date(),
     }
