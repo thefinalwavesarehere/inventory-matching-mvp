@@ -90,7 +90,7 @@ export async function convertInterchangeToMasterRules(
         await prisma.masterRule.create({
           data: {
             ruleType: MasterRuleType.POSITIVE_MAP,
-            scope: validatedProjectId ? MasterRuleScope.PROJECT : MasterRuleScope.GLOBAL,
+            scope: validatedProjectId ? MasterRuleScope.PROJECT_SPECIFIC : MasterRuleScope.GLOBAL,
             storePartNumber: interchange.merrillPartNumberNorm,
             supplierPartNumber: interchange.vendorPartNumberNorm,
             lineCode: interchange.vendor || null,
@@ -193,7 +193,7 @@ export async function convertPartNumberInterchangeToMasterRules(
         await prisma.masterRule.create({
           data: {
             ruleType: MasterRuleType.POSITIVE_MAP,
-            scope: validatedProjectId ? MasterRuleScope.PROJECT : MasterRuleScope.GLOBAL,
+            scope: validatedProjectId ? MasterRuleScope.PROJECT_SPECIFIC : MasterRuleScope.GLOBAL,
             storePartNumber: interchange.sourcePartNumber,
             supplierPartNumber: interchange.targetPartNumber,
             lineCode: interchange.targetSupplierLineCode,
@@ -247,7 +247,6 @@ export async function convertInterchangeMappingToMasterRules(
 
   try {
     const mappings = await prisma.interchangeMapping.findMany({
-      where: { active: true },
       select: {
         id: true,
         competitorPartNumber: true,
