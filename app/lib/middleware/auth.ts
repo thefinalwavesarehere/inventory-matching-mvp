@@ -9,8 +9,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/app/lib/supabase/server';
-import { prisma } from '@/app/lib/prisma';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import { prisma } from '@/app/lib/db/prisma';
 import type { UserRole } from '@prisma/client';
 
 export interface AuthenticatedUser {
@@ -32,8 +33,8 @@ export interface AuthContext {
 export class AuthenticationError extends Error {
   constructor(
     message: string,
-    public readonly code: string,
-    public readonly statusCode: number = 401
+    public code: string = 'UNAUTHENTICATED',
+    public statusCode: number = 401
   ) {
     super(message);
     this.name = 'AuthenticationError';
@@ -43,8 +44,8 @@ export class AuthenticationError extends Error {
 export class AuthorizationError extends Error {
   constructor(
     message: string,
-    public readonly code: string,
-    public readonly statusCode: number = 403
+    public code: string = 'FORBIDDEN',
+    public statusCode: number = 403
   ) {
     super(message);
     this.name = 'AuthorizationError';
@@ -57,7 +58,7 @@ export class AuthorizationError extends Error {
  * @throws {AuthenticationError} If session is invalid or user not found
  */
 export async function requireAuth(): Promise<AuthContext> {
-  const supabase = await createClient();
+  const supabase = createRouteHandlerClient({ cookies });
   
   // Verify Supabase session
   const { data: { user: supabaseUser }, error: sessionError } = await supabase.auth.getUser();
@@ -104,19 +105,19 @@ export async function requireAuth(): Promise<AuthContext> {
 /**
  * Role-based authorization check
  * 
- * @param allowedRoles - Array of roles that can access the resource
+ * @param allowedRoles - Array of roles that are allowed access
  * @throws {AuthorizationError} If user role is not in allowed roles
  */
 export async function requireRole(allowedRoles: UserRole[]): Promise<AuthContext> {
   const context = await requireAuth();
-
+  
   if (!allowedRoles.includes(context.user.role)) {
     throw new AuthorizationError(
       `Access denied. Required role: ${allowedRoles.join(' or ')}`,
       'INSUFFICIENT_PERMISSIONS'
     );
   }
-
+  
   return context;
 }
 
@@ -128,10 +129,10 @@ export async function requireAdmin(): Promise<AuthContext> {
 }
 
 /**
- * Manager or Admin authorization
+ * Editor or Admin authorization (can create/edit projects)
  */
-export async function requireManager(): Promise<AuthContext> {
-  return requireRole(['ADMIN', 'MANAGER']);
+export async function requireEditor(): Promise<AuthContext> {
+  return requireRole(['ADMIN', 'EDITOR']);
 }
 
 /**
@@ -142,7 +143,7 @@ export async function requireManager(): Promise<AuthContext> {
  * export async function GET(request: NextRequest) {
  *   return withAuth(request, async (context) => {
  *     // Your authenticated route logic here
- *     return NextResponse.json({ data: 'success' });
+ *     // Access user via context.user
  *   });
  * }
  * ```
@@ -160,23 +161,7 @@ export async function withAuth(
 }
 
 /**
- * Middleware wrapper with role-based access control
- */
-export async function withRole(
-  request: NextRequest,
-  allowedRoles: UserRole[],
-  handler: (context: AuthContext) => Promise<NextResponse>
-): Promise<NextResponse> {
-  try {
-    const context = await requireRole(allowedRoles);
-    return await handler(context);
-  } catch (error) {
-    return handleAuthError(error);
-  }
-}
-
-/**
- * Admin-only middleware wrapper
+ * Middleware wrapper for admin-only routes
  */
 export async function withAdmin(
   request: NextRequest,
@@ -184,6 +169,21 @@ export async function withAdmin(
 ): Promise<NextResponse> {
   try {
     const context = await requireAdmin();
+    return await handler(context);
+  } catch (error) {
+    return handleAuthError(error);
+  }
+}
+
+/**
+ * Middleware wrapper for editor/admin routes
+ */
+export async function withEditor(
+  request: NextRequest,
+  handler: (context: AuthContext) => Promise<NextResponse>
+): Promise<NextResponse> {
+  try {
+    const context = await requireEditor();
     return await handler(context);
   } catch (error) {
     return handleAuthError(error);
@@ -214,32 +214,4 @@ function handleAuthError(error: unknown): NextResponse {
     },
     { status: 500 }
   );
-}
-
-/**
- * Audit log helper for security-sensitive operations
- */
-export async function auditLog(params: {
-  userId: string;
-  action: string;
-  resourceType: string;
-  resourceId?: string;
-  details?: Record<string, unknown>;
-  ipAddress?: string;
-}): Promise<void> {
-  try {
-    await prisma.auditLog.create({
-      data: {
-        userId: params.userId,
-        action: params.action,
-        resourceType: params.resourceType,
-        resourceId: params.resourceId,
-        details: params.details,
-        ipAddress: params.ipAddress,
-      },
-    });
-  } catch (error) {
-    // Don't fail the request if audit logging fails
-    console.error('[AUDIT_LOG_ERROR]', error);
-  }
 }
