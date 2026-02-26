@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { prisma } from '@/app/lib/prisma';
+import { prisma } from '@/app/lib/db/prisma';
 
 export const dynamic = 'force-dynamic';
 
