@@ -33,7 +33,7 @@ export async function validateBody<T>(
     if (error instanceof ZodError) {
       throw new ValidationError(
         'Invalid request body',
-        error.errors
+        error.issues
       );
     }
     throw error;
@@ -55,7 +55,7 @@ export function validateQuery<T>(
     if (error instanceof ZodError) {
       throw new ValidationError(
         'Invalid query parameters',
-        error.errors
+        error.issues
       );
     }
     throw error;
@@ -75,7 +75,7 @@ export function validateParams<T>(
     if (error instanceof ZodError) {
       throw new ValidationError(
         'Invalid route parameters',
-        error.errors
+        error.issues
       );
     }
     throw error;
