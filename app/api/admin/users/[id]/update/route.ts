@@ -42,7 +42,7 @@ export async function PUT(
       );
     }
 
-    // Update user context.user
+    // Update user profile
     const updatedUser = await prisma.userProfile.update({
       where: { id: userId },
       data: {

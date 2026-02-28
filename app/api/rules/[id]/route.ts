@@ -7,6 +7,7 @@ import { VendorAction } from '@prisma/client';
 import { prisma } from '@/app/lib/db/prisma';
 
 import { withAdmin } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 /**
