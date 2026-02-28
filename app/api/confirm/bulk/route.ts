@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import { learnFromBulkDecisions, ReviewDecision } from '@/app/lib/master-rules-learner';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const body = await req.json();
     const { matchIds, action } = body;
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[BULK-CONFIRM] Processing ${action} for ${matchIds.length} matches`);
+    apiLogger.info(`[BULK-CONFIRM] Processing ${action} for ${matchIds.length} matches`);
 
     const newStatus = action === 'confirm' ? 'CONFIRMED' : 'REJECTED';
 
@@ -79,11 +80,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    console.log(`[BULK-CONFIRM] Updated ${result.count} matches to ${newStatus}`);
-    console.log(`[BULK-CONFIRM] Logged ${historyRecords.length} records to match history`);
+    apiLogger.info(`[BULK-CONFIRM] Updated ${result.count} matches to ${newStatus}`);
+    apiLogger.info(`[BULK-CONFIRM] Logged ${historyRecords.length} records to match history`);
 
     // Learn from decisions and create master rules
-    const { profile } = await requireAuth();
     const decisions: ReviewDecision[] = matches.map(match => {
       const supplierItem = supplierItemsMap.get(match.targetId);
       return {
@@ -93,23 +93,25 @@ export async function POST(req: NextRequest) {
         lineCode: supplierItem?.lineCode,
         decision: action as 'approve' | 'reject',
         projectId: match.projectId,
-        userId: profile.id,
+        userId: context.user.id,
       };
     });
     
     const learningResult = await learnFromBulkDecisions(decisions);
-    console.log(`[BULK-CONFIRM] Master rules learning: ${learningResult.created} created, ${learningResult.skipped} skipped`);
+    apiLogger.info(`[BULK-CONFIRM] Master rules learning: ${learningResult.created} created, ${learningResult.skipped} skipped`);
 
     return NextResponse.json({
       success: true,
       message: `Successfully ${action}ed ${result.count} matches`,
       count: result.count,
     });
+  
   } catch (error: any) {
-    console.error('[BULK-CONFIRM] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to process bulk action' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

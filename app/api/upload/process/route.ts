@@ -8,12 +8,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import * as XLSX from 'xlsx';
 import { normalizePartNumber, extractLineCode, excelLeft, excelMid } from '@/app/lib/normalization';
 import { extractRulesFromInterchange, deduplicateRules } from '@/app/lib/interchange-rule-extractor';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 // V9.5: Set maximum duration for large file uploads
 export const maxDuration = 60;
 
@@ -336,9 +337,9 @@ function processInterchangeFile(data: any[], projectId: string) {
 }
 
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const body = await req.json();
     const { projectId, fileUrl, fileType, fileName } = body;
@@ -362,7 +363,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[UPLOAD] Processing ${fileType} file: ${fileName}`);
+    apiLogger.info(`[UPLOAD] Processing ${fileType} file: ${fileName}`);
 
     // Download file from Supabase Storage
     const response = await fetch(fileUrl);
@@ -390,7 +391,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[UPLOAD] Parsed ${data.length} rows from ${sheetName}`);
+    apiLogger.info(`[UPLOAD] Parsed ${data.length} rows from ${sheetName}`);
 
     // Import data based on file type
     let importedCount = 0;
@@ -401,7 +402,7 @@ export async function POST(req: NextRequest) {
     if (fileType === 'store') {
       const items = processStoreFile(data, project.id);
       
-      console.log(`[UPLOAD] Processing ${items.length} store items in batches of ${BATCH_SIZE}`);
+      apiLogger.info(`[UPLOAD] Processing ${items.length} store items in batches of ${BATCH_SIZE}`);
       
       // Process in batches
       for (let i = 0; i < items.length; i += BATCH_SIZE) {
@@ -410,14 +411,14 @@ export async function POST(req: NextRequest) {
           data: batch,
           skipDuplicates: true,
         });
-        console.log(`[UPLOAD] Imported batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} items`);
+        apiLogger.info(`[UPLOAD] Imported batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} items`);
       }
       importedCount = items.length;
       
     } else if (fileType === 'supplier') {
       const items = processSupplierFile(data, project.id);
       
-      console.log(`[UPLOAD] Processing ${items.length} supplier items in batches of ${BATCH_SIZE}`);
+      apiLogger.info(`[UPLOAD] Processing ${items.length} supplier items in batches of ${BATCH_SIZE}`);
       
       // Process in batches
       for (let i = 0; i < items.length; i += BATCH_SIZE) {
@@ -426,14 +427,14 @@ export async function POST(req: NextRequest) {
           data: batch,
           skipDuplicates: true,
         });
-        console.log(`[UPLOAD] Imported batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} items`);
+        apiLogger.info(`[UPLOAD] Imported batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} items`);
       }
       importedCount = items.length;
       
     } else if (fileType === 'interchange') {
       const { interchanges, interchangeMappings } = processInterchangeFile(data, project.id);
       
-      console.log(`[UPLOAD] Processing ${interchanges.length} interchanges`);
+      apiLogger.info(`[UPLOAD] Processing ${interchanges.length} interchanges`);
       
       // Import legacy interchanges
       for (let i = 0; i < interchanges.length; i += BATCH_SIZE) {
@@ -454,7 +455,7 @@ export async function POST(req: NextRequest) {
       }
       
       // Extract and create matching rules from interchange data
-      console.log(`[UPLOAD] Extracting rules from interchange mappings...`);
+      apiLogger.info(`[UPLOAD] Extracting rules from interchange mappings...`);
       const extractedRules = extractRulesFromInterchange(
         interchangeMappings,
         project.id,
@@ -462,7 +463,7 @@ export async function POST(req: NextRequest) {
       );
       
       const uniqueRules = deduplicateRules(extractedRules);
-      console.log(`[UPLOAD] Creating ${uniqueRules.length} unique rules...`);
+      apiLogger.info(`[UPLOAD] Creating ${uniqueRules.length} unique rules...`);
       
       // Create rules in batches
       for (let i = 0; i < uniqueRules.length; i += BATCH_SIZE) {
@@ -473,7 +474,7 @@ export async function POST(req: NextRequest) {
         });
       }
       
-      console.log(`[UPLOAD] Successfully created ${uniqueRules.length} interchange rules`);
+      apiLogger.info(`[UPLOAD] Successfully created ${uniqueRules.length} interchange rules`);
       importedCount = interchanges.length;
     }
 
@@ -483,7 +484,7 @@ export async function POST(req: NextRequest) {
       data: { updatedAt: new Date() },
     });
 
-    console.log(`[UPLOAD] Successfully imported ${importedCount} rows`);
+    apiLogger.info(`[UPLOAD] Successfully imported ${importedCount} rows`);
 
     return NextResponse.json({
       success: true,
@@ -493,11 +494,13 @@ export async function POST(req: NextRequest) {
       rowCount: importedCount,
       fileType,
     });
+  
   } catch (error: any) {
-    console.error('[UPLOAD] Error processing file:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to process file' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

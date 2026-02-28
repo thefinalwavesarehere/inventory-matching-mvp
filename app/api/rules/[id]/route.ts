@@ -4,9 +4,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { VendorAction } from '@prisma/client';
-import { requireAdminRole } from '@/app/lib/auth-helpers';
 import { prisma } from '@/app/lib/db/prisma';
 
+import { withAdmin } from '@/app/lib/middleware/auth';
 export const dynamic = 'force-dynamic';
 
 /**
@@ -17,9 +17,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAdmin(request, async (context) => {
+    try {
     // Require admin role for updating rules
-    await requireAdminRole();
     
     const ruleId = params.id;
     const body = await request.json();
@@ -72,19 +72,15 @@ export async function PUT(
         scope: rule.projectId ? 'project' : 'global',
       },
     });
+  
   } catch (error: any) {
-    if (error.code === 'P2025') {
-      return NextResponse.json(
-        { success: false, error: 'Rule not found' },
-        { status: 404 }
-      );
-    }
-    
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 /**
@@ -95,9 +91,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAdmin(request, async (context) => {
+    try {
     // Require admin role for deleting rules
-    await requireAdminRole();
     
     const ruleId = params.id;
 
@@ -109,17 +105,13 @@ export async function DELETE(
       success: true,
       message: 'Rule deleted successfully',
     });
+  
   } catch (error: any) {
-    if (error.code === 'P2025') {
-      return NextResponse.json(
-        { success: false, error: 'Rule not found' },
-        { status: 404 }
-      );
-    }
-    
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

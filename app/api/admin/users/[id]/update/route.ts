@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db/prisma';
-import { requireAdminRole } from '@/app/lib/auth-helpers';
 import { logActivity } from '@/app/lib/logger';
 
 
+import { withAdmin } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 /**
@@ -14,9 +15,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAdmin(request, async (context) => {
+    try {
     // Require admin role
-    const { profile } = await requireAdminRole();
 
     const body = await request.json();
     const { fullName, email } = body;
@@ -41,7 +42,7 @@ export async function PUT(
       );
     }
 
-    // Update user profile
+    // Update user context.user
     const updatedUser = await prisma.userProfile.update({
       where: { id: userId },
       data: {
@@ -52,7 +53,7 @@ export async function PUT(
 
     // Log the activity
     await logActivity({
-      userId: profile.id,
+      userId: context.user.id,
       projectId: null,
       action: 'USER_UPDATED',
       details: {
@@ -70,19 +71,13 @@ export async function PUT(
       success: true,
       user: updatedUser,
     });
+  
   } catch (error: any) {
-    console.error('[API] Error updating user:', error);
-    
-    if (error.message === 'Unauthorized' || error.message === 'Admin access required') {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 403 }
-      );
-    }
-
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

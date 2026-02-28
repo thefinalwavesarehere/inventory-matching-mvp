@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db/prisma';
-import { requireAdminRole } from '@/app/lib/auth-helpers';
 import { logActivity } from '@/app/lib/logger';
 
 
+import { withAdmin } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 /**
@@ -14,9 +15,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAdmin(request, async (context) => {
+    try {
     // Require admin role
-    const { profile: adminProfile } = await requireAdminRole();
 
     const body = await request.json();
     const { role } = body;
@@ -41,7 +42,7 @@ export async function PUT(
     }
 
     // Prevent changing own role
-    if (targetUser.id === adminProfile.id) {
+    if (targetUser.id === context.user.id) {
       return NextResponse.json(
         { success: false, error: 'Cannot change your own role' },
         { status: 400 }
@@ -58,7 +59,7 @@ export async function PUT(
 
     // Log activity
     await logActivity({
-      userId: adminProfile.id,
+      userId: context.user.id,
       action: 'USER_ROLE_CHANGED',
       details: {
         targetUserId: targetUser.id,
@@ -73,26 +74,13 @@ export async function PUT(
       success: true,
       user: updatedUser,
     });
+  
   } catch (error: any) {
-    console.error('[API] Error changing user role:', error);
-    
-    if (error.message === 'Authentication required') {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 401 }
-      );
-    }
-
-    if (error.message === 'Admin role required') {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 403 }
-      );
-    }
-
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

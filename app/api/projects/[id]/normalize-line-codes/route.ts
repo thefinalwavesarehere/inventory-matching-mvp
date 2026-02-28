@@ -6,29 +6,30 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/app/lib/auth-helpers';
 import { normalizeInventoryItems, normalizeSupplierItems } from '@/app/lib/line-code-normalizer';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
 
     const projectId = params.id;
 
-    console.log(`[NORMALIZE] Starting line code normalization for project ${projectId}`);
+    apiLogger.info(`[NORMALIZE] Starting line code normalization for project ${projectId}`);
 
     // Normalize inventory items
     const inventoryResult = await normalizeInventoryItems(projectId);
-    console.log(`[NORMALIZE] Inventory: ${inventoryResult.normalizedCount}/${inventoryResult.totalItems} normalized`);
+    apiLogger.info(`[NORMALIZE] Inventory: ${inventoryResult.normalizedCount}/${inventoryResult.totalItems} normalized`);
 
     // Normalize supplier items
     const supplierResult = await normalizeSupplierItems(projectId);
-    console.log(`[NORMALIZE] Supplier: ${supplierResult.normalizedCount}/${supplierResult.totalItems} normalized`);
+    apiLogger.info(`[NORMALIZE] Supplier: ${supplierResult.normalizedCount}/${supplierResult.totalItems} normalized`);
 
     return NextResponse.json({
       success: true,
@@ -37,11 +38,13 @@ export async function POST(
       totalNormalized: inventoryResult.normalizedCount + supplierResult.normalizedCount,
       totalItems: inventoryResult.totalItems + supplierResult.totalItems,
     });
+  
   } catch (error: any) {
-    console.error('[NORMALIZE] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to normalize line codes' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

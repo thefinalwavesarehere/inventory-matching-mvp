@@ -7,10 +7,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import * as XLSX from 'xlsx';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 // V9.5: Set maximum duration for large file uploads
 export const maxDuration = 60;
 
@@ -21,9 +22,9 @@ function normalizePartNumber(partNumber: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     // Return projects with upload session info (for backward compatibility)
     const projects = await prisma.project.findMany({
@@ -52,19 +53,21 @@ export async function GET(req: NextRequest) {
         },
       })),
     });
-  } catch (error) {
-    console.error('Error fetching projects:', error);
+  
+  } catch (error: any) {
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch projects' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
@@ -154,12 +157,12 @@ export async function POST(req: NextRequest) {
 
       // P3: Apply line code preprocessing after store items uploaded
       try {
-        console.log('[UPLOAD] Applying line code preprocessing...');
+        apiLogger.info('[UPLOAD] Applying line code preprocessing...');
         const { applyLineCodePreprocessing } = await import('@/app/lib/line-code-preprocessor');
         const preprocessResult = await applyLineCodePreprocessing(project.id);
-        console.log(`[UPLOAD] Line code preprocessing: ${preprocessResult.itemsMapped}/${preprocessResult.totalItems} items mapped`);
+        apiLogger.info(`[UPLOAD] Line code preprocessing: ${preprocessResult.itemsMapped}/${preprocessResult.totalItems} items mapped`);
       } catch (error) {
-        console.error('[UPLOAD] Line code preprocessing failed:', error);
+        apiLogger.error('[UPLOAD] Line code preprocessing failed:', error);
         // Don't fail the upload if preprocessing fails
       }
     } else if (fileType === 'supplier') {
@@ -205,18 +208,18 @@ export async function POST(req: NextRequest) {
 
     // Auto-setup matching system (creates indexes on first upload)
     const { ensureMatchingSetup, getSetupStatus } = await import('@/app/lib/matching/auto-setup');
-    console.log('[UPLOAD] Running matching system setup...');
+    apiLogger.info('[UPLOAD] Running matching system setup...');
     const setupStatus = await ensureMatchingSetup();
     
     if (setupStatus.isReady) {
-      console.log('[UPLOAD] ✅ Matching system ready');
-      console.log(`[UPLOAD] Indexes: ${setupStatus.readyIndexes}/${setupStatus.totalIndexes} complete`);
+      apiLogger.info('[UPLOAD] ✅ Matching system ready');
+      apiLogger.info(`[UPLOAD] Indexes: ${setupStatus.readyIndexes}/${setupStatus.totalIndexes} complete`);
     } else if (setupStatus.buildingIndexes > 0) {
-      console.log('[UPLOAD] ⏳ Indexes building in background');
-      console.log(`[UPLOAD] Estimated completion: ~${setupStatus.estimatedWaitMins} minutes`);
+      apiLogger.info('[UPLOAD] ⏳ Indexes building in background');
+      apiLogger.info(`[UPLOAD] Estimated completion: ~${setupStatus.estimatedWaitMins} minutes`);
     } else {
-      console.warn('[UPLOAD] ⚠️  Setup incomplete:', setupStatus.message);
-      console.warn('[UPLOAD] Matching may not work optimally');
+      apiLogger.warn('[UPLOAD] ⚠️  Setup incomplete:', setupStatus.message);
+      apiLogger.warn('[UPLOAD] Matching may not work optimally');
     }
 
     return NextResponse.json({
@@ -233,11 +236,13 @@ export async function POST(req: NextRequest) {
         estimatedWaitMins: setupStatus.estimatedWaitMins,
       },
     });
-  } catch (error) {
-    console.error('Error uploading file:', error);
+  
+  } catch (error: any) {
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: 'Failed to upload file' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

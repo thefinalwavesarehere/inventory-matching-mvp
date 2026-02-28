@@ -11,14 +11,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import { generateBulkApprovalSuggestion, type PatternMatch } from '@/app/lib/pattern-detection';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const body = await req.json();
     const { matchId, projectId, minOccurrences = 5 } = body;
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[PATTERN-SUGGEST] Analyzing match ${matchId} for bulk approval patterns...`);
+    apiLogger.info(`[PATTERN-SUGGEST] Analyzing match ${matchId} for bulk approval patterns...`);
 
     // Get the approved match
     const approvedMatch = await prisma.matchCandidate.findUnique({
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
 
     // Check if this match has a transformation signature
     if (!approvedMatch.transformationSignature) {
-      console.log('[PATTERN-SUGGEST] No transformation signature found');
+      apiLogger.info('[PATTERN-SUGGEST] No transformation signature found');
       return NextResponse.json({
         success: true,
         hasSuggestion: false,
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[PATTERN-SUGGEST] Found ${pendingMatches.length} pending matches with signatures`);
+    apiLogger.info(`[PATTERN-SUGGEST] Found ${pendingMatches.length} pending matches with signatures`);
 
     // Get supplier items for pending matches
     const supplierIds = pendingMatches.map(m => m.targetId);
@@ -132,7 +133,7 @@ export async function POST(req: NextRequest) {
     );
 
     if (!suggestion) {
-      console.log('[PATTERN-SUGGEST] No bulk approval suggestion generated');
+      apiLogger.info('[PATTERN-SUGGEST] No bulk approval suggestion generated');
       return NextResponse.json({
         success: true,
         hasSuggestion: false,
@@ -140,7 +141,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    console.log(`[PATTERN-SUGGEST] Generated suggestion: ${suggestion.affectedItems} items`);
+    apiLogger.info(`[PATTERN-SUGGEST] Generated suggestion: ${suggestion.affectedItems} items`);
 
     return NextResponse.json({
       success: true,
@@ -162,11 +163,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
+  
   } catch (error: any) {
-    console.error('[PATTERN-SUGGEST] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to generate suggestion' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

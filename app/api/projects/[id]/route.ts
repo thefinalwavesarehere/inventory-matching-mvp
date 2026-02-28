@@ -7,16 +7,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const project = await prisma.project.findUnique({
       where: { id: params.id },
@@ -43,22 +44,24 @@ export async function GET(
       success: true,
       project,
     });
-  } catch (error) {
-    console.error('Error fetching project:', error);
+  
+  } catch (error: any) {
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch project' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const body = await req.json();
     const { name, description } = body;
@@ -76,22 +79,24 @@ export async function PUT(
       success: true,
       project,
     });
-  } catch (error) {
-    console.error('Error updating project:', error);
+  
+  } catch (error: any) {
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: 'Failed to update project' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     // Delete all related data first (cascade)
     await prisma.$transaction([
@@ -106,11 +111,13 @@ export async function DELETE(
       success: true,
       message: 'Project deleted successfully',
     });
-  } catch (error) {
-    console.error('Error deleting project:', error);
+  
+  } catch (error: any) {
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: 'Failed to delete project' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

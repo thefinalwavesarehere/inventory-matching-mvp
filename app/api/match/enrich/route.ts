@@ -5,19 +5,20 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 const perplexity = new OpenAI({
   apiKey: process.env.PERPLEXITY_API_KEY,
   baseURL: 'https://api.perplexity.ai',
 });
 
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const body = await req.json();
     const { matchIds } = body;
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[ENRICH] Starting web enrichment for ${matchIds.length} matches`);
+    apiLogger.info(`[ENRICH] Starting web enrichment for ${matchIds.length} matches`);
 
     // Get matches with their store items
     const matches = await prisma.matchCandidate.findMany({
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[ENRICH] Found ${matches.length} matches to enrich`);
+    apiLogger.info(`[ENRICH] Found ${matches.length} matches to enrich`);
 
     let enrichedCount = 0;
     const enrichmentResults: any[] = [];
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
           }
         }
         
-        console.log(`[ENRICH] Searching for part: ${partNumber}`);
+        apiLogger.info(`[ENRICH] Searching for part: ${partNumber}`);
 
         const searchQuery = `${partNumber} automotive part price specifications`;
         const searchResults = await searchWeb(partNumber, searchQuery);
@@ -91,12 +92,12 @@ export async function POST(req: NextRequest) {
         // Rate limiting - avoid overwhelming servers
         await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch (error: any) {
-        console.error(`[ENRICH] Error enriching ${match.id}:`, error.message);
+        apiLogger.error(`[ENRICH] Error enriching ${match.id}:`, error.message);
         continue;
       }
     }
 
-    console.log(`[ENRICH] Enriched ${enrichedCount} matches`);
+    apiLogger.info(`[ENRICH] Enriched ${enrichedCount} matches`);
 
     return NextResponse.json({
       success: true,
@@ -104,13 +105,15 @@ export async function POST(req: NextRequest) {
       enrichedCount,
       results: enrichmentResults,
     });
+  
   } catch (error: any) {
-    console.error('[ENRICH] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to enrich matches' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 /**

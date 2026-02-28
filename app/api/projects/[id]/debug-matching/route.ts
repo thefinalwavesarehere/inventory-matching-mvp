@@ -5,16 +5,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAuth(request, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const projectId = params.id;
 
@@ -94,11 +95,13 @@ export async function GET(
         supplierItemsFoundInInterchanges: interchangeChecks.filter(c => c.supplierItemFound).length,
       },
     });
+  
   } catch (error: any) {
-    console.error('Error in debug-matching API:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

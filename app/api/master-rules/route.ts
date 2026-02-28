@@ -8,14 +8,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/app/lib/auth-helpers';
 import { getMasterRules, enableRule, disableRule, deleteRule } from '@/app/lib/master-rules-learner';
 import { prisma } from '@/app/lib/db/prisma';
 import { MasterRuleType, MasterRuleScope } from '@prisma/client';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export async function GET(req: NextRequest) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
     
     const { searchParams } = new URL(req.url);
     const enabled = searchParams.get('enabled');
@@ -38,18 +39,20 @@ export async function GET(req: NextRequest) {
       rules,
       count: rules.length,
     });
+  
   } catch (error: any) {
-    console.error('[MASTER-RULES-API] GET error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to fetch rules' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const { profile } = await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
     
     const body = await req.json();
     const {
@@ -84,7 +87,7 @@ export async function POST(req: NextRequest) {
         lineCode: lineCode || null,
         confidence: 1.0,
         enabled: true,
-        createdBy: profile.id,
+        createdBy: context.user.id,
         projectId: projectId || null,
         updatedAt: new Date(),
       }
@@ -94,18 +97,20 @@ export async function POST(req: NextRequest) {
       success: true,
       rule,
     });
+  
   } catch (error: any) {
-    console.error('[MASTER-RULES-API] POST error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to create rule' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 export async function PATCH(req: NextRequest) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
     
     const body = await req.json();
     const { ruleId, enabled } = body;
@@ -130,18 +135,20 @@ export async function PATCH(req: NextRequest) {
       success: true,
       message: `Rule ${enabled ? 'enabled' : 'disabled'} successfully`,
     });
+  
   } catch (error: any) {
-    console.error('[MASTER-RULES-API] PATCH error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to update rule' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 export async function DELETE(req: NextRequest) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
     
     const { searchParams } = new URL(req.url);
     const ruleId = searchParams.get('ruleId');
@@ -166,11 +173,13 @@ export async function DELETE(req: NextRequest) {
       success: true,
       message: 'Rule deleted successfully',
     });
+  
   } catch (error: any) {
-    console.error('[MASTER-RULES-API] DELETE error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to delete rule' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

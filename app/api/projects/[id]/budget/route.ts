@@ -6,18 +6,19 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/app/lib/auth-helpers';
 import { prisma } from '@/app/lib/db/prisma';
 import { getBudgetStatus, getCostSummary } from '@/app/lib/budget-tracker';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
 
     const projectId = params.id;
 
@@ -40,21 +41,23 @@ export async function GET(
       success: true,
       ...costSummary,
     });
+  
   } catch (error: any) {
-    console.error('[BUDGET-GET] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to get budget status' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
 
     const projectId = params.id;
     const body = await req.json();
@@ -86,11 +89,13 @@ export async function PUT(
       budgetStatus,
       message: budgetLimit === null ? 'Budget limit removed' : `Budget limit set to $${budgetLimit}`,
     });
+  
   } catch (error: any) {
-    console.error('[BUDGET-PUT] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to update budget' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

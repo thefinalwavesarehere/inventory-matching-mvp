@@ -11,14 +11,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import { detectPatterns, createRuleFromPattern, type PatternMatch } from '@/app/lib/pattern-detection';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const body = await req.json();
     const {
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[PATTERN-APPLY] Applying bulk approval for signature: ${transformationSignature}`);
+    apiLogger.info(`[PATTERN-APPLY] Applying bulk approval for signature: ${transformationSignature}`);
 
     // Build where clause
     const whereClause: any = {
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[PATTERN-APPLY] Found ${matchesToApprove.length} matches to approve`);
+    apiLogger.info(`[PATTERN-APPLY] Found ${matchesToApprove.length} matches to approve`);
 
     if (matchesToApprove.length === 0) {
       return NextResponse.json({
@@ -79,13 +80,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[PATTERN-APPLY] Approved ${updateResult.count} matches`);
+    apiLogger.info(`[PATTERN-APPLY] Approved ${updateResult.count} matches`);
 
     // Create a matching rule if requested
     let ruleId: string | null = null;
     
     if (createRule) {
-      console.log('[PATTERN-APPLY] Creating matching rule...');
+      apiLogger.info('[PATTERN-APPLY] Creating matching rule...');
 
       // Get supplier items to build pattern matches
       const supplierIds = matchesToApprove.map(m => m.targetId);
@@ -131,7 +132,7 @@ export async function POST(req: NextRequest) {
         });
 
         ruleId = rule.id;
-        console.log(`[PATTERN-APPLY] Created rule: ${rule.id}`);
+        apiLogger.info(`[PATTERN-APPLY] Created rule: ${rule.id}`);
       }
     }
 
@@ -143,11 +144,13 @@ export async function POST(req: NextRequest) {
       message: `Approved ${updateResult.count} matches${ruleId ? ' and created a rule for future matching' : ''}`,
     });
 
+  
   } catch (error: any) {
-    console.error('[PATTERN-APPLY] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to apply pattern' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

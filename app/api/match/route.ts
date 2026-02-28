@@ -5,15 +5,16 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get('projectId');
@@ -168,11 +169,13 @@ export async function GET(req: NextRequest) {
         totalPages: Math.ceil(total / limit),
       },
     });
-  } catch (error) {
-    console.error('[MATCH-GET] Error fetching matches:', error);
+  
+  } catch (error: any) {
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch matches' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

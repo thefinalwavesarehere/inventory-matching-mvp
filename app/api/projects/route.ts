@@ -7,13 +7,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export async function GET(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const projects = await prisma.project.findMany({
       orderBy: { createdAt: 'desc' },
@@ -91,28 +92,21 @@ export async function GET(req: NextRequest) {
         };
       }),
     });
+  
   } catch (error: any) {
-    console.error('Error fetching projects:', error);
-    console.error('Error details:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name,
-    });
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to fetch projects',
-        details: error.message 
-      },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const body = await req.json();
     const { name, description } = body;
@@ -151,11 +145,13 @@ export async function POST(req: NextRequest) {
         createdAt: project.createdAt.toISOString(),
       },
     });
-  } catch (error) {
-    console.error('Error creating project:', error);
+  
+  } catch (error: any) {
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: 'Failed to create project' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

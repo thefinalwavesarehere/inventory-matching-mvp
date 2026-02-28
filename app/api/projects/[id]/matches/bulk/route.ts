@@ -11,11 +11,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MatchStatus, VendorAction } from '@prisma/client';
 import { prisma } from '@/app/lib/db/prisma';
-import { requireAuth } from '@/app/lib/auth-helpers';
 import { logActivity, ActivityType } from '@/app/lib/logger';
 import { learnFromBulkDecisions } from '@/app/lib/master-rules-learner';
 
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 interface BulkUpdateStatusRequest {
@@ -36,9 +37,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAuth(request, async (context) => {
+    try {
     // Require authentication
-    const { profile } = await requireAuth();
     
     const projectId = params.id;
     const body: BulkOperationRequest = await request.json();
@@ -65,22 +66,24 @@ export async function POST(
     }
 
     if (operation === 'update_status') {
-      return await handleUpdateStatus(projectId, body as BulkUpdateStatusRequest, profile.id, request);
+      return await handleUpdateStatus(projectId, body as BulkUpdateStatusRequest, context.user.id, request);
     } else if (operation === 'update_vendor_action') {
-      return await handleUpdateVendorAction(projectId, body as BulkUpdateVendorActionRequest, profile.id, request);
+      return await handleUpdateVendorAction(projectId, body as BulkUpdateVendorActionRequest, context.user.id, request);
     } else {
       return NextResponse.json(
         { error: `Unknown operation: ${operation}` },
         { status: 400 }
       );
     }
+  
   } catch (error: any) {
-    console.error('[BULK_OPERATIONS] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { error: error.message || 'Failed to perform bulk operation' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 /**

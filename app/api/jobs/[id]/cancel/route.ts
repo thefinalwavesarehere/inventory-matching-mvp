@@ -8,8 +8,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/app/lib/auth-helpers';
 import { prisma } from '@/app/lib/db/prisma';
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 import {
   requestJobCancellation,
   markJobCancelled,
@@ -20,8 +21,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const { profile } = await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
     const { id: jobId } = params;
 
     // Handle missing body gracefully
@@ -73,18 +74,18 @@ export async function POST(
     // Request cancellation
     const updatedJob = await requestJobCancellation(
       jobId,
-      profile.id,
+      context.user.id,
       type as typeof CancellationType[keyof typeof CancellationType]
     );
 
-    console.log(`[JOB-CANCEL] User ${profile.id} requested ${type} cancellation for job ${jobId}`);
+    apiLogger.info(`[JOB-CANCEL] User ${context.user.id} requested ${type} cancellation for job ${jobId}`);
 
     // If job is queued (not started), cancel it immediately
     if (job.status === 'queued') {
       await markJobCancelled(jobId, `Cancelled by user before processing started`);
-      console.log(`[JOB-CANCEL] Queued job ${jobId} cancelled immediately`);
+      apiLogger.info(`[JOB-CANCEL] Queued job ${jobId} cancelled immediately`);
     } else {
-      console.log(`[JOB-CANCEL] Processing job ${jobId} will be cancelled ${type === 'GRACEFUL' ? 'after current stage' : 'immediately'}`);
+      apiLogger.info(`[JOB-CANCEL] Processing job ${jobId} will be cancelled ${type === 'GRACEFUL' ? 'after current stage' : 'immediately'}`);
     }
 
     return NextResponse.json({
@@ -96,13 +97,15 @@ export async function POST(
         cancellationType: updatedJob.cancellationType,
       },
     });
+  
   } catch (error: any) {
-    console.error('[JOB-CANCEL] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 /**
@@ -112,8 +115,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
     const { id: jobId } = params;
 
     const job = await prisma.matchingJob.findUnique({
@@ -145,11 +148,13 @@ export async function GET(
         status: job.status,
       },
     });
+  
   } catch (error: any) {
-    console.error('[JOB-CANCEL] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

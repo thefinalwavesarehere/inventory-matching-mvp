@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
-import { prisma } from '@/app/lib/db/prisma';
-
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,41 +9,31 @@ export const dynamic = 'force-dynamic';
  * Get current user's profile
  */
 export async function GET(request: NextRequest) {
-  try {
-    const supabase = createRouteHandlerClient({ cookies });
-    
-    // Get current session
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    
-    if (sessionError || !session) {
+  return withAuth(request, async (context) => {
+    try {
+      apiLogger.info(
+        { userId: context.user.id },
+        'User fetched own profile'
+      );
+
+      return NextResponse.json({
+        success: true,
+        profile: context.user,
+        user: {
+          id: context.supabaseUserId,
+          email: context.user.email,
+        },
+      });
+    } catch (error: any) {
+      apiLogger.error(
+        { userId: context.user.id, error: error.message },
+        'Error fetching user profile'
+      );
+
       return NextResponse.json(
-        { success: false, error: 'Not authenticated' },
-        { status: 401 }
+        { success: false, error: error.message },
+        { status: 500 }
       );
     }
-
-    // Fetch user profile
-    const profile = await prisma.userProfile.findUnique({
-      where: { id: session.user.id },
-    });
-
-    if (!profile) {
-      return NextResponse.json(
-        { success: false, error: 'Profile not found' },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      profile,
-      user: session.user,
-    });
-  } catch (error: any) {
-    console.error('[API] Error fetching user profile:', error);
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
-  }
+  });
 }

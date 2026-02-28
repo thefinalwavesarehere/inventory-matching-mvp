@@ -5,9 +5,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { VendorAction } from '@prisma/client';
-import { requireAdminRole } from '@/app/lib/auth-helpers';
 import { prisma } from '@/app/lib/db/prisma';
 
+import { withAdmin } from '@/app/lib/middleware/auth';
 export const dynamic = 'force-dynamic';
 
 /**
@@ -61,9 +61,9 @@ export async function GET(request: NextRequest) {
  * Create a new global rule (admin only)
  */
 export async function POST(request: NextRequest) {
-  try {
+  return withAdmin(request, async (context) => {
+    try {
     // Require admin role for creating global rules
-    await requireAdminRole();
     
     const body = await request.json();
 
@@ -111,10 +111,13 @@ export async function POST(request: NextRequest) {
         scope: 'global',
       },
     });
+  
   } catch (error: any) {
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

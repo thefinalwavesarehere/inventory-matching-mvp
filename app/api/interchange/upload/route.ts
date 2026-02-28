@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import * as XLSX from 'xlsx';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log('[INTERCHANGE-UPLOAD] Processing file:', file.name);
+    apiLogger.info('[INTERCHANGE-UPLOAD] Processing file:', file.name);
 
     // Read file
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(worksheet);
 
-    console.log(`[INTERCHANGE-UPLOAD] Parsed ${rows.length} rows`);
+    apiLogger.info(`[INTERCHANGE-UPLOAD] Parsed ${rows.length} rows`);
 
     // Process rows
     const mappings: any[] = [];
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    console.log(`[INTERCHANGE-UPLOAD] Prepared ${mappings.length} mappings`);
+    apiLogger.info(`[INTERCHANGE-UPLOAD] Prepared ${mappings.length} mappings`);
 
     // Clear existing and insert new (GLOBAL REPLACE)
     await prisma.$transaction(async (tx) => {
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    console.log(`[INTERCHANGE-UPLOAD] Successfully uploaded ${mappings.length} mappings`);
+    apiLogger.info(`[INTERCHANGE-UPLOAD] Successfully uploaded ${mappings.length} mappings`);
 
     return NextResponse.json({
       success: true,
@@ -99,11 +100,13 @@ export async function POST(req: NextRequest) {
       message: `Uploaded ${mappings.length} global interchange mappings`,
     });
 
+  
   } catch (error: any) {
-    console.error('[INTERCHANGE-UPLOAD] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

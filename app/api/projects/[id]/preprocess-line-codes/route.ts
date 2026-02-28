@@ -7,10 +7,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/app/lib/auth-helpers';
 import { applyLineCodePreprocessing } from '@/app/lib/line-code-preprocessor';
 import { prisma } from '@/app/lib/db/prisma';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
@@ -18,8 +19,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
 
     const projectId = params.id;
 
@@ -35,23 +36,25 @@ export async function POST(
       );
     }
 
-    console.log(`[PREPROCESS-LINE-CODES] Starting preprocessing for project ${projectId}`);
+    apiLogger.info(`[PREPROCESS-LINE-CODES] Starting preprocessing for project ${projectId}`);
 
     // Apply preprocessing
     const result = await applyLineCodePreprocessing(projectId);
 
-    console.log(`[PREPROCESS-LINE-CODES] Completed: ${result.itemsMapped}/${result.totalItems} items mapped`);
+    apiLogger.info(`[PREPROCESS-LINE-CODES] Completed: ${result.itemsMapped}/${result.totalItems} items mapped`);
 
     return NextResponse.json({
       success: true,
       ...result,
       message: `Preprocessed ${result.totalItems} items, ${result.itemsMapped} mapped successfully`,
     });
+  
   } catch (error: any) {
-    console.error('[PREPROCESS-LINE-CODES] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to preprocess line codes' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db/prisma';
-import { requireAdminRole } from '@/app/lib/auth-helpers';
 import { logActivity } from '@/app/lib/logger';
 
 
+import { withAdmin } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAdmin(request, async (context) => {
+    try {
     // Verify admin role
-    const { profile: adminProfile } = await requireAdminRole();
     
     const userId = params.id;
 
@@ -35,12 +36,12 @@ export async function POST(
     // Log the approval action
     await logActivity({
       action: 'USER_APPROVED',
-      userId: adminProfile.id,
+      userId: context.user.id,
       details: {
         targetUserId: userId,
         targetUserEmail: user.email,
         targetUserName: user.fullName,
-        approvedBy: adminProfile.email,
+        approvedBy: context.user.email,
       },
     });
 
@@ -48,21 +49,15 @@ export async function POST(
       message: 'User approved successfully',
       user: updatedUser,
     });
+  
   } catch (error: any) {
-    console.error('Error approving user:', error);
-    
-    if (error.message === 'Unauthorized') {
-      return NextResponse.json(
-        { error: 'Unauthorized - Admin access required' },
-        { status: 403 }
-      );
-    }
-    
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { error: 'Failed to approve user' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 // Endpoint to reject/unapprove a user
@@ -70,9 +65,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAdmin(request, async (context) => {
+    try {
     // Verify admin role
-    const { profile: adminProfile } = await requireAdminRole();
     
     const userId = params.id;
 
@@ -105,12 +100,12 @@ export async function DELETE(
     // Log the unapproval action
     await logActivity({
       action: 'USER_UNAPPROVED',
-      userId: adminProfile.id,
+      userId: context.user.id,
       details: {
         targetUserId: userId,
         targetUserEmail: user.email,
         targetUserName: user.fullName,
-        unapprovedBy: adminProfile.email,
+        unapprovedBy: context.user.email,
       },
     });
 
@@ -118,19 +113,13 @@ export async function DELETE(
       message: 'User approval revoked successfully',
       user: updatedUser,
     });
+  
   } catch (error: any) {
-    console.error('Error unapproving user:', error);
-    
-    if (error.message === 'Unauthorized') {
-      return NextResponse.json(
-        { error: 'Unauthorized - Admin access required' },
-        { status: 403 }
-      );
-    }
-    
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { error: 'Failed to unapprove user' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

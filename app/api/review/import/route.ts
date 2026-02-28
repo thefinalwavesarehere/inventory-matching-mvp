@@ -17,15 +17,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/app/lib/auth-helpers';
 import { prisma } from '@/app/lib/db/prisma';
 import { learnFromBulkDecisions, ReviewDecision } from '@/app/lib/master-rules-learner';
 import { parse } from 'csv-parse/sync';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    const { profile } = await requireAuth();
     
     // Parse form data
     const formData = await req.formData();
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
       trim: true,
     }) as Array<Record<string, string>>;
     
-    console.log(`[REVIEW-IMPORT] Parsed ${records.length} rows from CSV`);
+    apiLogger.info(`[REVIEW-IMPORT] Parsed ${records.length} rows from CSV`);
     
     // Process each row
     const toConfirm: string[] = [];
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest) {
       const correctedPN = row.corrected_supplier_part_number?.trim();
       
       if (!matchId || !storePN || !supplierPN) {
-        console.warn(`[REVIEW-IMPORT] Skipping row with missing required fields`);
+        apiLogger.warn(`[REVIEW-IMPORT] Skipping row with missing required fields`);
         continue;
       }
       
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
           lineCode,
           decision: 'approve',
           projectId,
-          userId: profile.id,
+          userId: context.user.id,
         });
       } else if (reviewDecision === 'reject') {
         toReject.push(matchId);
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
           lineCode,
           decision: 'reject',
           projectId,
-          userId: profile.id,
+          userId: context.user.id,
         });
       } else if (correctedPN && correctedPN !== supplierPN) {
         // Correction: reject original match and create rule for corrected PN
@@ -110,12 +111,12 @@ export async function POST(req: NextRequest) {
           decision: 'correct',
           correctedSupplierPartNumber: correctedPN,
           projectId,
-          userId: profile.id,
+          userId: context.user.id,
         });
       }
     }
     
-    console.log(`[REVIEW-IMPORT] Actions: ${toConfirm.length} approve, ${toReject.length} reject`);
+    apiLogger.info(`[REVIEW-IMPORT] Actions: ${toConfirm.length} approve, ${toReject.length} reject`);
     
     // Apply confirmations
     if (toConfirm.length > 0) {
@@ -123,7 +124,7 @@ export async function POST(req: NextRequest) {
         where: { id: { in: toConfirm } },
         data: { status: 'CONFIRMED' },
       });
-      console.log(`[REVIEW-IMPORT] Confirmed ${toConfirm.length} matches`);
+      apiLogger.info(`[REVIEW-IMPORT] Confirmed ${toConfirm.length} matches`);
     }
     
     // Apply rejections
@@ -132,12 +133,12 @@ export async function POST(req: NextRequest) {
         where: { id: { in: toReject } },
         data: { status: 'REJECTED' },
       });
-      console.log(`[REVIEW-IMPORT] Rejected ${toReject.length} matches`);
+      apiLogger.info(`[REVIEW-IMPORT] Rejected ${toReject.length} matches`);
     }
     
     // Learn from decisions and create master rules
     const learningResult = await learnFromBulkDecisions(decisions);
-    console.log(`[REVIEW-IMPORT] Master rules: ${learningResult.created} created, ${learningResult.skipped} skipped, ${learningResult.errors} errors`);
+    apiLogger.info(`[REVIEW-IMPORT] Master rules: ${learningResult.created} created, ${learningResult.skipped} skipped, ${learningResult.errors} errors`);
     
     return NextResponse.json({
       success: true,
@@ -151,11 +152,13 @@ export async function POST(req: NextRequest) {
       },
     });
     
+  
   } catch (error: any) {
-    console.error('[REVIEW-IMPORT] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to import review CSV' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

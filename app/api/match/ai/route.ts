@@ -5,10 +5,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -65,9 +66,9 @@ const scoreCandidate = (storeItem: any, supplierItem: any) => {
 };
 
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const body = await req.json();
     const { projectId, batchOffset = 0, batchSize = 100 } = body;
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[AI-MATCH] Starting AI matching for project: ${projectId}`);
+    apiLogger.info(`[AI-MATCH] Starting AI matching for project: ${projectId}`);
 
     // Get unmatched store items
     const existingMatches = await prisma.matchCandidate.findMany({
@@ -88,9 +89,9 @@ export async function POST(req: NextRequest) {
     });
     const matchedIds = new Set(existingMatches.map((m) => m.storeItemId));
     
-    console.log(`[AI-MATCH] Found ${existingMatches.length} total match records for ${matchedIds.size} unique store items`);
+    apiLogger.info(`[AI-MATCH] Found ${existingMatches.length} total match records for ${matchedIds.size} unique store items`);
     if (existingMatches.length > matchedIds.size) {
-      console.log(`[AI-MATCH] Note: ${existingMatches.length - matchedIds.size} store items have multiple matches`);
+      apiLogger.info(`[AI-MATCH] Note: ${existingMatches.length - matchedIds.size} store items have multiple matches`);
     }
 
     const allUnmatchedItems = await prisma.storeItem.findMany({
@@ -105,10 +106,10 @@ export async function POST(req: NextRequest) {
     const unmatchedStoreItems = allUnmatchedItems.slice(batchOffset, batchOffset + batchSize);
     const remainingAfterBatch = allUnmatchedItems.length - (batchOffset + unmatchedStoreItems.length);
     
-    console.log(`[AI-MATCH] Total unmatched items: ${allUnmatchedItems.length}`);
-    console.log(`[AI-MATCH] Batch offset: ${batchOffset}, Batch size: ${batchSize}`);
-    console.log(`[AI-MATCH] Processing items ${batchOffset} to ${batchOffset + unmatchedStoreItems.length}`);
-    console.log(`[AI-MATCH] Remaining after batch: ${remainingAfterBatch}`);
+    apiLogger.info(`[AI-MATCH] Total unmatched items: ${allUnmatchedItems.length}`);
+    apiLogger.info(`[AI-MATCH] Batch offset: ${batchOffset}, Batch size: ${batchSize}`);
+    apiLogger.info(`[AI-MATCH] Processing items ${batchOffset} to ${batchOffset + unmatchedStoreItems.length}`);
+    apiLogger.info(`[AI-MATCH] Remaining after batch: ${remainingAfterBatch}`);
 
     const supplierItems = await prisma.supplierItem.findMany({
       where: { projectId },
@@ -129,8 +130,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    console.log(`[AI-MATCH] Processing ${unmatchedStoreItems.length} unmatched items`);
-    console.log(`[AI-MATCH] Against ${supplierItems.length} supplier items`);
+    apiLogger.info(`[AI-MATCH] Processing ${unmatchedStoreItems.length} unmatched items`);
+    apiLogger.info(`[AI-MATCH] Against ${supplierItems.length} supplier items`);
 
     const aiMatches: any[] = [];
     let savedCount = 0;
@@ -206,7 +207,7 @@ export async function POST(req: NextRequest) {
               __score: score,
             }));
 
-          console.log(`[AI-MATCH] Item ${itemCounter}/${unmatchedStoreItems.length}: ${storeItem.partNumber} - ${rankedCandidates.length} ranked candidates`);
+          apiLogger.info(`[AI-MATCH] Item ${itemCounter}/${unmatchedStoreItems.length}: ${storeItem.partNumber} - ${rankedCandidates.length} ranked candidates`);
           
           // Create optimized prompt for AI
           const prompt = `You are an expert automotive parts matcher. Candidates are pre-ranked (best first). Find the BEST match for this store part from the supplier catalog.
@@ -332,13 +333,13 @@ Find the BEST match. When in doubt, MATCH IT (60%+ similarity). Respond with ONL
                 },
                 status: 'PENDING',
               });
-              console.log(`[AI-MATCH] Found match: ${storeItem.partNumber} -> ${supplierItem.partNumber} (${aiResponse.confidence}) via ${normalizedProposed}`);
+              apiLogger.info(`[AI-MATCH] Found match: ${storeItem.partNumber} -> ${supplierItem.partNumber} (${aiResponse.confidence}) via ${normalizedProposed}`);
             } else {
-              console.log(`[AI-MATCH] Could not resolve AI response for ${storeItem.partNumber}: ${proposedPart}`);
+              apiLogger.info(`[AI-MATCH] Could not resolve AI response for ${storeItem.partNumber}: ${proposedPart}`);
             }
           }
         } catch (error: any) {
-          console.error(`[AI-MATCH] Error processing ${storeItem.partNumber}:`, error.message);
+          apiLogger.error(`[AI-MATCH] Error processing ${storeItem.partNumber}:`, error.message);
           continue;
         }
       }
@@ -349,7 +350,7 @@ Find the BEST match. When in doubt, MATCH IT (60%+ similarity). Respond with ONL
           data: aiMatches,
           skipDuplicates: true,
         });
-        console.log(`[AI-MATCH] Saved batch of ${aiMatches.length} matches (total saved: ${savedCount + aiMatches.length})`);
+        apiLogger.info(`[AI-MATCH] Saved batch of ${aiMatches.length} matches (total saved: ${savedCount + aiMatches.length})`);
         savedCount += aiMatches.length;
         aiMatches.length = 0; // Clear the array
       }
@@ -366,11 +367,11 @@ Find the BEST match. When in doubt, MATCH IT (60%+ similarity). Respond with ONL
         data: aiMatches,
         skipDuplicates: true,
       });
-      console.log(`[AI-MATCH] Saved final batch of ${aiMatches.length} matches`);
+      apiLogger.info(`[AI-MATCH] Saved final batch of ${aiMatches.length} matches`);
       savedCount += aiMatches.length;
     }
     
-    console.log(`[AI-MATCH] Total matches saved: ${savedCount}`);
+    apiLogger.info(`[AI-MATCH] Total matches saved: ${savedCount}`);
 
     // Calculate batch progress
     const totalProcessed = batchOffset + unmatchedStoreItems.length;
@@ -397,11 +398,13 @@ Find the BEST match. When in doubt, MATCH IT (60%+ similarity). Respond with ONL
         totalEstimatedCost,
       },
     });
+  
   } catch (error: any) {
-    console.error('[AI-MATCH] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to run AI matching' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

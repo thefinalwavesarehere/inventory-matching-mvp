@@ -6,14 +6,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/app/lib/auth-helpers';
 import { prisma } from '@/app/lib/db/prisma';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
 
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get('projectId');
@@ -86,18 +87,20 @@ export async function GET(req: NextRequest) {
       mappings,
       count: mappings.length,
     });
+  
   } catch (error: any) {
-    console.error('[LINE-CODE-MAPPINGS] GET error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to fetch mappings' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
 
     const body = await req.json();
     const {
@@ -202,11 +205,13 @@ export async function POST(req: NextRequest) {
         },
       });
     }
+  
   } catch (error: any) {
-    console.error('[LINE-CODE-MAPPINGS] POST error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to create mapping' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

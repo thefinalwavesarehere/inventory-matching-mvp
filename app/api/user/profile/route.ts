@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db/prisma';
-import { requireAuth } from '@/app/lib/auth-helpers';
 
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 /**
@@ -10,15 +11,15 @@ export const dynamic = 'force-dynamic';
  * Update current user's profile
  */
 export async function PUT(request: NextRequest) {
-  try {
-    const { session, profile } = await requireAuth();
+  return withAuth(request, async (context) => {
+    try {
 
     const body = await request.json();
     const { fullName } = body;
 
-    // Update profile
+    // Update context.user
     const updatedProfile = await prisma.userProfile.update({
-      where: { id: profile.id },
+      where: { id: context.user.id },
       data: {
         fullName: fullName || null,
       },
@@ -26,21 +27,15 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      profile: updatedProfile,
+      context.user: updatedProfile,
     });
+  
   } catch (error: any) {
-    console.error('[API] Error updating profile:', error);
-    
-    if (error.message === 'Authentication required') {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 401 }
-      );
-    }
-
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db/prisma';
-import { requireAdminRole } from '@/app/lib/auth-helpers';
 
 
+import { withAdmin } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 /**
@@ -10,9 +11,9 @@ export const dynamic = 'force-dynamic';
  * Get activity log (admin only)
  */
 export async function GET(request: NextRequest) {
-  try {
+  return withAdmin(request, async (context) => {
+    try {
     // Require admin role
-    await requireAdminRole();
 
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
@@ -63,26 +64,13 @@ export async function GET(request: NextRequest) {
       total,
       totalPages,
     });
+  
   } catch (error: any) {
-    console.error('[API] Error fetching activity log:', error);
-    
-    if (error.message === 'Authentication required') {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 401 }
-      );
-    }
-
-    if (error.message === 'Admin role required') {
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 403 }
-      );
-    }
-
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

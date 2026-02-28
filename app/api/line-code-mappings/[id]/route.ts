@@ -5,17 +5,18 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/app/lib/auth-helpers';
 import { prisma } from '@/app/lib/db/prisma';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
 
     const { id } = params;
     const { searchParams } = new URL(req.url);
@@ -43,19 +44,13 @@ export async function DELETE(
       success: true,
       message: 'Mapping deleted successfully',
     });
+  
   } catch (error: any) {
-    console.error('[LINE-CODE-MAPPINGS] DELETE error:', error);
-
-    if (error.code === 'P2025') {
-      return NextResponse.json(
-        { success: false, error: 'Mapping not found' },
-        { status: 404 }
-      );
-    }
-
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to delete mapping' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

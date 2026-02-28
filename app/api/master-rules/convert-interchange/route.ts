@@ -8,25 +8,26 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/app/lib/auth-helpers';
 import { convertAllInterchangesToMasterRules } from '@/app/lib/services/interchange-to-master-rules';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
-  try {
+  return withAuth(request, async (context) => {
+    try {
     // Require authentication
-    const { profile } = await requireAuth();
 
     const body = await request.json();
     const { projectId } = body;
 
-    console.log(`[CONVERT-INTERCHANGE] Starting conversion for ${projectId ? `project ${projectId}` : 'all projects'}...`);
+    apiLogger.info(`[CONVERT-INTERCHANGE] Starting conversion for ${projectId ? `project ${projectId}` : 'all projects'}...`);
 
     // Convert interchange rules to master rules
     const result = await convertAllInterchangesToMasterRules(
       projectId || undefined,
-      profile.id
+      context.user.id
     );
 
     return NextResponse.json({
@@ -36,11 +37,13 @@ export async function POST(request: NextRequest) {
       errors: result.errors,
       details: result.details.slice(0, 100), // Limit details to first 100
     });
+  
   } catch (error: any) {
-    console.error('[CONVERT-INTERCHANGE] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { error: error.message || 'Failed to convert interchange rules' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

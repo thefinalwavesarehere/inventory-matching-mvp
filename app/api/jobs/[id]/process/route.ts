@@ -8,7 +8,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
 import { processExactMatching } from './processExactMatching-v2';
@@ -18,6 +17,8 @@ import { processWebSearchMatching } from './processWebSearchMatching-v1';
 import { processAIFuzzyMatching } from './processAIFuzzyMatching-v1';
 import { processSupersessionMatching } from './processSupersessionMatching-v1';
 import { processHumanReview } from './processHumanReview-v1';
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 import {
   isJobCancelled,
   getJobCancellationType,
@@ -71,14 +72,14 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Allow internal calls from cron
     const internalCall = req.headers.get('x-internal-call');
     const isInternalCall = internalCall === process.env.CRON_SECRET;
     
     if (!isInternalCall) {
       // Require authentication
-    await requireAuth();
     }
 
     const jobId = params.id;
@@ -113,7 +114,7 @@ export async function POST(
     // Check for cancellation before starting
     if (await isJobCancelled(jobId)) {
       const cancelType = await getJobCancellationType(jobId);
-      console.log(`[JOB-CANCEL] Job ${jobId} already cancelled (${cancelType})`);
+      apiLogger.info(`[JOB-CANCEL] Job ${jobId} already cancelled (${cancelType})`);
       return NextResponse.json({
         success: true,
         job: {
@@ -151,7 +152,7 @@ export async function POST(
     
     if (lockResult.count === 0) {
       // Job was already claimed by another instance
-      console.log(`[JOB-LOCK] Job ${jobId} already processing by another instance - skipping`);
+      apiLogger.info(`[JOB-LOCK] Job ${jobId} already processing by another instance - skipping`);
       return NextResponse.json({ 
         success: true, 
         status: 'already_processing',
@@ -159,7 +160,7 @@ export async function POST(
       });
     }
     
-    console.log(`[JOB-LOCK] Successfully acquired lock for job ${jobId}`);
+    apiLogger.info(`[JOB-LOCK] Successfully acquired lock for job ${jobId}`);
 
     // Update job status to processing if it's queued (first time running)
     if (job.status === 'queued') {
@@ -169,31 +170,31 @@ export async function POST(
       
       // V4 Step 0: Un-match prerequisite (only for exact jobs)
       if (jobType === 'exact') {
-        console.log(`[V4-MATCHER] ========== EXACT MATCHER VERSION: V4 (commit 915d088) ==========`);
-        console.log(`[V4-MATCHER] Interchange-First Bridge Logic Active`);
-        console.log(`[V4-UNMATCH] Starting un-match prerequisite for exact job`);
+        apiLogger.info(`[V4-MATCHER] ========== EXACT MATCHER VERSION: V4 (commit 915d088) ==========`);
+        apiLogger.info(`[V4-MATCHER] Interchange-First Bridge Logic Active`);
+        apiLogger.info(`[V4-UNMATCH] Starting un-match prerequisite for exact job`);
         const { unmatchProject } = await import('@/app/lib/matching/v4-interchange-first-matcher');
         const clearedCount = await unmatchProject(job.projectId);
-        console.log(`[V4-UNMATCH] Cleared ${clearedCount} existing matches - ready for V4 rematching`);
+        apiLogger.info(`[V4-UNMATCH] Cleared ${clearedCount} existing matches - ready for V4 rematching`);
       }
     }
 
     const config = job.config as any || {};
     const jobType = config.jobType || 'ai'; // 'ai' or 'web-search'
 
-    console.log(`[JOB-PROCESS] ========== PROCESSING JOB ${jobId} ==========`);
-    console.log(`[JOB-PROCESS] Job config:`, JSON.stringify(config));
-    console.log(`[JOB-PROCESS] Job type: ${jobType}`);
-    console.log(`[JOB-PROCESS] Job status: ${job.status}`);
-    console.log(`[JOB-PROCESS] Current progress: ${job.processedItems}/${job.totalItems}`);
-    console.log(`[JOB-PROCESS] Current matches: ${job.matchesFound}`);
+    apiLogger.info(`[JOB-PROCESS] ========== PROCESSING JOB ${jobId} ==========`);
+    apiLogger.info(`[JOB-PROCESS] Job config:`, JSON.stringify(config));
+    apiLogger.info(`[JOB-PROCESS] Job type: ${jobType}`);
+    apiLogger.info(`[JOB-PROCESS] Job status: ${job.status}`);
+    apiLogger.info(`[JOB-PROCESS] Current progress: ${job.processedItems}/${job.totalItems}`);
+    apiLogger.info(`[JOB-PROCESS] Current matches: ${job.matchesFound}`);
 
     // V5.6: IDEMPOTENT RESUME LOGIC
     // Query only truly unmatched items (those without match_candidates entries)
     // This prevents reprocessing already-matched items after a "Silent Kill"
     const chunkSize = getChunkSize(jobType);
     
-    console.log(`[JOB-PROCESS-V5.6] Querying unmatched items (idempotent resume)...`);
+    apiLogger.info(`[JOB-PROCESS-V5.6] Querying unmatched items (idempotent resume)...`);
     
     // Direct query: fetch only items that don't have match_candidates
     const chunk = await prisma.storeItem.findMany({
@@ -222,9 +223,9 @@ export async function POST(
       }
     });
 
-    console.log(`[JOB-PROCESS-V5.6] Total unmatched items remaining: ${totalUnmatchedCount}`);
-    console.log(`[JOB-PROCESS-V5.6] Chunk size for ${jobType}: ${chunkSize}`);
-    console.log(`[JOB-PROCESS-V5.6] Processing ${chunk.length} items (idempotent - never restarts from 0)`);
+    apiLogger.info(`[JOB-PROCESS-V5.6] Total unmatched items remaining: ${totalUnmatchedCount}`);
+    apiLogger.info(`[JOB-PROCESS-V5.6] Chunk size for ${jobType}: ${chunkSize}`);
+    apiLogger.info(`[JOB-PROCESS-V5.6] Processing ${chunk.length} items (idempotent - never restarts from 0)`);
 
     if (chunk.length === 0) {
       // Job is complete - use queue manager to mark complete
@@ -245,9 +246,9 @@ export async function POST(
           const costEstimate = estimateCost(operation, itemsProcessed);
           await recordCost(job.projectId, operation, costEstimate.estimatedCost, itemsProcessed);
 
-          console.log(`[JOB-PROCESS] Recorded ${operation} cost: $${costEstimate.estimatedCost.toFixed(4)} for ${itemsProcessed} items`);
+          apiLogger.info(`[JOB-PROCESS] Recorded ${operation} cost: $${costEstimate.estimatedCost.toFixed(4)} for ${itemsProcessed} items`);
         } catch (error) {
-          console.error(`[JOB-PROCESS] Failed to record cost:`, error);
+          apiLogger.error(`[JOB-PROCESS] Failed to record cost:`, error);
           // Don't fail the job if cost recording fails
         }
       }
@@ -290,7 +291,7 @@ export async function POST(
         update: progressUpdate,
       });
 
-      console.log(`[JOB-PROCESS] Job ${jobId} completed, progress updated`);
+      apiLogger.info(`[JOB-PROCESS] Job ${jobId} completed, progress updated`);
 
       return NextResponse.json({
         success: true,
@@ -313,7 +314,7 @@ export async function POST(
     // Check for cancellation before processing chunk
     if (await isJobCancelled(jobId)) {
       const cancelType = await getJobCancellationType(jobId);
-      console.log(`[JOB-CANCEL] Job ${jobId} cancelled during processing (${cancelType})`);
+      apiLogger.info(`[JOB-CANCEL] Job ${jobId} cancelled during processing (${cancelType})`);
 
       await markJobCancelled(
         jobId,
@@ -335,8 +336,8 @@ export async function POST(
     let newMatches = 0;
 
     // Process chunk based on job type
-    console.log(`[JOB-PROCESS] Starting ${jobType} processing for ${chunk.length} items...`);
-    console.log(`[JOB-PROCESS] Supplier catalog size: ${supplierItems.length} items`);
+    apiLogger.info(`[JOB-PROCESS] Starting ${jobType} processing for ${chunk.length} items...`);
+    apiLogger.info(`[JOB-PROCESS] Supplier catalog size: ${supplierItems.length} items`);
     const processingStartTime = Date.now();
     
     // Set timeout protection (Vercel has 300s limit, we'll use 240s to be safe)
@@ -345,11 +346,11 @@ export async function POST(
     if (jobType === 'master-rules') {
       // Master Rules: Single-pass application of learned rules
       if (job.processedItems === 0) {
-        console.log(`[JOB-PROCESS] Running master rules matcher...`);
+        apiLogger.info(`[JOB-PROCESS] Running master rules matcher...`);
         const { applyMasterRules } = await import('@/app/lib/matching/master-rules-matcher');
         newMatches = await applyMasterRules(job.projectId);
         const processingTime = Date.now() - processingStartTime;
-        console.log(`[JOB-PROCESS] Master rules complete in ${processingTime}ms, found ${newMatches} matches`);
+        apiLogger.info(`[JOB-PROCESS] Master rules complete in ${processingTime}ms, found ${newMatches} matches`);
         
         // Mark job as complete immediately
         const totalItems = job.totalItems || 0;
@@ -365,7 +366,7 @@ export async function POST(
           },
         });
         
-        console.log(`[JOB-PROCESS] Master rules job marked as complete`);
+        apiLogger.info(`[JOB-PROCESS] Master rules job marked as complete`);
         
         return NextResponse.json({
           success: true,
@@ -381,17 +382,17 @@ export async function POST(
           },
         });
       } else {
-        console.log(`[JOB-PROCESS] Skipping - master rules already applied`);
+        apiLogger.info(`[JOB-PROCESS] Skipping - master rules already applied`);
         newMatches = 0;
       }
     } else if (jobType === 'exact') {
       // V3.0: Single-pass processing (no chunking)
       // Check if this is the first chunk - only run once
       if (job.processedItems === 0) {
-        console.log(`[JOB-PROCESS-V3.0] Running single-pass exact matching for entire dataset`);
+        apiLogger.info(`[JOB-PROCESS-V3.0] Running single-pass exact matching for entire dataset`);
         newMatches = await processExactMatching(chunk, supplierItems, job.projectId, jobId);
         const processingTime = Date.now() - processingStartTime;
-        console.log(`[JOB-PROCESS-V3.0] Exact matching complete in ${processingTime}ms, found ${newMatches} matches`);
+        apiLogger.info(`[JOB-PROCESS-V3.0] Exact matching complete in ${processingTime}ms, found ${newMatches} matches`);
         
         // Mark job as complete immediately
         const totalItems = job.totalItems || 0;
@@ -407,7 +408,7 @@ export async function POST(
           },
         });
         
-        console.log(`[JOB-PROCESS-V3.0] Job marked as complete`);
+        apiLogger.info(`[JOB-PROCESS-V3.0] Job marked as complete`);
         
         return NextResponse.json({
           success: true,
@@ -423,16 +424,16 @@ export async function POST(
           },
         });
       } else {
-        console.log(`[JOB-PROCESS-V3.0] Skipping - exact matching already completed in first pass`);
+        apiLogger.info(`[JOB-PROCESS-V3.0] Skipping - exact matching already completed in first pass`);
         newMatches = 0;
       }
     } else if (jobType === 'fuzzy') {
       // V1.2: Batch processing - fuzzy matcher controls job status
-      console.log(`[JOB-PROCESS-V1.2] Running fuzzy matching batch`);
+      apiLogger.info(`[JOB-PROCESS-V1.2] Running fuzzy matching batch`);
       const { processFuzzyMatching } = await import('./processFuzzyMatching-v1');
       newMatches = await processFuzzyMatching(chunk, supplierItems, job.projectId, jobId);
       const processingTime = Date.now() - processingStartTime;
-      console.log(`[JOB-PROCESS-V1.2] Fuzzy matching batch complete in ${processingTime}ms, found ${newMatches} matches`);
+      apiLogger.info(`[JOB-PROCESS-V1.2] Fuzzy matching batch complete in ${processingTime}ms, found ${newMatches} matches`);
       
       // Check final job status (fuzzy matcher sets it to 'pending' or 'complete')
       const updatedJob = await prisma.matchingJob.findUnique({
@@ -440,7 +441,7 @@ export async function POST(
       });
       
       if (updatedJob?.status === 'pending') {
-        console.log(`[JOB-PROCESS-V1.2] More items to process - job stays pending for next cron`);
+        apiLogger.info(`[JOB-PROCESS-V1.2] More items to process - job stays pending for next cron`);
         return NextResponse.json({
           success: true,
           complete: false,
@@ -453,7 +454,7 @@ export async function POST(
           },
         });
       } else if (updatedJob?.status === 'complete') {
-        console.log(`[JOB-PROCESS-V1.2] All items processed - job complete`);
+        apiLogger.info(`[JOB-PROCESS-V1.2] All items processed - job complete`);
         return NextResponse.json({
           success: true,
           complete: true,
@@ -467,10 +468,10 @@ export async function POST(
         });
       }
     } else if (jobType === 'ai') {
-      console.log(`[JOB-PROCESS-AI] Running AI matching batch`);
+      apiLogger.info(`[JOB-PROCESS-AI] Running AI matching batch`);
       const result = await processAIMatching(job, job.projectId);
       const processingTime = Date.now() - processingStartTime;
-      console.log(`[JOB-PROCESS-AI] AI matching batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
+      apiLogger.info(`[JOB-PROCESS-AI] AI matching batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
       
       // Check final job status
       const updatedJob = await prisma.matchingJob.findUnique({
@@ -478,7 +479,7 @@ export async function POST(
       });
       
       if (updatedJob?.status === 'pending') {
-        console.log(`[JOB-PROCESS-AI] More items to process - job stays pending`);
+        apiLogger.info(`[JOB-PROCESS-AI] More items to process - job stays pending`);
         return NextResponse.json({
           success: true,
           complete: false,
@@ -491,7 +492,7 @@ export async function POST(
           },
         });
       } else if (updatedJob?.status === 'complete') {
-        console.log(`[JOB-PROCESS-AI] All items processed - job complete`);
+        apiLogger.info(`[JOB-PROCESS-AI] All items processed - job complete`);
         return NextResponse.json({
           success: true,
           complete: true,
@@ -505,10 +506,10 @@ export async function POST(
         });
       }
     } else if (jobType === 'web-search') {
-      console.log(`[JOB-PROCESS-WEB] Running web search matching batch`);
+      apiLogger.info(`[JOB-PROCESS-WEB] Running web search matching batch`);
       const result = await processWebSearchMatching(job, job.projectId);
       const processingTime = Date.now() - processingStartTime;
-      console.log(`[JOB-PROCESS-WEB] Web search batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
+      apiLogger.info(`[JOB-PROCESS-WEB] Web search batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
       
       // Check final job status
       const updatedJob = await prisma.matchingJob.findUnique({
@@ -516,7 +517,7 @@ export async function POST(
       });
       
       if (updatedJob?.status === 'pending') {
-        console.log(`[JOB-PROCESS-WEB] More items to process - job stays pending`);
+        apiLogger.info(`[JOB-PROCESS-WEB] More items to process - job stays pending`);
         return NextResponse.json({
           success: true,
           complete: false,
@@ -529,7 +530,7 @@ export async function POST(
           },
         });
       } else if (updatedJob?.status === 'complete') {
-        console.log(`[JOB-PROCESS-WEB] All items processed - job complete`);
+        apiLogger.info(`[JOB-PROCESS-WEB] All items processed - job complete`);
         return NextResponse.json({
           success: true,
           complete: true,
@@ -543,10 +544,10 @@ export async function POST(
         });
       }
     } else if (jobType === 'ai-fuzzy') {
-      console.log(`[JOB-PROCESS-AI-FUZZY] Running AI-enhanced fuzzy matching batch`);
+      apiLogger.info(`[JOB-PROCESS-AI-FUZZY] Running AI-enhanced fuzzy matching batch`);
       const result = await processAIFuzzyMatching(job, job.projectId);
       const processingTime = Date.now() - processingStartTime;
-      console.log(`[JOB-PROCESS-AI-FUZZY] Batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
+      apiLogger.info(`[JOB-PROCESS-AI-FUZZY] Batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
       
       const updatedJob = await prisma.matchingJob.findUnique({ where: { id: jobId } });
       if (updatedJob?.status === 'pending') {
@@ -555,10 +556,10 @@ export async function POST(
         return NextResponse.json({ success: true, complete: true, job: updatedJob });
       }
     } else if (jobType === 'supersession') {
-      console.log(`[JOB-PROCESS-SUPERSESSION] Running supersession matching batch`);
+      apiLogger.info(`[JOB-PROCESS-SUPERSESSION] Running supersession matching batch`);
       const result = await processSupersessionMatching(job, job.projectId);
       const processingTime = Date.now() - processingStartTime;
-      console.log(`[JOB-PROCESS-SUPERSESSION] Batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
+      apiLogger.info(`[JOB-PROCESS-SUPERSESSION] Batch complete in ${processingTime}ms, found ${result.matchesFound} matches`);
       
       const updatedJob = await prisma.matchingJob.findUnique({ where: { id: jobId } });
       if (updatedJob?.status === 'pending') {
@@ -567,10 +568,10 @@ export async function POST(
         return NextResponse.json({ success: true, complete: true, job: updatedJob });
       }
     } else if (jobType === 'human-review') {
-      console.log(`[JOB-PROCESS-REVIEW] Running human review classification batch`);
+      apiLogger.info(`[JOB-PROCESS-REVIEW] Running human review classification batch`);
       const result = await processHumanReview(job, job.projectId);
       const processingTime = Date.now() - processingStartTime;
-      console.log(`[JOB-PROCESS-REVIEW] Batch complete in ${processingTime}ms, classified ${result.itemsClassified} items`);
+      apiLogger.info(`[JOB-PROCESS-REVIEW] Batch complete in ${processingTime}ms, classified ${result.itemsClassified} items`);
       
       const updatedJob = await prisma.matchingJob.findUnique({ where: { id: jobId } });
       if (updatedJob?.status === 'pending') {
@@ -579,7 +580,7 @@ export async function POST(
         return NextResponse.json({ success: true, complete: true, job: updatedJob });
       }
     } else {
-      console.error(`[JOB-PROCESS] Unknown job type: ${jobType}`);
+      apiLogger.error(`[JOB-PROCESS] Unknown job type: ${jobType}`);
       throw new Error(`Unknown job type: ${jobType}`);
     }
 
@@ -610,13 +611,13 @@ export async function POST(
       },
     });
 
-    console.log(`[JOB-PROCESS] Chunk complete. Progress: ${newProcessedItems}/${totalItems} (${progressPercentage.toFixed(1)}%)`);
-    console.log(`[JOB-PROCESS] New matches: ${newMatches}, Total matches: ${newMatchesFound}`);
+    apiLogger.info(`[JOB-PROCESS] Chunk complete. Progress: ${newProcessedItems}/${totalItems} (${progressPercentage.toFixed(1)}%)`);
+    apiLogger.info(`[JOB-PROCESS] New matches: ${newMatches}, Total matches: ${newMatchesFound}`);
 
     // Check for cancellation after processing chunk (graceful cancellation)
     if (await isJobCancelled(jobId)) {
       const cancelType = await getJobCancellationType(jobId);
-      console.log(`[JOB-CANCEL] Job ${jobId} cancelled after completing chunk (${cancelType})`);
+      apiLogger.info(`[JOB-CANCEL] Job ${jobId} cancelled after completing chunk (${cancelType})`);
 
       await markJobCancelled(
         jobId,
@@ -640,10 +641,10 @@ export async function POST(
     // V10.0: Add safety check to prevent infinite loop
     const hasMoreWork = totalUnmatchedCount > chunk.length && newProcessedItems < totalItems;
     if (hasMoreWork && job.status !== 'failed') {
-      console.log(`[JOB-PROCESS-V9.2] ${totalUnmatchedCount - chunk.length} items remaining. Triggering next batch...`);
+      apiLogger.info(`[JOB-PROCESS-V9.2] ${totalUnmatchedCount - chunk.length} items remaining. Triggering next batch...`);
       triggerNextBatch(req, jobId);
     } else {
-      console.log(`[JOB-PROCESS-V9.2] No more unmatched items or all items processed (${newProcessedItems}/${totalItems}). Job will complete on next check.`);
+      apiLogger.info(`[JOB-PROCESS-V9.2] No more unmatched items or all items processed (${newProcessedItems}/${totalItems}). Job will complete on next check.`);
     }
 
     return NextResponse.json({
@@ -663,35 +664,15 @@ export async function POST(
       remainingItems: totalUnmatchedCount - chunk.length,
     });
 
+  
   } catch (error: any) {
-    console.error('[JOB-PROCESS] Error:', error);
-    console.error('[JOB-PROCESS] Error stack:', error.stack);
-
-    // Check if it's a timeout error
-    const isTimeout = error.message?.includes('timeout') || error.message?.includes('ETIMEDOUT');
-    const errorMessage = isTimeout
-      ? 'Processing timeout - reduce chunk size or supplier catalog'
-      : error.message;
-
-    // Use queue manager to mark job as failed (will trigger next queued job)
-    try {
-      const job = await prisma.matchingJob.findUnique({ where: { id: params.id } });
-      await markJobFailed(params.id, errorMessage);
-      console.error(`[JOB-PROCESS] Job ${params.id} marked as failed. Progress preserved: ${job?.processedItems}/${job?.totalItems}`);
-    } catch (updateError) {
-      console.error('[JOB-PROCESS] Failed to update job status:', updateError);
-    }
-
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
-        isTimeout,
-        message: errorMessage
-      },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
 
 // processExactMatching now imported from processExactMatching-v2.ts

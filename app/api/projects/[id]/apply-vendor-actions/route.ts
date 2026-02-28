@@ -6,36 +6,39 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/app/lib/auth-helpers';
 import { applyVendorActionsToMatches } from '@/app/lib/vendor-action-evaluator';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const dynamic = 'force-dynamic';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    await requireAuth();
+  return withAuth(req, async (context) => {
+    try {
 
     const projectId = params.id;
 
-    console.log(`[VENDOR-ACTIONS] Applying vendor action rules for project ${projectId}`);
+    apiLogger.info(`[VENDOR-ACTIONS] Applying vendor action rules for project ${projectId}`);
 
     const result = await applyVendorActionsToMatches(projectId);
 
-    console.log(`[VENDOR-ACTIONS] Applied ${result.actionsApplied}/${result.totalMatches} actions`);
-    console.log(`[VENDOR-ACTIONS] Action breakdown:`, result.actionCounts);
+    apiLogger.info(`[VENDOR-ACTIONS] Applied ${result.actionsApplied}/${result.totalMatches} actions`);
+    apiLogger.info(`[VENDOR-ACTIONS] Action breakdown:`, result.actionCounts);
 
     return NextResponse.json({
       success: true,
       ...result,
     });
+  
   } catch (error: any) {
-    console.error('[VENDOR-ACTIONS] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to apply vendor actions' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

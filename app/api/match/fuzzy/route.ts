@@ -5,16 +5,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import { stage2FuzzyMatching } from '@/app/lib/matching-engine';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 export const maxDuration = 300; // 5 minutes
 
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const body = await req.json();
     const { projectId, batchOffset = 0, batchSize = 3000 } = body;
@@ -26,8 +27,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[FUZZY-MATCH] Starting fuzzy matching for project: ${projectId}`);
-    console.log(`[FUZZY-MATCH] Batch: offset=${batchOffset}, size=${batchSize}`);
+    apiLogger.info(`[FUZZY-MATCH] Starting fuzzy matching for project: ${projectId}`);
+    apiLogger.info(`[FUZZY-MATCH] Batch: offset=${batchOffset}, size=${batchSize}`);
 
     // Get already matched store item IDs
     const existingMatches = await prisma.matchCandidate.findMany({
@@ -36,9 +37,9 @@ export async function POST(req: NextRequest) {
     });
     const matchedIds = new Set(existingMatches.map((m) => m.storeItemId));
 
-    console.log(`[FUZZY-MATCH] Found ${existingMatches.length} total match records for ${matchedIds.size} unique store items`);
+    apiLogger.info(`[FUZZY-MATCH] Found ${existingMatches.length} total match records for ${matchedIds.size} unique store items`);
     if (existingMatches.length > matchedIds.size) {
-      console.log(`[FUZZY-MATCH] Note: ${existingMatches.length - matchedIds.size} store items have multiple matches`);
+      apiLogger.info(`[FUZZY-MATCH] Note: ${existingMatches.length - matchedIds.size} store items have multiple matches`);
     }
 
     // Get all unmatched store items
@@ -50,13 +51,13 @@ export async function POST(req: NextRequest) {
       orderBy: { id: 'asc' },
     });
 
-    console.log(`[FUZZY-MATCH] Total unmatched items: ${allUnmatchedItems.length}`);
+    apiLogger.info(`[FUZZY-MATCH] Total unmatched items: ${allUnmatchedItems.length}`);
 
     // Get batch of items to process
     const unmatchedItems = allUnmatchedItems.slice(batchOffset, batchOffset + batchSize);
     
     if (unmatchedItems.length === 0) {
-      console.log('[FUZZY-MATCH] No more items to process');
+      apiLogger.info('[FUZZY-MATCH] No more items to process');
       return NextResponse.json({
         success: true,
         message: 'No more items to process',
@@ -67,14 +68,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    console.log(`[FUZZY-MATCH] Processing ${unmatchedItems.length} items (offset ${batchOffset})`);
+    apiLogger.info(`[FUZZY-MATCH] Processing ${unmatchedItems.length} items (offset ${batchOffset})`);
 
     // Get all supplier items
     const supplierItems = await prisma.supplierItem.findMany({
       where: { projectId },
     });
 
-    console.log(`[FUZZY-MATCH] Loaded ${supplierItems.length} supplier items`);
+    apiLogger.info(`[FUZZY-MATCH] Loaded ${supplierItems.length} supplier items`);
 
     // Convert Decimal to number for matching engine compatibility
     const unmatchedItemsConverted = unmatchedItems.map(item => ({
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    console.log(`[FUZZY-MATCH] Found ${matches.length} fuzzy matches`);
+    apiLogger.info(`[FUZZY-MATCH] Found ${matches.length} fuzzy matches`);
 
     // Save matches incrementally (every 100 matches to avoid memory issues)
     let savedCount = 0;
@@ -152,14 +153,14 @@ export async function POST(req: NextRequest) {
           skipDuplicates: true,
         });
         savedCount += validMatches.length;
-        console.log(`[FUZZY-MATCH] Saved batch ${Math.floor(i / SAVE_BATCH_SIZE) + 1}: ${validMatches.length} matches (total: ${savedCount})`);
+        apiLogger.info(`[FUZZY-MATCH] Saved batch ${Math.floor(i / SAVE_BATCH_SIZE) + 1}: ${validMatches.length} matches (total: ${savedCount})`);
       }
     }
 
     const hasMore = (batchOffset + batchSize) < allUnmatchedItems.length;
     const nextOffset = hasMore ? batchOffset + batchSize : null;
 
-    console.log(`[FUZZY-MATCH] Complete: processed=${unmatchedItems.length}, saved=${savedCount}, hasMore=${hasMore}`);
+    apiLogger.info(`[FUZZY-MATCH] Complete: processed=${unmatchedItems.length}, saved=${savedCount}, hasMore=${hasMore}`);
 
     return NextResponse.json({
       success: true,
@@ -175,14 +176,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
-  } catch (error) {
-    console.error('[FUZZY-MATCH] Error:', error);
+  
+  } catch (error: any) {
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

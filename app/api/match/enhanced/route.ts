@@ -13,8 +13,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 import {
   runMultiStageMatching,
   type StoreItem,
@@ -24,9 +25,9 @@ import {
 } from '@/app/lib/matching-engine';
 
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const body = await req.json();
     const { projectId, options = {} } = body;
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[ENHANCED-MATCH] Starting enhanced matching for project: ${projectId}`);
+    apiLogger.info(`[ENHANCED-MATCH] Starting enhanced matching for project: ${projectId}`);
 
     // Verify project exists
     const project = await prisma.project.findUnique({
@@ -54,14 +55,14 @@ export async function POST(req: NextRequest) {
 
     // Clear existing matches (optional - based on options.clearExisting)
     if (options.clearExisting !== false) {
-      console.log('[ENHANCED-MATCH] Clearing existing matches...');
+      apiLogger.info('[ENHANCED-MATCH] Clearing existing matches...');
       await prisma.matchCandidate.deleteMany({
         where: { projectId },
       });
     }
 
     // Fetch store items
-    console.log('[ENHANCED-MATCH] Fetching store items...');
+    apiLogger.info('[ENHANCED-MATCH] Fetching store items...');
     const storeItems = await prisma.storeItem.findMany({
       where: { projectId },
       select: {
@@ -76,10 +77,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[ENHANCED-MATCH] Found ${storeItems.length} store items`);
+    apiLogger.info(`[ENHANCED-MATCH] Found ${storeItems.length} store items`);
 
     // Fetch supplier items
-    console.log('[ENHANCED-MATCH] Fetching supplier items...');
+    apiLogger.info('[ENHANCED-MATCH] Fetching supplier items...');
     const supplierItems = await prisma.supplierItem.findMany({
       where: { projectId },
       select: {
@@ -94,10 +95,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[ENHANCED-MATCH] Found ${supplierItems.length} supplier items`);
+    apiLogger.info(`[ENHANCED-MATCH] Found ${supplierItems.length} supplier items`);
 
     // Fetch interchange mappings
-    console.log('[ENHANCED-MATCH] Fetching interchange mappings...');
+    apiLogger.info('[ENHANCED-MATCH] Fetching interchange mappings...');
     const interchangeMappings = await prisma.interchangeMapping.findMany({
       select: {
         competitorFullSku: true,
@@ -106,10 +107,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[ENHANCED-MATCH] Found ${interchangeMappings.length} interchange mappings`);
+    apiLogger.info(`[ENHANCED-MATCH] Found ${interchangeMappings.length} interchange mappings`);
 
     // Fetch matching rules
-    console.log('[ENHANCED-MATCH] Fetching matching rules...');
+    apiLogger.info('[ENHANCED-MATCH] Fetching matching rules...');
     const rules = await prisma.matchingRule.findMany({
       where: {
         active: true,
@@ -120,10 +121,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[ENHANCED-MATCH] Found ${rules.length} active rules`);
+    apiLogger.info(`[ENHANCED-MATCH] Found ${rules.length} active rules`);
 
     // Run multi-stage matching (Stage 1 only - Stage 2 fuzzy has its own endpoint)
-    console.log('[ENHANCED-MATCH] Running Stage 1 (deterministic) matching...');
+    apiLogger.info('[ENHANCED-MATCH] Running Stage 1 (deterministic) matching...');
     const result = await runMultiStageMatching(
       storeItems as StoreItem[],
       supplierItems as SupplierItem[],
@@ -138,13 +139,13 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    console.log(`[ENHANCED-MATCH] Matching complete: ${result.matches.length} matches found`);
-    console.log(`[ENHANCED-MATCH] Overall match rate: ${(result.summary.overallMatchRate * 100).toFixed(1)}%`);
-    console.log(`[ENHANCED-MATCH] Stage 1 matches: ${result.summary.stage1Matches}`);
-    console.log(`[ENHANCED-MATCH] Stage 2 matches: ${result.summary.stage2Matches}`);
+    apiLogger.info(`[ENHANCED-MATCH] Matching complete: ${result.matches.length} matches found`);
+    apiLogger.info(`[ENHANCED-MATCH] Overall match rate: ${(result.summary.overallMatchRate * 100).toFixed(1)}%`);
+    apiLogger.info(`[ENHANCED-MATCH] Stage 1 matches: ${result.summary.stage1Matches}`);
+    apiLogger.info(`[ENHANCED-MATCH] Stage 2 matches: ${result.summary.stage2Matches}`);
 
     // Save matches to database
-    console.log(`[ENHANCED-MATCH] Saving ${result.matches.length} matches to database...`);
+    apiLogger.info(`[ENHANCED-MATCH] Saving ${result.matches.length} matches to database...`);
     const BATCH_SIZE = 1000;
     let totalSaved = 0;
     
@@ -185,16 +186,16 @@ export async function POST(req: NextRequest) {
       });
       
       totalSaved += result_save.count;
-      console.log(`[ENHANCED-MATCH] Batch ${Math.floor(i / BATCH_SIZE) + 1}: Attempted ${batch.length}, Saved ${result_save.count} (${totalSaved} total)`);
+      apiLogger.info(`[ENHANCED-MATCH] Batch ${Math.floor(i / BATCH_SIZE) + 1}: Attempted ${batch.length}, Saved ${result_save.count} (${totalSaved} total)`);
     }
     
-    console.log(`[ENHANCED-MATCH] Save complete: ${totalSaved} matches saved out of ${result.matches.length} found`);
+    apiLogger.info(`[ENHANCED-MATCH] Save complete: ${totalSaved} matches saved out of ${result.matches.length} found`);
     if (totalSaved < result.matches.length) {
-      console.log(`[ENHANCED-MATCH] WARNING: ${result.matches.length - totalSaved} matches were skipped as duplicates`);
+      apiLogger.info(`[ENHANCED-MATCH] WARNING: ${result.matches.length - totalSaved} matches were skipped as duplicates`);
     }
 
     // Save stage metrics
-    console.log('[ENHANCED-MATCH] Saving stage metrics...');
+    apiLogger.info('[ENHANCED-MATCH] Saving stage metrics...');
     for (const metric of result.metrics) {
       await prisma.matchStageMetrics.create({
         data: {
@@ -217,7 +218,7 @@ export async function POST(req: NextRequest) {
       data: { updatedAt: new Date() },
     });
 
-    console.log('[ENHANCED-MATCH] Complete!');
+    apiLogger.info('[ENHANCED-MATCH] Complete!');
 
     return NextResponse.json({
       success: true,
@@ -227,11 +228,13 @@ export async function POST(req: NextRequest) {
       message: `Enhanced matching complete: ${result.matches.length} matches found (${(result.summary.overallMatchRate * 100).toFixed(1)}% match rate)`,
     });
 
+  
   } catch (error: any) {
-    console.error('[ENHANCED-MATCH] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Enhanced matching failed' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

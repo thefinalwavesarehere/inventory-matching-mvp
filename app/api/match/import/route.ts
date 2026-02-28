@@ -5,8 +5,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/app/lib/db/prisma';
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 
 interface ImportRow {
   matchId: string;
@@ -42,10 +43,10 @@ function parseCSV(content: string): any[] {
  * Import CSV file with review decisions
  */
 export async function POST(request: NextRequest) {
-  try {
+  return withAuth(request, async (context) => {
+    try {
     // Require authentication
-    const { profile } = await requireAuth();
-    const userId = profile.id;
+    const userId = context.user.id;
 
     // Get form data
     const formData = await request.formData();
@@ -60,13 +61,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Project ID required' }, { status: 400 });
     }
 
-    console.log(`[IMPORT] Processing file: ${file.name} for project: ${projectId}`);
+    apiLogger.info(`[IMPORT] Processing file: ${file.name} for project: ${projectId}`);
 
     // Read file content
     const content = await file.text();
     const rows = parseCSV(content);
 
-    console.log(`[IMPORT] Parsed ${rows.length} rows from CSV`);
+    apiLogger.info(`[IMPORT] Parsed ${rows.length} rows from CSV`);
 
     // Validate and prepare updates
     const updates: ImportRow[] = [];
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.log(`[IMPORT] Found ${updates.length} valid updates, ${errors.length} errors`);
+    apiLogger.info(`[IMPORT] Found ${updates.length} valid updates, ${errors.length} errors`);
 
     if (errors.length > 0 && updates.length === 0) {
       return NextResponse.json({
@@ -147,7 +148,7 @@ export async function POST(request: NextRequest) {
 
           updated.push(update.matchId);
         } catch (err) {
-          console.error(`[IMPORT] Error updating match ${update.matchId}:`, err);
+          apiLogger.error(`[IMPORT] Error updating match ${update.matchId}:`, err);
           failed.push(`Match ${update.matchId}: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
       }
@@ -155,7 +156,7 @@ export async function POST(request: NextRequest) {
       return { updated, failed };
     });
 
-    console.log(`[IMPORT] Successfully updated ${results.updated.length} matches, ${results.failed.length} failed`);
+    apiLogger.info(`[IMPORT] Successfully updated ${results.updated.length} matches, ${results.failed.length} failed`);
 
     // Create audit log
     await prisma.auditLog.create({
@@ -187,14 +188,13 @@ export async function POST(request: NextRequest) {
       errors: errors.concat(results.failed),
     });
 
-  } catch (error) {
-    console.error('[IMPORT] Error importing CSV:', error);
+  
+  } catch (error: any) {
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      {
-        error: 'Failed to import CSV',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

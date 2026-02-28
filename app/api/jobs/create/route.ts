@@ -5,8 +5,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 import {
   createQueuedJob,
   tryStartNextQueuedJob,
@@ -14,9 +15,9 @@ import {
 } from '@/app/lib/job-queue-manager';
 
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    const { profile } = await requireAuth();
 
     const body = await req.json();
     const { projectId, jobType, config } = body;
@@ -95,7 +96,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      console.log(`[JOB-CREATE] Budget check passed. Estimated cost: $${costEstimate.estimatedCost.toFixed(2)}`);
+      apiLogger.info(`[JOB-CREATE] Budget check passed. Estimated cost: $${costEstimate.estimatedCost.toFixed(2)}`);
     }
 
     // Create job using queue manager
@@ -111,18 +112,18 @@ export async function POST(req: NextRequest) {
       totalItems: totalUnmatched,
     };
 
-    const job = await createQueuedJob(projectId, profile.id, jobConfig);
+    const job = await createQueuedJob(projectId, context.user.id, jobConfig);
 
-    console.log(`[JOB-CREATE] Created job ${job.id} for project ${projectId}, type: ${jobType}`);
-    console.log(`[JOB-CREATE] Total unmatched items: ${totalUnmatched}`);
-    console.log(`[JOB-CREATE] Job status: ${job.status}`);
+    apiLogger.info(`[JOB-CREATE] Created job ${job.id} for project ${projectId}, type: ${jobType}`);
+    apiLogger.info(`[JOB-CREATE] Total unmatched items: ${totalUnmatched}`);
+    apiLogger.info(`[JOB-CREATE] Job status: ${job.status}`);
 
     // Try to start the job if concurrency limits allow
     const startedJob = await tryStartNextQueuedJob();
     if (startedJob?.id === job.id) {
-      console.log(`[JOB-CREATE] Job ${job.id} started immediately`);
+      apiLogger.info(`[JOB-CREATE] Job ${job.id} started immediately`);
     } else {
-      console.log(`[JOB-CREATE] Job ${job.id} queued (concurrency limits reached)`);
+      apiLogger.info(`[JOB-CREATE] Job ${job.id} queued (concurrency limits reached)`);
     }
 
     // Get queue status for this project
@@ -140,11 +141,13 @@ export async function POST(req: NextRequest) {
         queuedJobs: queueStatus.queued.length,
       },
     });
+  
   } catch (error: any) {
-    console.error('[JOB-CREATE] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }

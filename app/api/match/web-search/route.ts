@@ -5,19 +5,20 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 // Migrated to Supabase auth
-import { requireAuth } from '@/app/lib/auth-helpers';
 import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
 
+import { withAuth } from '@/app/lib/middleware/auth';
+import { apiLogger } from '@/app/lib/structured-logger';
 // Use OpenAI instead of Perplexity for better results
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function POST(req: NextRequest) {
-  try {
+  return withAuth(req, async (context) => {
+    try {
     // Require authentication
-    await requireAuth();
 
     const body = await req.json();
     const { projectId, batchOffset = 0, batchSize = 20 } = body;
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[WEB-SEARCH] Starting web search matching for project: ${projectId}`);
+    apiLogger.info(`[WEB-SEARCH] Starting web search matching for project: ${projectId}`);
 
     // Get unmatched store items
     const existingMatches = await prisma.matchCandidate.findMany({
@@ -50,18 +51,18 @@ export async function POST(req: NextRequest) {
     const unmatchedStoreItems = allUnmatchedItems.slice(batchOffset, batchOffset + batchSize);
     const remainingAfterBatch = allUnmatchedItems.length - (batchOffset + unmatchedStoreItems.length);
     
-    console.log(`[WEB-SEARCH] Total unmatched items: ${allUnmatchedItems.length}`);
-    console.log(`[WEB-SEARCH] Batch offset: ${batchOffset}, Batch size: ${batchSize}`);
-    console.log(`[WEB-SEARCH] Processing items ${batchOffset} to ${batchOffset + unmatchedStoreItems.length}`);
-    console.log(`[WEB-SEARCH] Remaining after batch: ${remainingAfterBatch}`);
+    apiLogger.info(`[WEB-SEARCH] Total unmatched items: ${allUnmatchedItems.length}`);
+    apiLogger.info(`[WEB-SEARCH] Batch offset: ${batchOffset}, Batch size: ${batchSize}`);
+    apiLogger.info(`[WEB-SEARCH] Processing items ${batchOffset} to ${batchOffset + unmatchedStoreItems.length}`);
+    apiLogger.info(`[WEB-SEARCH] Remaining after batch: ${remainingAfterBatch}`);
 
-    console.log(`[WEB-SEARCH] Processing ${unmatchedStoreItems.length} unmatched items`);
+    apiLogger.info(`[WEB-SEARCH] Processing ${unmatchedStoreItems.length} unmatched items`);
 
     // Load supplier catalog for intelligent web search
     const supplierItems = await prisma.supplierItem.findMany({
       where: { projectId },
     });
-    console.log(`[WEB-SEARCH] Loaded ${supplierItems.length} supplier items for reference`);
+    apiLogger.info(`[WEB-SEARCH] Loaded ${supplierItems.length} supplier items for reference`);
 
     const webMatches: any[] = [];
     let savedCount = 0;
@@ -163,7 +164,7 @@ Respond with ONLY valid JSON:
           if (!webResponse.description) webResponse.description = null;
           if (!webResponse.price) webResponse.price = null;
           if (!webResponse.sourceUrl) webResponse.sourceUrl = null;
-          console.log(`[WEB-SEARCH] Found match: ${storeItem.partNumber} -> ${webResponse.supplierPartNumber} (${webResponse.confidence})`);
+          apiLogger.info(`[WEB-SEARCH] Found match: ${storeItem.partNumber} -> ${webResponse.supplierPartNumber} (${webResponse.confidence})`);
 
           // Find or create supplier item for web-found match
           // First check if this supplier part already exists
@@ -236,7 +237,7 @@ Respond with ONLY valid JSON:
               data: webMatches,
               skipDuplicates: true,
             });
-            console.log(`[WEB-SEARCH] Saved batch of ${webMatches.length} matches (total saved: ${savedCount + webMatches.length})`);
+            apiLogger.info(`[WEB-SEARCH] Saved batch of ${webMatches.length} matches (total saved: ${savedCount + webMatches.length})`);
             savedCount += webMatches.length;
             webMatches.length = 0; // Clear the array
           }
@@ -245,7 +246,7 @@ Respond with ONLY valid JSON:
         // Rate limiting - 1 second between requests
         await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch (error: any) {
-        console.error(`[WEB-SEARCH] Error processing ${storeItem.partNumber}:`, error.message);
+        apiLogger.error(`[WEB-SEARCH] Error processing ${storeItem.partNumber}:`, error.message);
         continue;
       }
     }
@@ -256,11 +257,11 @@ Respond with ONLY valid JSON:
         data: webMatches,
         skipDuplicates: true,
       });
-      console.log(`[WEB-SEARCH] Saved final batch of ${webMatches.length} matches`);
+      apiLogger.info(`[WEB-SEARCH] Saved final batch of ${webMatches.length} matches`);
       savedCount += webMatches.length;
     }
     
-    console.log(`[WEB-SEARCH] Total matches saved: ${savedCount}`);
+    apiLogger.info(`[WEB-SEARCH] Total matches saved: ${savedCount}`);
 
     // Calculate batch progress
     const totalProcessed = batchOffset + unmatchedStoreItems.length;
@@ -287,11 +288,13 @@ Respond with ONLY valid JSON:
         totalEstimatedCost,
       },
     });
+  
   } catch (error: any) {
-    console.error('[WEB-SEARCH] Error:', error);
+    apiLogger.error({ error: error.message }, 'Handler error');
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to run web search matching' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
+  });
 }
