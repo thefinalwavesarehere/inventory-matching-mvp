@@ -58,7 +58,7 @@ export async function POST(
       { status: 500 }
     );
   }
-  });
+  }));
 }
 
 // Endpoint to reject/unapprove a user
@@ -122,5 +122,5 @@ export async function DELETE(
       { status: 500 }
     );
   }
-  }));
+  });
 }

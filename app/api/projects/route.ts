@@ -14,7 +14,7 @@ import { apiLogger } from '@/app/lib/structured-logger';
 import { withRateLimit } from '@/app/lib/middleware/rate-limit';
 import { CreateProjectSchema, parseBody } from '@/app/lib/schemas';
 export async function GET(req: NextRequest) {
-  return withRateLimit(req, 'api', () => withAuth(req, async (context) => {
+  return withAuth(req, async (context) => {
     try {
     // Require authentication
 
@@ -106,7 +106,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  return withAuth(req, async (context) => {
+  return withRateLimit(req, 'api', () => withAuth(req, async (context) => {
     try {
     // Require authentication
 
