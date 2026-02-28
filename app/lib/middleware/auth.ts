@@ -150,11 +150,12 @@ export async function requireEditor(): Promise<AuthContext> {
  */
 export async function withAuth(
   request: NextRequest,
-  handler: (context: AuthContext) => Promise<NextResponse>
+  handler: (context: AuthContext) => Promise<NextResponse | undefined>
 ): Promise<NextResponse> {
   try {
     const context = await requireAuth();
-    return await handler(context);
+    const response = await handler(context);
+    return response ?? NextResponse.json({ error: 'No response returned' }, { status: 500 });
   } catch (error) {
     return handleAuthError(error);
   }
@@ -165,11 +166,12 @@ export async function withAuth(
  */
 export async function withAdmin(
   request: NextRequest,
-  handler: (context: AuthContext) => Promise<NextResponse>
+  handler: (context: AuthContext) => Promise<NextResponse | undefined>
 ): Promise<NextResponse> {
   try {
     const context = await requireAdmin();
-    return await handler(context);
+    const response = await handler(context);
+    return response ?? NextResponse.json({ error: 'No response returned' }, { status: 500 });
   } catch (error) {
     return handleAuthError(error);
   }
@@ -180,11 +182,12 @@ export async function withAdmin(
  */
 export async function withEditor(
   request: NextRequest,
-  handler: (context: AuthContext) => Promise<NextResponse>
+  handler: (context: AuthContext) => Promise<NextResponse | undefined>
 ): Promise<NextResponse> {
   try {
     const context = await requireEditor();
-    return await handler(context);
+    const response = await handler(context);
+    return response ?? NextResponse.json({ error: 'No response returned' }, { status: 500 });
   } catch (error) {
     return handleAuthError(error);
   }
