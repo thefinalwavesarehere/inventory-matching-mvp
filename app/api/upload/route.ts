@@ -12,6 +12,7 @@ import * as XLSX from 'xlsx';
 
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+import { withRateLimit } from '@/app/lib/middleware/rate-limit';
 // V9.5: Set maximum duration for large file uploads
 export const maxDuration = 60;
 
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  return withAuth(req, async (context) => {
+  return withRateLimit(req, 'api', () => withAuth(req, async (context) => {
     try {
     // Require authentication
 
@@ -244,5 +245,5 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-  });
+  }));
 }

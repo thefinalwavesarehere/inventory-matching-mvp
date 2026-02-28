@@ -11,8 +11,10 @@ import prisma from '@/app/lib/db/prisma';
 
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+import { withRateLimit } from '@/app/lib/middleware/rate-limit';
+import { CreateProjectSchema, parseBody } from '@/app/lib/schemas';
 export async function GET(req: NextRequest) {
-  return withAuth(req, async (context) => {
+  return withRateLimit(req, 'api', () => withAuth(req, async (context) => {
     try {
     // Require authentication
 
@@ -109,19 +111,14 @@ export async function POST(req: NextRequest) {
     // Require authentication
 
     const body = await req.json();
-    const { name, description } = body;
-
-    if (!name) {
-      return NextResponse.json(
-        { success: false, error: 'Project name is required' },
-        { status: 400 }
-      );
-    }
+    const parsed = parseBody(CreateProjectSchema, body);
+    if (!parsed.success) return parsed.response;
+    const { name, description } = parsed.data;
 
     const project = await prisma.project.create({
       data: {
         name,
-        description: description || null,
+        description: description ?? null,
       },
     });
 
@@ -153,5 +150,5 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-  });
+  }));
 }

@@ -5,6 +5,8 @@ import { logActivity } from '@/app/lib/logger';
 
 import { withAdmin } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+import { withRateLimit } from '@/app/lib/middleware/rate-limit';
+import { ChangeUserRoleSchema, parseBody } from '@/app/lib/schemas';
 export const dynamic = 'force-dynamic';
 
 /**
@@ -15,19 +17,14 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  return withAdmin(request, async (context) => {
+  return withRateLimit(request, 'admin', () => withAdmin(request, async (context) => {
     try {
     // Require admin role
 
     const body = await request.json();
-    const { role } = body;
-
-    if (!role || !['ADMIN', 'EDITOR', 'VIEWER'].includes(role)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid role' },
-        { status: 400 }
-      );
-    }
+    const parsed = parseBody(ChangeUserRoleSchema, body);
+    if (!parsed.success) return parsed.response;
+    const { role } = parsed.data;
 
     // Get target user
     const targetUser = await prisma.userProfile.findUnique({
@@ -82,5 +79,5 @@ export async function PUT(
       { status: 500 }
     );
   }
-  });
+  }));
 }

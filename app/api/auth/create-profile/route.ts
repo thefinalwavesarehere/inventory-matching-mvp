@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/db/prisma';
-
-
+import { withRateLimit } from '@/app/lib/middleware/rate-limit';
+import { CreateProfileSchema, parseBody } from '@/app/lib/schemas';
 export const dynamic = 'force-dynamic';
 
 /**
@@ -9,16 +9,13 @@ export const dynamic = 'force-dynamic';
  * Create a UserProfile record after Supabase signup
  */
 export async function POST(request: NextRequest) {
+  const rlResponse = await withRateLimit(request, 'auth', async () => NextResponse.json({ ok: true }));
+  if (rlResponse.status === 429) return rlResponse;
   try {
     const body = await request.json();
-    const { userId, email, fullName } = body;
-
-    if (!userId || !email) {
-      return NextResponse.json(
-        { success: false, error: 'Missing userId or email' },
-        { status: 400 }
-      );
-    }
+    const parsed = parseBody(CreateProfileSchema, body);
+    if (!parsed.success) return parsed.response;
+    const { userId, email, fullName } = parsed.data;
 
     // Check if profile already exists
     const existing = await prisma.userProfile.findUnique({
@@ -48,7 +45,6 @@ export async function POST(request: NextRequest) {
       profile,
     });
   } catch (error: any) {
-    console.error('[API] Error creating user profile:', error);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

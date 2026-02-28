@@ -4,6 +4,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { withAdmin } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+import { withRateLimit } from '@/app/lib/middleware/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  return withAdmin(request, async (context) => {
+  return withRateLimit(request, 'admin', () => withAdmin(request, async (context) => {
     try {
       // Get target user
       const targetUser = await prisma.userProfile.findUnique({
@@ -74,5 +75,5 @@ export async function POST(
         { status: 500 }
       );
     }
-  });
+  }));
 }

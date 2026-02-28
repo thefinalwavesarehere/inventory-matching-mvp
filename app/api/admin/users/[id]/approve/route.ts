@@ -5,11 +5,12 @@ import { logActivity } from '@/app/lib/logger';
 
 import { withAdmin } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+import { withRateLimit } from '@/app/lib/middleware/rate-limit';
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  return withAdmin(request, async (context) => {
+  return withRateLimit(request, 'admin', () => withAdmin(request, async (context) => {
     try {
     // Verify admin role
     
@@ -121,5 +122,5 @@ export async function DELETE(
       { status: 500 }
     );
   }
-  });
+  }));
 }

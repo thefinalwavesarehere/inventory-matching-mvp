@@ -10,6 +10,7 @@ import OpenAI from 'openai';
 
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+import { withRateLimit } from '@/app/lib/middleware/rate-limit';
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -66,7 +67,7 @@ const scoreCandidate = (storeItem: any, supplierItem: any) => {
 };
 
 export async function POST(req: NextRequest) {
-  return withAuth(req, async (context) => {
+  return withRateLimit(req, 'expensive', () => withAuth(req, async (context) => {
     try {
     // Require authentication
 
@@ -406,5 +407,5 @@ Find the BEST match. When in doubt, MATCH IT (60%+ similarity). Respond with ONL
       { status: 500 }
     );
   }
-  });
+  }));
 }

@@ -5,6 +5,7 @@ import { logActivity } from '@/app/lib/logger';
 
 import { withAdmin } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+import { AdminUpdateUserSchema, parseBody } from '@/app/lib/schemas';
 export const dynamic = 'force-dynamic';
 
 /**
@@ -20,7 +21,9 @@ export async function PUT(
     // Require admin role
 
     const body = await request.json();
-    const { fullName, email } = body;
+    const parsed = parseBody(AdminUpdateUserSchema, body);
+    if (!parsed.success) return parsed.response;
+    const { fullName, email } = parsed.data;
     const userId = params.id;
 
     if (!userId) {

@@ -11,6 +11,7 @@ import prisma from '@/app/lib/db/prisma';
 
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+import { UpdateProjectSchema, parseBody } from '@/app/lib/schemas';
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -64,7 +65,9 @@ export async function PUT(
     // Require authentication
 
     const body = await req.json();
-    const { name, description } = body;
+    const parsed = parseBody(UpdateProjectSchema, body);
+    if (!parsed.success) return parsed.response;
+    const { name, description } = parsed.data;
 
     const project = await prisma.project.update({
       where: { id: params.id },
