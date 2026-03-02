@@ -20,14 +20,14 @@ import { processHumanReview } from './processHumanReview-v1';
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
 import {
-
-export const dynamic = 'force-dynamic';
   isJobCancelled,
   getJobCancellationType,
   markJobCancelled,
   markJobCompleted,
   markJobFailed,
 } from '@/app/lib/job-queue-manager';
+
+export const dynamic = 'force-dynamic';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,

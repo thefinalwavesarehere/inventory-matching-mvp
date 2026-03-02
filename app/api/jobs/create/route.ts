@@ -9,12 +9,12 @@ import prisma from '@/app/lib/db/prisma';
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
 import {
-
-export const dynamic = 'force-dynamic';
   createQueuedJob,
   tryStartNextQueuedJob,
   getProjectQueueStatus,
 } from '@/app/lib/job-queue-manager';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   return withAuth(req, async (context) => {
