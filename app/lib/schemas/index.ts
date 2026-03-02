@@ -11,7 +11,7 @@ import { z } from 'zod';
 // Shared primitives
 // ---------------------------------------------------------------------------
 
-export const cuid = z.string().cuid('Invalid ID format');
+export const cuid = z.string().regex(/^c[a-z0-9]{24}$/, 'Invalid ID format');
 export const nonEmptyString = z.string().min(1).max(255).trim();
 export const optionalString = z.string().max(1000).trim().optional();
 
@@ -38,8 +38,8 @@ export const UpdateUserProfileSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const ChangeUserRoleSchema = z.object({
-  role: z.enum(['ADMIN', 'EDITOR', 'VIEWER'], {
-    errorMap: () => ({ message: 'Role must be ADMIN, EDITOR, or VIEWER' }),
+  role: z.enum(['ADMIN', 'EDITOR', 'VIEWER'] as const, {
+    message: 'Role must be ADMIN, EDITOR, or VIEWER',
   }),
 });
 
@@ -70,8 +70,8 @@ export const UpdateProjectSchema = z.object({
 // ---------------------------------------------------------------------------
 
 const VendorActionEnum = z.enum(
-  ['NONE', 'LIFT', 'REBOX', 'UNKNOWN', 'CONTACT_VENDOR'],
-  { errorMap: () => ({ message: 'Invalid vendor action' }) }
+  ['NONE', 'LIFT', 'REBOX', 'UNKNOWN', 'CONTACT_VENDOR'] as const,
+  { message: 'Invalid vendor action' }
 );
 
 export const CreateRuleSchema = z.object({
@@ -95,7 +95,7 @@ export const UpdateRuleSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const CreateLineMappingSchema = z.object({
-  scope: z.enum(['project', 'global']),
+  scope: z.enum(['project', 'global'] as const),
   projectId: z.string().optional(),
   clientLineCode: nonEmptyString,
   manufacturerName: z.string().max(255).trim().optional(),
@@ -114,7 +114,7 @@ export const CreateLineMappingSchema = z.object({
 
 export const UpdateBudgetSchema = z.object({
   budget: z.number().positive().optional(),
-  currency: z.string().length(3).toUpperCase().optional(),
+  currency: z.string().length(3).transform(s => s.toUpperCase()).optional(),
 });
 
 // ---------------------------------------------------------------------------
