@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import prisma from '@/app/lib/db/prisma';
 
 export async function POST(request: NextRequest) {
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('[MIGRATION] Starting Excel review fields migration...');
+    apiLogger.info('[MIGRATION] Starting Excel review fields migration...');
 
     // Run the migration SQL directly
     await prisma.$executeRawUnsafe(`
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
       END $$;
     `);
 
-    console.log('[MIGRATION] Excel review fields migration completed successfully');
+    apiLogger.info('[MIGRATION] Excel review fields migration completed successfully');
 
     return NextResponse.json({
       success: true,
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('[MIGRATION] Error running migration:', error);
+    apiLogger.error('[MIGRATION] Error running migration:', error);
     return NextResponse.json(
       {
         error: 'Migration failed',

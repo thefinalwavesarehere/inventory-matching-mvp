@@ -17,6 +17,8 @@ import prisma from '@/app/lib/db/prisma';
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
 import {
+
+export const dynamic = 'force-dynamic';
   runMultiStageMatching,
   type StoreItem,
   type SupplierItem,

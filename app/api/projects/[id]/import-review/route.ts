@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import prisma from '@/app/lib/db/prisma';
 import { parse } from 'csv-parse/sync';
 import { VendorAction, MatchStatus, ReviewSource } from '@prisma/client';
@@ -48,7 +49,7 @@ export async function POST(
   try {
     const projectId = params.id;
 
-    console.log(`[IMPORT] Starting CSV import for project: ${projectId}`);
+    apiLogger.info(`[IMPORT] Starting CSV import for project: ${projectId}`);
 
     // Verify project exists
     const project = await prisma.project.findUnique({
@@ -74,7 +75,7 @@ export async function POST(
       );
     }
 
-    console.log(`[IMPORT] Processing file: ${file.name}, size: ${file.size} bytes`);
+    apiLogger.info(`[IMPORT] Processing file: ${file.name}, size: ${file.size} bytes`);
 
     // Read file content
     const fileContent = await file.text();
@@ -89,14 +90,14 @@ export async function POST(
         relax_column_count: true, // Allow rows with different column counts
       });
     } catch (parseError: any) {
-      console.error('[IMPORT] CSV parse error:', parseError);
+      apiLogger.error('[IMPORT] CSV parse error:', parseError);
       return NextResponse.json(
         { error: `Failed to parse CSV: ${parseError.message}` },
         { status: 400 }
       );
     }
 
-    console.log(`[IMPORT] Parsed ${records.length} rows from CSV`);
+    apiLogger.info(`[IMPORT] Parsed ${records.length} rows from CSV`);
 
     // Validate required headers
     const requiredHeaders = ['match_id', 'project_id'];
@@ -117,7 +118,7 @@ export async function POST(
       .map(row => row['match_id']?.trim())
       .filter(id => id); // Remove empty/null IDs
 
-    console.log(`[IMPORT] Extracted ${matchIds.length} match IDs from CSV`);
+    apiLogger.info(`[IMPORT] Extracted ${matchIds.length} match IDs from CSV`);
 
     // Batch-fetch all matches in one query (PERFORMANCE OPTIMIZATION)
     const matches = await prisma.matchCandidate.findMany({
@@ -129,7 +130,7 @@ export async function POST(
       },
     });
 
-    console.log(`[IMPORT] Fetched ${matches.length} matches from database`);
+    apiLogger.info(`[IMPORT] Fetched ${matches.length} matches from database`);
 
     // Build matchesMap for O(1) lookups
     const matchesMap = new Map(
@@ -203,7 +204,7 @@ export async function POST(
         const vendorActionValues = ['NONE', 'LIFT', 'REBOX', 'UNKNOWN', 'CONTACT_VENDOR'];
         if (vendorActionValues.includes(normalizedDecision)) {
           // This is likely vendor_action in the wrong column, skip validation
-          console.warn(`[IMPORT] Row ${rowNumber}: Skipping vendor_action value "${reviewDecision}" in review_decision column`);
+          apiLogger.warn(`[IMPORT] Row ${rowNumber}: Skipping vendor_action value "${reviewDecision}" in review_decision column`);
         } else if (normalizedDecision === 'ACCEPT' || normalizedDecision === 'ACCEPTED') {
           updateData.status = MatchStatus.CONFIRMED;
           hasChanges = true;
@@ -253,7 +254,7 @@ export async function POST(
       }
     }
 
-    console.log(`[IMPORT] Validation complete: ${updates.length} updates, ${errors.length} errors, ${skippedRows} skipped`);
+    apiLogger.info(`[IMPORT] Validation complete: ${updates.length} updates, ${errors.length} errors, ${skippedRows} skipped`);
 
     // If there are errors, return them without updating
     if (errors.length > 0) {
@@ -281,7 +282,7 @@ export async function POST(
           )
         );
         updatedCount = updates.length;
-        console.log(`[IMPORT] Successfully updated ${updatedCount} matches`);
+        apiLogger.info(`[IMPORT] Successfully updated ${updatedCount} matches`);
 
         // Log to match history (Epic A3)
         const acceptedRecords: Array<{
@@ -326,7 +327,7 @@ export async function POST(
             data: acceptedRecords,
             skipDuplicates: true,
           });
-          console.log(`[IMPORT] Logged ${acceptedRecords.length} accepted matches to history`);
+          apiLogger.info(`[IMPORT] Logged ${acceptedRecords.length} accepted matches to history`);
         }
 
         if (rejectedRecords.length > 0) {
@@ -334,10 +335,10 @@ export async function POST(
             data: rejectedRecords,
             skipDuplicates: true,
           });
-          console.log(`[IMPORT] Logged ${rejectedRecords.length} rejected matches to history`);
+          apiLogger.info(`[IMPORT] Logged ${rejectedRecords.length} rejected matches to history`);
         }
       } catch (txError: any) {
-        console.error('[IMPORT] Transaction error:', txError);
+        apiLogger.error('[IMPORT] Transaction error:', txError);
         return NextResponse.json({
           success: false,
           error: `Database update failed: ${txError.message}`,
@@ -356,7 +357,7 @@ export async function POST(
     });
 
   } catch (error: any) {
-    console.error('[IMPORT] Unexpected error:', error);
+    apiLogger.error('[IMPORT] Unexpected error:', error);
     return NextResponse.json({
       success: false,
       error: error.message || 'Internal server error',

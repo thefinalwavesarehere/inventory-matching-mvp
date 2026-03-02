@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import prisma from '@/app/lib/db/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +32,7 @@ export async function GET(
   try {
     const projectId = params.id;
 
-    console.log(`[EXPORT] Starting CSV export for project: ${projectId}`);
+    apiLogger.info(`[EXPORT] Starting CSV export for project: ${projectId}`);
 
     // Verify project exists
     const project = await prisma.project.findUnique({
@@ -220,14 +221,14 @@ export async function GET(
 
             // Log progress
             if (totalExported % 1000 === 0) {
-              console.log(`[EXPORT] Exported ${totalExported} matches...`);
+              apiLogger.info(`[EXPORT] Exported ${totalExported} matches...`);
             }
           }
 
           controller.close();
-          console.log(`[EXPORT] Completed. Total exported: ${totalExported} matches`);
+          apiLogger.info(`[EXPORT] Completed. Total exported: ${totalExported} matches`);
         } catch (error) {
-          console.error('[EXPORT] Stream error:', error);
+          apiLogger.error('[EXPORT] Stream error:', error);
           controller.error(error);
         }
       },
@@ -249,7 +250,7 @@ export async function GET(
     });
 
   } catch (error: any) {
-    console.error('[EXPORT] Error:', error);
+    apiLogger.error('[EXPORT] Error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to export matches' },
       { status: 500 }

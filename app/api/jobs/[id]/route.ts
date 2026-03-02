@@ -10,6 +10,8 @@ import prisma from '@/app/lib/db/prisma';
 
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+
+export const dynamic = 'force-dynamic';
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import { prisma } from '@/app/lib/db/prisma';
 
 
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
       jobs: transformedJobs,
     });
   } catch (error: any) {
-    console.error('Error fetching job metrics:', error);
+    apiLogger.error('Error fetching job metrics:', error);
     return NextResponse.json(
       { error: 'Failed to fetch job metrics', details: error.message },
       { status: 500 }

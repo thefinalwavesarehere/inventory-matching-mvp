@@ -11,6 +11,8 @@ import OpenAI from 'openai';
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
 import { withRateLimit } from '@/app/lib/middleware/rate-limit';
+
+export const dynamic = 'force-dynamic';
 // Use OpenAI instead of Perplexity for better results
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,

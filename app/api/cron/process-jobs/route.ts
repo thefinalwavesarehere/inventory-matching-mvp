@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import prisma from '@/app/lib/db/prisma';
 
 export const maxDuration = 60; // Maximum execution time: 60 seconds
@@ -18,13 +19,13 @@ export async function GET(req: NextRequest) {
     // Verify this is a cron request (security check)
     const authHeader = req.headers.get('authorization');
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      console.log('[CRON] Unauthorized request');
+      apiLogger.info('[CRON] Unauthorized request');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('[CRON] ========== CRON JOB TRIGGERED ==========');
-    console.log(`[CRON] Timestamp: ${new Date().toISOString()}`);
-    console.log(`[CRON] NEXT_PUBLIC_URL: ${process.env.NEXT_PUBLIC_URL}`);
+    apiLogger.info('[CRON] ========== CRON JOB TRIGGERED ==========');
+    apiLogger.info(`[CRON] Timestamp: ${new Date().toISOString()}`);
+    apiLogger.info(`[CRON] NEXT_PUBLIC_URL: ${process.env.NEXT_PUBLIC_URL}`);
 
     // Find all active jobs
     const activeJobs = await prisma.matchingJob.findMany({
@@ -34,10 +35,10 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'asc' },
     });
 
-    console.log(`[CRON] Found ${activeJobs.length} active jobs`);
+    apiLogger.info(`[CRON] Found ${activeJobs.length} active jobs`);
     if (activeJobs.length > 0) {
       activeJobs.forEach(job => {
-        console.log(`[CRON]   - Job ${job.id}: ${job.currentStageName}, status=${job.status}, progress=${job.processedItems}/${job.totalItems}`);
+        apiLogger.info(`[CRON]   - Job ${job.id}: ${job.currentStageName}, status=${job.status}, progress=${job.processedItems}/${job.totalItems}`);
       });
     }
 
@@ -53,14 +54,14 @@ export async function GET(req: NextRequest) {
     // Process one chunk for each active job (fire-and-forget)
     for (const job of activeJobs) {
       try {
-        console.log(`[CRON] ========== Triggering job ${job.id} ==========`);
-        console.log(`[CRON] Job name: ${job.currentStageName}`);
-        console.log(`[CRON] Job status: ${job.status}`);
-        console.log(`[CRON] Job config:`, JSON.stringify(job.config));
+        apiLogger.info(`[CRON] ========== Triggering job ${job.id} ==========`);
+        apiLogger.info(`[CRON] Job name: ${job.currentStageName}`);
+        apiLogger.info(`[CRON] Job status: ${job.status}`);
+        apiLogger.info(`[CRON] Job config:`, JSON.stringify(job.config));
 
         // Call the process endpoint (fire-and-forget - don't wait for response)
         const processUrl = `${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}/api/jobs/${job.id}/process`;
-        console.log(`[CRON] Triggering process URL: ${processUrl}`);
+        apiLogger.info(`[CRON] Triggering process URL: ${processUrl}`);
         
         // Fire-and-forget: trigger the request but don't await the response
         fetch(processUrl, {
@@ -72,10 +73,10 @@ export async function GET(req: NextRequest) {
           },
         }).catch(error => {
           // Log errors but don't block
-          console.error(`[CRON] Error triggering job ${job.id}:`, error.message);
+          apiLogger.error(`[CRON] Error triggering job ${job.id}:`, error.message);
         });
         
-        console.log(`[CRON] Job ${job.id} triggered successfully (processing in background)`);
+        apiLogger.info(`[CRON] Job ${job.id} triggered successfully (processing in background)`);
         
         results.push({
           jobId: job.id,
@@ -84,10 +85,10 @@ export async function GET(req: NextRequest) {
         });
 
       } catch (error: any) {
-        console.error(`[CRON] ========== ERROR triggering job ${job.id} ==========`);
-        console.error(`[CRON] Error type: ${error.constructor.name}`);
-        console.error(`[CRON] Error message:`, error.message);
-        console.error(`[CRON] Error stack:`, error.stack);
+        apiLogger.error(`[CRON] ========== ERROR triggering job ${job.id} ==========`);
+        apiLogger.error(`[CRON] Error type: ${error.constructor.name}`);
+        apiLogger.error(`[CRON] Error message:`, error.message);
+        apiLogger.error(`[CRON] Error stack:`, error.stack);
         results.push({
           jobId: job.id,
           success: false,
@@ -96,7 +97,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    console.log(`[CRON] Processed ${results.length} jobs`);
+    apiLogger.info(`[CRON] Processed ${results.length} jobs`);
 
     return NextResponse.json({
       success: true,
@@ -105,7 +106,7 @@ export async function GET(req: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('[CRON] Fatal error:', error);
+    apiLogger.error('[CRON] Fatal error:', error);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

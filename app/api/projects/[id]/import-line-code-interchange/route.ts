@@ -12,6 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import { prisma } from '@/app/lib/db/prisma';
 import { parse } from 'csv-parse/sync';
 
@@ -110,7 +111,7 @@ export async function POST(
     });
 
   } catch (error: any) {
-    console.error('[LINE_CODE_INTERCHANGE_IMPORT] Error:', error);
+    apiLogger.error('[LINE_CODE_INTERCHANGE_IMPORT] Error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to import line code interchange' },
       { status: 500 }

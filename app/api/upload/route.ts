@@ -13,6 +13,8 @@ import * as XLSX from 'xlsx';
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
 import { withRateLimit } from '@/app/lib/middleware/rate-limit';
+
+export const dynamic = 'force-dynamic';
 // V9.5: Set maximum duration for large file uploads
 export const maxDuration = 60;
 

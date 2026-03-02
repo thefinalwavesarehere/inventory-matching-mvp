@@ -10,6 +10,8 @@ import { stage2FuzzyMatching } from '@/app/lib/matching-engine';
 
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+
+export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minutes
 
 export async function POST(req: NextRequest) {

@@ -5,6 +5,8 @@ import { learnFromBulkDecisions, ReviewDecision } from '@/app/lib/master-rules-l
 
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+
+export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   return withAuth(req, async (context) => {
     try {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import { createClient } from '@supabase/supabase-js';
 
 const BUCKET_NAME = 'inventory-files';
@@ -15,7 +16,7 @@ function getSupabaseClient() {
   try {
     return createClient(supabaseUrl, supabaseAnonKey);
   } catch (error) {
-    console.error('Failed to create Supabase client:', error);
+    apiLogger.error('Failed to create Supabase client:', error);
     return null;
   }
 }
@@ -46,7 +47,7 @@ export async function GET(
       });
 
     if (error) {
-      console.error('Error listing files:', error);
+      apiLogger.error('Error listing files:', error);
       return NextResponse.json(
         { error: 'Failed to list files' },
         { status: 500 }
@@ -70,7 +71,7 @@ export async function GET(
 
     return NextResponse.json({ files: filesWithUrls });
   } catch (error: any) {
-    console.error('Error in GET /api/projects/[id]/files:', error);
+    apiLogger.error('Error in GET /api/projects/[id]/files:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
       { status: 500 }
@@ -110,7 +111,7 @@ export async function DELETE(
       .remove([`${projectId}/${fileName}`]);
 
     if (error) {
-      console.error('Error deleting file:', error);
+      apiLogger.error('Error deleting file:', error);
       return NextResponse.json(
         { error: 'Failed to delete file' },
         { status: 500 }
@@ -119,7 +120,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error('Error in DELETE /api/projects/[id]/files:', error);
+    apiLogger.error('Error in DELETE /api/projects/[id]/files:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
       { status: 500 }

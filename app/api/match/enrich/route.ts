@@ -10,6 +10,8 @@ import OpenAI from 'openai';
 
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+
+export const dynamic = 'force-dynamic';
 const perplexity = new OpenAI({
   apiKey: process.env.PERPLEXITY_API_KEY,
   baseURL: 'https://api.perplexity.ai',
@@ -121,7 +123,7 @@ export async function POST(req: NextRequest) {
  */
 async function searchWeb(partNumber: string, query: string): Promise<any | null> {
   try {
-    console.log(`[SEARCH] Searching for: ${query}`);
+    apiLogger.info(`[SEARCH] Searching for: ${query}`);
     
     const prompt = `Find information about this automotive part: ${partNumber}
 
@@ -168,11 +170,11 @@ Respond in JSON format:
     // Parse response
     const result = JSON.parse(responseText);
     
-    console.log(`[SEARCH] Found: ${result.found ? 'YES' : 'NO'}`);
+    apiLogger.info(`[SEARCH] Found: ${result.found ? 'YES' : 'NO'}`);
     
     return result;
   } catch (error: any) {
-    console.error(`[SEARCH] Error:`, error.message);
+    apiLogger.error(`[SEARCH] Error:`, error.message);
     return null;
   }
 }

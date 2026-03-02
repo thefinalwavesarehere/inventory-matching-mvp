@@ -211,12 +211,12 @@ async function handleUpdateStatus(
     }
   });
 
-  console.log(
+  apiLogger.info(
     `[BULK_OPERATIONS] Updated ${matches.length} matches to ${status} for project ${projectId}`
   );
 
   // Create master rules from these decisions
-  console.log(`[BULK_OPERATIONS] Starting master rules creation for ${matches.length} decisions...`);
+  apiLogger.info(`[BULK_OPERATIONS] Starting master rules creation for ${matches.length} decisions...`);
   try {
     const decisions = matches.map((match) => {
       const supplierItem = supplierItemMap.get(match.targetId);
@@ -231,16 +231,16 @@ async function handleUpdateStatus(
       };
     }).filter(d => d.supplierPartNumber); // Only create rules if we have supplier part number
 
-    console.log(`[BULK_OPERATIONS] Prepared ${decisions.length} decisions for learning`);
+    apiLogger.info(`[BULK_OPERATIONS] Prepared ${decisions.length} decisions for learning`);
     if (decisions.length > 0) {
-      console.log(`[BULK_OPERATIONS] Sample decision:`, JSON.stringify(decisions[0], null, 2));
+      apiLogger.info(`[BULK_OPERATIONS] Sample decision:`, JSON.stringify(decisions[0], null, 2));
       const result = await learnFromBulkDecisions(decisions);
-      console.log(`[BULK_OPERATIONS] Created ${result.created} master rules from bulk ${status} (${result.skipped} skipped, ${result.errors} errors)`);
+      apiLogger.info(`[BULK_OPERATIONS] Created ${result.created} master rules from bulk ${status} (${result.skipped} skipped, ${result.errors} errors)`);
     }
   } catch (error) {
-    console.error('[BULK_OPERATIONS] Error creating master rules:', error);
+    apiLogger.error('[BULK_OPERATIONS] Error creating master rules:', error);
     if (error instanceof Error) {
-      console.error('[BULK_OPERATIONS] Error stack:', error.stack);
+      apiLogger.error('[BULK_OPERATIONS] Error stack:', error.stack);
     }
     // Don't fail the whole operation if rule creation fails
   }
@@ -299,7 +299,7 @@ async function handleUpdateVendorAction(
     },
   });
 
-  console.log(
+  apiLogger.info(
     `[BULK_OPERATIONS] Updated ${result.count} matches with vendor action ${vendorAction} for project ${projectId}`
   );
 

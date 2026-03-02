@@ -15,6 +15,8 @@ import { extractRulesFromInterchange, deduplicateRules } from '@/app/lib/interch
 
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+
+export const dynamic = 'force-dynamic';
 // V9.5: Set maximum duration for large file uploads
 export const maxDuration = 60;
 
@@ -86,8 +88,8 @@ function processStoreFile(data: any[], projectId: string) {
       
       // V9.9: Diagnostic logging for first row only
       if (data.indexOf(row) === 0) {
-        console.log(`[V9.9-DIAGNOSTIC] Store first row - partNumber type: ${typeof partNumber}, value: ${partNumber}`);
-        console.log(`[V9.9-DIAGNOSTIC] Store normalized: ${partNumberNormValue}`);
+        apiLogger.info(`[V9.9-DIAGNOSTIC] Store first row - partNumber type: ${typeof partNumber}, value: ${partNumber}`);
+        apiLogger.info(`[V9.9-DIAGNOSTIC] Store normalized: ${partNumberNormValue}`);
       }
     } else {
       // LEGACY PATH: Apply normalization for old file formats
@@ -99,7 +101,7 @@ function processStoreFile(data: any[], projectId: string) {
       canonicalPartNumber = normalized.canonical;
       
       // V9.5: Row-level logging removed to prevent timeout on large files
-      // console.log(`[LEGACY_IMPORT] Normalized: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+      // apiLogger.info(`[LEGACY_IMPORT] Normalized: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
     }
 
     // Prompt 2: Manufacturer part extraction deferred to batch processing
@@ -167,8 +169,8 @@ function processSupplierFile(data: any[], projectId: string) {
       
       // V9.9: Diagnostic logging for first row only
       if (data.indexOf(row) === 0) {
-        console.log(`[V9.9-DIAGNOSTIC] Supplier first row - partNumber type: ${typeof partNumber}, value: ${partNumber}`);
-        console.log(`[V9.9-DIAGNOSTIC] Supplier normalized: ${partNumberNormValue}`);
+        apiLogger.info(`[V9.9-DIAGNOSTIC] Supplier first row - partNumber type: ${typeof partNumber}, value: ${partNumber}`);
+        apiLogger.info(`[V9.9-DIAGNOSTIC] Supplier normalized: ${partNumberNormValue}`);
       }
     } else {
       // LEGACY PATH: Apply normalization for old file formats
@@ -180,7 +182,7 @@ function processSupplierFile(data: any[], projectId: string) {
       canonicalPartNumber = normalized.canonical;
       
       // V9.5: Row-level logging removed to prevent timeout on large files
-      // console.log(`[LEGACY_IMPORT_SUPPLIER] Normalized: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
+      // apiLogger.info(`[LEGACY_IMPORT_SUPPLIER] Normalized: ${partFull} | norm: ${partNumberNormValue} | line: ${finalLineCode}`);
     }
 
     return {
@@ -212,7 +214,7 @@ function processInterchangeFile(data: any[], projectId: string) {
   // Log column names for debugging
   if (data.length > 0) {
     const columnNames = Object.keys(data[0]);
-    console.log('[INTERCHANGE] Column names found:', columnNames);
+    apiLogger.info('[INTERCHANGE] Column names found:', columnNames);
   }
 
   for (const row of data) {
@@ -332,7 +334,7 @@ function processInterchangeFile(data: any[], projectId: string) {
     });
   }
 
-  console.log(`[INTERCHANGE] Processed ${interchangeMappings.length} interchange mappings from ${data.length} rows`);
+  apiLogger.info(`[INTERCHANGE] Processed ${interchangeMappings.length} interchange mappings from ${data.length} rows`);
   return { interchanges, interchangeMappings };
 }
 

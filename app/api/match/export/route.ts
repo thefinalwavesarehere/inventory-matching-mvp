@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import prisma from '@/app/lib/db/prisma';
 
 /**
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Project ID required' }, { status: 400 });
     }
 
-    console.log(`[EXPORT] Exporting matches for project: ${projectId}, status: ${status}`);
+    apiLogger.info(`[EXPORT] Exporting matches for project: ${projectId}, status: ${status}`);
 
     // Build where clause based on filters
     const whereClause: any = { projectId };
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest) {
       ],
     });
 
-    console.log(`[EXPORT] Found ${matches.length} matches to export`);
+    apiLogger.info(`[EXPORT] Found ${matches.length} matches to export`);
 
     // Get supplier items for matches
     const supplierItemIds = matches
@@ -170,7 +171,7 @@ export async function GET(request: NextRequest) {
       ...rows.map(row => createCsvRow(row)),
     ].join('');
 
-    console.log(`[EXPORT] Generated CSV with ${rows.length} rows`);
+    apiLogger.info(`[EXPORT] Generated CSV with ${rows.length} rows`);
 
     // Return CSV file
     return new NextResponse(csvContent, {
@@ -182,7 +183,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('[EXPORT] Error:', error);
+    apiLogger.error('[EXPORT] Error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to export matches' },
       { status: 500 }

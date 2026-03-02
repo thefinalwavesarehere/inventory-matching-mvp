@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import prisma from '@/app/lib/db/prisma';
 
 export async function GET(request: NextRequest) {
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('[PROGRESS] Error:', error);
+    apiLogger.error('[PROGRESS] Error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to get progress' },
       { status: 500 }
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ progress });
 
   } catch (error: any) {
-    console.error('[PROGRESS] Error:', error);
+    apiLogger.error('[PROGRESS] Error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to update progress' },
       { status: 500 }

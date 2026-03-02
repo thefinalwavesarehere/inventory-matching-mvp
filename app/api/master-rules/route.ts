@@ -14,6 +14,8 @@ import { MasterRuleType, MasterRuleScope } from '@prisma/client';
 
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
+
+export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   return withAuth(req, async (context) => {
     try {

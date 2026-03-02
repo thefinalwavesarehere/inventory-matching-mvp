@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import { getSetupStatus } from '@/app/lib/matching/auto-setup';
 
 /**
@@ -16,7 +17,7 @@ export async function GET() {
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-    console.error('[SETUP_STATUS_API] Error:', error);
+    apiLogger.error('[SETUP_STATUS_API] Error:', error);
     
     return NextResponse.json({
       success: false,

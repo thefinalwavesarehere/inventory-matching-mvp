@@ -13,6 +13,8 @@ import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
 import { withRateLimit } from '@/app/lib/middleware/rate-limit';
 import { CreateProjectSchema, parseBody } from '@/app/lib/schemas';
+
+export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   return withAuth(req, async (context) => {
     try {

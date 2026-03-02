@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import { VendorAction } from '@prisma/client';
 import { prisma } from '@/app/lib/db/prisma';
 
@@ -39,7 +40,7 @@ export async function GET(
       })),
     });
   } catch (error: any) {
-    console.error('[API] Error fetching rules:', error);
+    apiLogger.error('[API] Error fetching rules:', error);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
@@ -104,7 +105,7 @@ export async function POST(
       },
     });
   } catch (error: any) {
-    console.error('[API] Error creating rule:', error);
+    apiLogger.error('[API] Error creating rule:', error);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

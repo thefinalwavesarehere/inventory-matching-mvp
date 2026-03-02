@@ -20,6 +20,8 @@ import { processHumanReview } from './processHumanReview-v1';
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
 import {
+
+export const dynamic = 'force-dynamic';
   isJobCancelled,
   getJobCancellationType,
   markJobCancelled,
@@ -64,7 +66,7 @@ function triggerNextBatch(req: NextRequest, jobId: string): void {
       'x-internal-call': process.env.CRON_SECRET || 'internal'
     }
   }).catch(err => {
-    console.error(`[V9.2-TRIGGER] Failed to trigger next batch:`, err.message);
+    apiLogger.error(`[V9.2-TRIGGER] Failed to trigger next batch:`, err.message);
   });
 }
 
@@ -739,7 +741,7 @@ async function applyCostValidation(
     if (ratio > 5.0) {
       adjustedConfidence = match.confidence * 0.5;
       penaltyCount++;
-      console.log(`[COST-CHECK] UOM Mismatch: Store ${match.storePartNumber} ($${storeCost.toFixed(2)}) vs Supplier ${match.supplierPartNumber} ($${supplierCost.toFixed(2)}) - Ratio: ${ratio.toFixed(2)}x - Confidence: ${match.confidence.toFixed(2)} -> ${adjustedConfidence.toFixed(2)}`);
+      apiLogger.info(`[COST-CHECK] UOM Mismatch: Store ${match.storePartNumber} ($${storeCost.toFixed(2)}) vs Supplier ${match.supplierPartNumber} ($${supplierCost.toFixed(2)}) - Ratio: ${ratio.toFixed(2)}x - Confidence: ${match.confidence.toFixed(2)} -> ${adjustedConfidence.toFixed(2)}`);
     }
     // Boost: Ratio < 1.05 (within 5%) suggests same UOM
     else if (ratio < 1.05) {
@@ -755,7 +757,7 @@ async function applyCostValidation(
     };
   });
   
-  console.log(`[COST-CHECK] Validated ${matches.length} matches: ${penaltyCount} penalties, ${boostCount} boosts, ${noDataCount} no-data`);
+  apiLogger.info(`[COST-CHECK] Validated ${matches.length} matches: ${penaltyCount} penalties, ${boostCount} boosts, ${noDataCount} no-data`);
   
   return validatedMatches;
 }
@@ -782,7 +784,7 @@ async function saveMatches(
   const deduplicatedMatches = Array.from(uniqueMatches.values());
   
   if (deduplicatedMatches.length < matches.length) {
-    console.log(`[V9.7-DEDUP] Removed ${matches.length - deduplicatedMatches.length} duplicate matches`);
+    apiLogger.info(`[V9.7-DEDUP] Removed ${matches.length - deduplicatedMatches.length} duplicate matches`);
   }
   
   for (let i = 0; i < deduplicatedMatches.length; i += 100) {
@@ -815,9 +817,9 @@ async function saveMatches(
       
       savedCount += batch.length;
     } catch (error) {
-      console.error(`[EXACT-MATCH-V4.0] ERROR: Failed to save ${matchType} batch`);
-      console.error(`[EXACT-MATCH-V4.0] Error details:`, error);
-      console.error(`[EXACT-MATCH-V4.0] Sample data:`, JSON.stringify(batch[0], null, 2));
+      apiLogger.error(`[EXACT-MATCH-V4.0] ERROR: Failed to save ${matchType} batch`);
+      apiLogger.error(`[EXACT-MATCH-V4.0] Error details:`, error);
+      apiLogger.error(`[EXACT-MATCH-V4.0] Sample data:`, JSON.stringify(batch[0], null, 2));
       throw error;
     }
   }
@@ -903,7 +905,7 @@ async function processFuzzyChunk(
     savedCount += batch.length;
   }
 
-  console.log(`[FUZZY-JOB] Processed ${storeItems.length} items, found ${fuzzyMatches.length} matches, saved ${savedCount}`);
+  apiLogger.info(`[FUZZY-JOB] Processed ${storeItems.length} items, found ${fuzzyMatches.length} matches, saved ${savedCount}`);
   return savedCount;
 }
 

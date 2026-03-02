@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import { FileTypeForMapping } from '@prisma/client';
 import {
   detectHeadersAndMapping,
@@ -62,7 +63,7 @@ export async function POST(
       resolvedMapping: mappingObject,
     });
   } catch (error: any) {
-    console.error('[DETECT_HEADERS] Error:', error);
+    apiLogger.error('[DETECT_HEADERS] Error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to detect headers' },
       { status: 500 }

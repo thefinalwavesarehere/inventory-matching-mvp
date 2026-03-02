@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,14 +24,14 @@ export async function POST(request: NextRequest) {
     const apiSecret = process.env.API_SECRET;
 
     if (!matchingServiceUrl) {
-      console.error('[PROXY] MATCHING_SERVICE_URL not configured');
+      apiLogger.error('[PROXY] MATCHING_SERVICE_URL not configured');
       return NextResponse.json(
         { error: 'Matching service not configured' },
         { status: 500 }
       );
     }
 
-    console.log('[PROXY] Forwarding request to matching service:', matchingServiceUrl);
+    apiLogger.info('[PROXY] Forwarding request to matching service:', matchingServiceUrl);
 
     // Get the uploaded file from the request
     const formData = await request.formData();
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('[PROXY] File received:', {
+    apiLogger.info('[PROXY] File received:', {
       name: file.name,
       size: file.size,
       type: file.type
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
       headers['X-API-Secret'] = apiSecret;
     }
 
-    console.log('[PROXY] Sending request to Python backend...');
+    apiLogger.info('[PROXY] Sending request to Python backend...');
     
     const response = await fetch(`${matchingServiceUrl}/match-inventory`, {
       method: 'POST',
@@ -69,11 +70,11 @@ export async function POST(request: NextRequest) {
       headers: headers,
     });
 
-    console.log('[PROXY] Python backend response status:', response.status);
+    apiLogger.info('[PROXY] Python backend response status:', response.status);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[PROXY] Python backend error:', errorText);
+      apiLogger.error('[PROXY] Python backend error:', errorText);
       
       try {
         const errorJson = JSON.parse(errorText);
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
 
     // Stream the CSV response back to the client
     const csvData = await response.text();
-    console.log('[PROXY] Received CSV response, size:', csvData.length);
+    apiLogger.info('[PROXY] Received CSV response, size:', csvData.length);
 
     return new NextResponse(csvData, {
       status: 200,
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('[PROXY] Error forwarding request:', error);
+    apiLogger.error('[PROXY] Error forwarding request:', error);
     return NextResponse.json(
       { 
         error: 'Failed to process request',

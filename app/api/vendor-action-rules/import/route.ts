@@ -13,6 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import { parse } from 'csv-parse/sync';
 import prisma from '@/app/lib/db/prisma';
 import { VendorAction } from '@prisma/client';
@@ -147,7 +148,7 @@ export async function POST(request: NextRequest) {
     if (replaceExisting) {
       // Delete all existing rules
       await prisma.vendorActionRule.deleteMany({});
-      console.log('[VENDOR_ACTION_RULES] Deleted all existing rules');
+      apiLogger.info('[VENDOR_ACTION_RULES] Deleted all existing rules');
     }
 
     // Import rules
@@ -156,7 +157,7 @@ export async function POST(request: NextRequest) {
       skipDuplicates: true,
     });
 
-    console.log(`[VENDOR_ACTION_RULES] Imported ${result.count} rules`);
+    apiLogger.info(`[VENDOR_ACTION_RULES] Imported ${result.count} rules`);
 
     return NextResponse.json({
       success: true,
@@ -168,7 +169,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('[VENDOR_ACTION_RULES] Import error:', error);
+    apiLogger.error('[VENDOR_ACTION_RULES] Import error:', error);
     return NextResponse.json(
       { error: `Import failed: ${error.message}` },
       { status: 500 }

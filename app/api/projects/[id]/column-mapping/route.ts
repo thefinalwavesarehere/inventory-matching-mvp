@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import { FileTypeForMapping } from '@prisma/client';
 import { prisma } from '@/app/lib/db/prisma';
 
@@ -84,7 +85,7 @@ export async function POST(
       })),
     });
 
-    console.log(
+    apiLogger.info(
       `[COLUMN_MAPPING] Saved ${createdMappings.count} mappings for project ${projectId}, fileType ${fileType}`
     );
 
@@ -94,7 +95,7 @@ export async function POST(
       mappings,
     });
   } catch (error: any) {
-    console.error('[COLUMN_MAPPING] Error saving mappings:', error);
+    apiLogger.error('[COLUMN_MAPPING] Error saving mappings:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to save column mappings' },
       { status: 500 }
@@ -141,7 +142,7 @@ export async function GET(
       })),
     });
   } catch (error: any) {
-    console.error('[COLUMN_MAPPING] Error fetching mappings:', error);
+    apiLogger.error('[COLUMN_MAPPING] Error fetching mappings:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to fetch column mappings' },
       { status: 500 }

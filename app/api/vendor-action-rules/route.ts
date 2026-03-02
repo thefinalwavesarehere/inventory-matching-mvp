@@ -6,6 +6,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import prisma from '@/app/lib/db/prisma';
 
 /**
@@ -27,7 +28,7 @@ export async function GET() {
       rules,
     });
   } catch (error: any) {
-    console.error('[VENDOR_ACTION_RULES] List error:', error);
+    apiLogger.error('[VENDOR_ACTION_RULES] List error:', error);
     return NextResponse.json(
       { error: `Failed to list rules: ${error.message}` },
       { status: 500 }
@@ -42,7 +43,7 @@ export async function DELETE() {
   try {
     const result = await prisma.vendorActionRule.deleteMany({});
 
-    console.log(`[VENDOR_ACTION_RULES] Deleted ${result.count} rules`);
+    apiLogger.info(`[VENDOR_ACTION_RULES] Deleted ${result.count} rules`);
 
     return NextResponse.json({
       success: true,
@@ -50,7 +51,7 @@ export async function DELETE() {
       message: `Deleted ${result.count} vendor action rule(s)`,
     });
   } catch (error: any) {
-    console.error('[VENDOR_ACTION_RULES] Delete error:', error);
+    apiLogger.error('[VENDOR_ACTION_RULES] Delete error:', error);
     return NextResponse.json(
       { error: `Failed to delete rules: ${error.message}` },
       { status: 500 }

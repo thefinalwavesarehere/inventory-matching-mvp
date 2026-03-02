@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiLogger } from '@/app/lib/structured-logger';
 import prisma from '@/app/lib/db/prisma';
 
 /**
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    console.log(`[PROGRESS-INIT] Found ${completedJobs.length} completed jobs for project ${projectId}`);
+    apiLogger.info(`[PROGRESS-INIT] Found ${completedJobs.length} completed jobs for project ${projectId}`);
 
     // Determine what's been completed based on job types
     const fuzzyJob = completedJobs.find(j => j.config && (j.config as any).jobType === 'fuzzy');
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
       progressData.standardProcessed = fuzzyJob.totalItems || 0;
       progressData.standardTotalItems = fuzzyJob.totalItems || 0;
       progressData.standardLastRun = fuzzyJob.completedAt;
-      console.log(`[PROGRESS-INIT] Fuzzy job completed: ${fuzzyJob.totalItems} items`);
+      apiLogger.info(`[PROGRESS-INIT] Fuzzy job completed: ${fuzzyJob.totalItems} items`);
     }
 
     if (aiJob) {
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
       progressData.aiProcessed = aiJob.totalItems || 0;
       progressData.aiTotalItems = aiJob.totalItems || 0;
       progressData.aiLastRun = aiJob.completedAt;
-      console.log(`[PROGRESS-INIT] AI job completed: ${aiJob.totalItems} items`);
+      apiLogger.info(`[PROGRESS-INIT] AI job completed: ${aiJob.totalItems} items`);
     }
 
     if (webSearchJob) {
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
       progressData.webSearchProcessed = webSearchJob.totalItems || 0;
       progressData.webSearchTotalItems = webSearchJob.totalItems || 0;
       progressData.webSearchLastRun = webSearchJob.completedAt;
-      console.log(`[PROGRESS-INIT] Web search job completed: ${webSearchJob.totalItems} items`);
+      apiLogger.info(`[PROGRESS-INIT] Web search job completed: ${webSearchJob.totalItems} items`);
     }
 
     // Upsert progress record
@@ -80,11 +81,11 @@ export async function POST(request: NextRequest) {
       update: progressData,
     });
 
-    console.log(`[PROGRESS-INIT] Progress initialized for project ${projectId}`);
-    console.log(`[PROGRESS-INIT] Current stage: ${currentStage}`);
-    console.log(`[PROGRESS-INIT] Standard: ${progressData.standardCompleted ? 'completed' : 'pending'}`);
-    console.log(`[PROGRESS-INIT] AI: ${progressData.aiCompleted ? 'completed' : 'pending'}`);
-    console.log(`[PROGRESS-INIT] Web Search: ${progressData.webSearchCompleted ? 'completed' : 'pending'}`);
+    apiLogger.info(`[PROGRESS-INIT] Progress initialized for project ${projectId}`);
+    apiLogger.info(`[PROGRESS-INIT] Current stage: ${currentStage}`);
+    apiLogger.info(`[PROGRESS-INIT] Standard: ${progressData.standardCompleted ? 'completed' : 'pending'}`);
+    apiLogger.info(`[PROGRESS-INIT] AI: ${progressData.aiCompleted ? 'completed' : 'pending'}`);
+    apiLogger.info(`[PROGRESS-INIT] Web Search: ${progressData.webSearchCompleted ? 'completed' : 'pending'}`);
 
     return NextResponse.json({
       success: true,
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('[PROGRESS-INIT] Error:', error);
+    apiLogger.error('[PROGRESS-INIT] Error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to initialize progress' },
       { status: 500 }
