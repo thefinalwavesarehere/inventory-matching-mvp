@@ -8,7 +8,7 @@ import { Client, Receiver } from '@upstash/qstash';
 const token = process.env.qstash_QSTASH_TOKEN;
 
 if (!token) {
-  console.warn('[QSTASH] qstash_QSTASH_TOKEN not set — QStash disabled, falling back to cron');
+  // '[QSTASH] qstash_QSTASH_TOKEN not set — QStash disabled, falling back to cron'
 }
 
 export const qstash: Client | null = token ? new Client({ token }) : null;
@@ -41,9 +41,9 @@ export async function enqueueJobDispatch(jobId: string): Promise<void> {
       retries: 3,
       delay: 0,
     });
-    console.log(`[QSTASH] Enqueued dispatch for job=${jobId}`);
+    // `[QSTASH] Enqueued dispatch for job=${jobId}`
   } catch (err: any) {
     // Non-fatal: cron will pick it up within 60s
-    console.warn(`[QSTASH] Enqueue failed for job=${jobId}: ${err.message}`);
+    // `[QSTASH] Enqueue failed for job=${jobId}: ${err.message}`
   }
 }

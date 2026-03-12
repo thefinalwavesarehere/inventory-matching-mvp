@@ -9,7 +9,7 @@ const url = process.env.v2_storage_KV_REST_API_URL;
 const token = process.env.v2_storage_KV_REST_API_TOKEN;
 
 if (!url || !token) {
-  console.warn('[REDIS] v2_storage_KV_REST_API_URL or v2_storage_KV_REST_API_TOKEN not set — Redis disabled');
+  // '[REDIS] v2_storage_KV_REST_API_URL or v2_storage_KV_REST_API_TOKEN not set — Redis disabled'
 }
 
 export const redis: Redis | null =

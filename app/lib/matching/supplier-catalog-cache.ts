@@ -10,6 +10,7 @@
  */
 import prisma from '@/app/lib/db/prisma';
 import { redis } from '@/app/lib/redis';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 interface SupplierItem {
   id: string;
