@@ -94,18 +94,20 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        // Feedback loop: create POSITIVE_MAP master rule (fire-and-forget)
+      // Feedback loop: create POSITIVE_MAP master rule (fire-and-forget)
+      if (supplierItem?.partNumber) {
         learnFromDecision({
-          action: 'confirm',
           matchCandidateId: matchId,
           storePartNumber: match.storeItem.partNumber,
-          supplierPartNumber: supplierItem?.partNumber,
-          lineCode: supplierItem?.lineCode,
+          supplierPartNumber: supplierItem.partNumber,
+          lineCode: supplierItem.lineCode,
+          decision: 'approve',
           projectId: match.projectId,
           userId: context.user.id,
         }).catch((err: any) =>
           apiLogger.warn('[FEEDBACK] learnFromDecision (confirm) error: ' + err.message)
         );
+      }
 
         return NextResponse.json({ success: true, message: 'Match confirmed' });
 
@@ -152,18 +154,20 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        // Feedback loop: create NEGATIVE_BLOCK master rule (fire-and-forget)
+      // Feedback loop: create NEGATIVE_BLOCK master rule (fire-and-forget)
+      if (supplierItem?.partNumber) {
         learnFromDecision({
-          action: 'reject',
           matchCandidateId: matchId,
           storePartNumber: match.storeItem.partNumber,
-          supplierPartNumber: supplierItem?.partNumber,
-          lineCode: supplierItem?.lineCode,
+          supplierPartNumber: supplierItem.partNumber,
+          lineCode: supplierItem.lineCode,
+          decision: 'reject',
           projectId: match.projectId,
           userId: context.user.id,
         }).catch((err: any) =>
           apiLogger.warn('[FEEDBACK] learnFromDecision (reject) error: ' + err.message)
         );
+      }
 
         return NextResponse.json({ success: true, message: 'Match rejected' });
       }
