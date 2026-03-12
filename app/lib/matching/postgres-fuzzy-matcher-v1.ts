@@ -6,7 +6,7 @@
  * 
  * Strategy:
  * - Fetch 500 unmatched items via Prisma (fast, uses indexes)
- * - Process in micro-batches of 50 items (prevents timeout)
+ * - Process in micro-batches of 150 items (increased from 50 — trigram indexes verified)
  * - Match on fuzzy part number similarity (≥60%)
  * - Validate with description similarity (≥10%)
  * - Return best match per store item (deduplication)
@@ -119,7 +119,7 @@ export async function findPostgresFuzzyMatches(
   
   const allMatches: PostgresFuzzyMatch[] = [];
   
-  for (let i = 0; i < validItems.length; i += 50) {
+  for (let i = 0; i < validItems.length; i += 150) {
     // Check for cancellation before each micro-batch
     if (jobId) {
       const { isJobCancelled } = await import('@/app/lib/job-queue-manager');
@@ -129,10 +129,10 @@ export async function findPostgresFuzzyMatches(
       }
     }
     
-    const batch = validItems.slice(i, i + 50);
+    const batch = validItems.slice(i, i + 150);
     const batchIds = batch.map(item => item.id);
     
-    console.log(`[POSTGRES_FUZZY_V1.0] Processing micro-batch ${Math.floor(i/50) + 1}/${Math.ceil(validItems.length/50)} (${batch.length} items)...`);
+    console.log(`[POSTGRES_FUZZY_V1.0] Processing micro-batch ${Math.floor(i/150) + 1}/${Math.ceil(validItems.length/150)} (${batch.length} items)...`);
     
     const sql = `
       WITH target_items AS (
@@ -213,10 +213,10 @@ export async function findPostgresFuzzyMatches(
       });
       
       allMatches.push(...mappedMatches);
-      console.log(`[POSTGRES_FUZZY_V1.0] Micro-batch ${Math.floor(i/50) + 1}: Found ${mappedMatches.length} matches in ${queryDuration}ms`);
+      console.log(`[POSTGRES_FUZZY_V1.0] Micro-batch ${Math.floor(i/150) + 1}: Found ${mappedMatches.length} matches in ${queryDuration}ms`);
       
     } catch (error: any) {
-      console.error(`[POSTGRES_FUZZY_V1.0] ❌ MICRO-BATCH ${Math.floor(i/50) + 1} FAILED`);
+      console.error(`[POSTGRES_FUZZY_V1.0] ❌ MICRO-BATCH ${Math.floor(i/150) + 1} FAILED`);
       console.error(`[POSTGRES_FUZZY_V1.0] Error name: ${error?.name || 'Unknown'}`);
       console.error(`[POSTGRES_FUZZY_V1.0] Error message: ${error?.message || 'No message'}`);
       console.error(`[POSTGRES_FUZZY_V1.0] Error code: ${error?.code || 'No code'}`);

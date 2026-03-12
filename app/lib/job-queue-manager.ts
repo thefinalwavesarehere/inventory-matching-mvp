@@ -12,6 +12,7 @@
 
 import { prisma } from './db/prisma';
 import { MatchingJob } from '@prisma/client';
+import { enqueueJobDispatch } from './qstash';
 
 // Concurrency limits
 const LIMITS = {
@@ -220,6 +221,9 @@ export async function tryStartNextQueuedJob(): Promise<MatchingJob | null> {
           startedAt: new Date(),
         },
       });
+
+      // Immediately dispatch via QStash (eliminates up-to-60s cron polling delay)
+      await enqueueJobDispatch(startedJob.id);
 
       return startedJob;
     }
