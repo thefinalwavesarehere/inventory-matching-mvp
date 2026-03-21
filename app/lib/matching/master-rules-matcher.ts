@@ -1,188 +1,200 @@
 /**
- * Master Rules Matcher - Stage 0
- * 
+ * Master Rules Matcher — Stage 0
+ *
  * Applies learned master rules from manual review decisions.
- * This runs BEFORE all other matching stages to ensure highest precedence.
- * 
+ * Runs BEFORE all other matching stages to ensure highest precedence.
+ *
  * Rule Types:
- * - POSITIVE_MAP: "Always match these two part numbers" → Creates CONFIRMED matches
- * - NEGATIVE_BLOCK: "Never match these two part numbers" → Prevents future matches
+ *   POSITIVE_MAP   — "Always match these two part numbers" → Creates CONFIRMED matches
+ *   NEGATIVE_BLOCK — "Never match these two part numbers" → Deletes any existing matches
+ *
+ * Performance notes (N+1 elimination):
+ *   - All store/supplier lookups are batched per rule type using IN clauses.
+ *   - Existing-match detection uses a single findMany + Set lookup instead of
+ *     per-pair findFirst calls.
+ *   - createMany is used for bulk inserts.
+ *   - Rule stats are updated in a single updateMany per rule at the end.
  */
 
 import { prisma } from '@/app/lib/db/prisma';
 import { MatchMethod, MatchStatus } from '@prisma/client';
+import { apiLogger } from '@/app/lib/structured-logger';
 
-/**
- * Apply master rules to a project
- * 
- * @param projectId - Project ID
- * @returns Number of matches created
- */
 export async function applyMasterRules(projectId: string): Promise<number> {
-  console.log('[MASTER-RULES-MATCHER] ========== STAGE 0: MASTER RULES ==========');
-  console.log(`[MASTER-RULES-MATCHER] Applying learned rules to project ${projectId}`);
-  
-  // Fetch all enabled master rules (global + project-specific)
+  apiLogger.info({ projectId }, '[MASTER-RULES] Stage 0 start');
+
+  // -------------------------------------------------------------------------
+  // 1. Fetch all enabled rules in one query
+  // -------------------------------------------------------------------------
   const rules = await prisma.masterRule.findMany({
     where: {
       enabled: true,
       OR: [
         { scope: 'GLOBAL' },
-        { scope: 'PROJECT_SPECIFIC', projectId }
-      ]
-    }
+        { scope: 'PROJECT_SPECIFIC', projectId },
+      ],
+    },
   });
-  
-  console.log(`[MASTER-RULES-MATCHER] Found ${rules.length} enabled rules`);
-  
-  if (rules.length === 0) {
-    console.log('[MASTER-RULES-MATCHER] No rules to apply');
-    return 0;
-  }
-  
-  // Separate positive and negative rules
+
+  apiLogger.info({ count: rules.length }, '[MASTER-RULES] Rules loaded');
+  if (rules.length === 0) return 0;
+
   const positiveRules = rules.filter(r => r.ruleType === 'POSITIVE_MAP');
   const negativeRules = rules.filter(r => r.ruleType === 'NEGATIVE_BLOCK');
-  
-  console.log(`[MASTER-RULES-MATCHER] ${positiveRules.length} POSITIVE_MAP rules, ${negativeRules.length} NEGATIVE_BLOCK rules`);
-  
+
+  // -------------------------------------------------------------------------
+  // 2. POSITIVE_MAP — bulk lookup then createMany
+  // -------------------------------------------------------------------------
   let matchesCreated = 0;
-  let matchesBlocked = 0;
-  
-  // Apply POSITIVE_MAP rules (create matches)
-  for (const rule of positiveRules) {
-    try {
-      // Find store items matching the rule
-      const storeItems = await prisma.storeItem.findMany({
+
+  if (positiveRules.length > 0) {
+    const positiveStorePNs  = [...new Set(positiveRules.map(r => r.storePartNumber))];
+    const positiveSupplierPNs = [...new Set(positiveRules.map(r => r.supplierPartNumber).filter(Boolean) as string[])];
+
+    // Batch-fetch all relevant store and supplier items
+    const [storeItems, supplierItems] = await Promise.all([
+      prisma.storeItem.findMany({
+        where: { projectId, partNumber: { in: positiveStorePNs } },
+        select: { id: true, partNumber: true },
+      }),
+      prisma.supplierItem.findMany({
+        where: { projectId, partNumber: { in: positiveSupplierPNs } },
+        select: { id: true, partNumber: true },
+      }),
+    ]);
+
+    // Build lookup maps
+    const storeByPN   = new Map<string, typeof storeItems[0][]>();
+    const supplierByPN = new Map<string, typeof supplierItems[0][]>();
+
+    for (const s of storeItems) {
+      if (!storeByPN.has(s.partNumber)) storeByPN.set(s.partNumber, []);
+      storeByPN.get(s.partNumber)!.push(s);
+    }
+    for (const s of supplierItems) {
+      if (!supplierByPN.has(s.partNumber)) supplierByPN.set(s.partNumber, []);
+      supplierByPN.get(s.partNumber)!.push(s);
+    }
+
+    // Collect all (storeItemId, supplierItemId) pairs we want to create
+    type MatchPair = { storeItemId: string; supplierItemId: string; ruleId: string; confidence: number; projectId: string };
+    const candidatePairs: MatchPair[] = [];
+
+    for (const rule of positiveRules) {
+      const stores   = storeByPN.get(rule.storePartNumber) ?? [];
+      const suppliers = supplierByPN.get(rule.supplierPartNumber ?? '') ?? [];
+      for (const store of stores) {
+        for (const supplier of suppliers) {
+          candidatePairs.push({
+            storeItemId: store.id,
+            supplierItemId: supplier.id,
+            ruleId: rule.id,
+            confidence: rule.confidence,
+            projectId,
+          });
+        }
+      }
+    }
+
+    if (candidatePairs.length > 0) {
+      // Fetch all existing matches for these pairs in one query
+      const storeIds   = [...new Set(candidatePairs.map(p => p.storeItemId))];
+      const supplierIds = [...new Set(candidatePairs.map(p => p.supplierItemId))];
+
+      const existingMatches = await prisma.matchCandidate.findMany({
         where: {
           projectId,
-          partNumber: rule.storePartNumber,
-        }
+          storeItemId: { in: storeIds },
+          targetId: { in: supplierIds },
+          targetType: 'SUPPLIER',
+        },
+        select: { storeItemId: true, targetId: true },
       });
-      
-      if (storeItems.length === 0) {
-        continue; // No matching store items in this project
+
+      const existingSet = new Set(existingMatches.map(m => `${m.storeItemId}:${m.targetId}`));
+
+      const newPairs = candidatePairs.filter(
+        p => !existingSet.has(`${p.storeItemId}:${p.supplierItemId}`)
+      );
+
+      if (newPairs.length > 0) {
+        // Bulk insert
+        await prisma.matchCandidate.createMany({
+          data: newPairs.map(p => ({
+            projectId: p.projectId,
+            storeItemId: p.storeItemId,
+            targetType: 'SUPPLIER' as const,
+            targetId: p.supplierItemId,
+            method: MatchMethod.MASTER_RULE,
+            confidence: p.confidence,
+            matchStage: 0,
+            status: MatchStatus.CONFIRMED,
+            features: {
+              ruleId: p.ruleId,
+              ruleType: 'POSITIVE_MAP',
+              autoConfirmed: true,
+            },
+          })),
+          skipDuplicates: true,
+        });
+        matchesCreated = newPairs.length;
       }
-      
-      // Find supplier items matching the rule
-      const supplierItems = await prisma.supplierItem.findMany({
-        where: {
-          projectId,
-          partNumber: rule.supplierPartNumber!,
-        }
-      });
-      
-      if (supplierItems.length === 0) {
-        continue; // No matching supplier items in this project
+
+      // Update rule stats in bulk (one update per rule, not per pair)
+      const ruleHitCounts = new Map<string, number>();
+      for (const p of newPairs) {
+        ruleHitCounts.set(p.ruleId, (ruleHitCounts.get(p.ruleId) ?? 0) + 1);
       }
-      
-      // Create matches for all combinations
-      for (const storeItem of storeItems) {
-        for (const supplierItem of supplierItems) {
-          // Check if match already exists at any stage
-          const existingMatch = await prisma.matchCandidate.findFirst({
-            where: {
-              projectId,
-              storeItemId: storeItem.id,
-              targetId: supplierItem.id,
-              targetType: 'SUPPLIER',
-            }
-          });
-          
-          if (existingMatch) {
-            console.log(`[MASTER-RULES-MATCHER] Match already exists for ${storeItem.partNumber} → ${supplierItem.partNumber}`);
-            continue;
-          }
-          
-          // Create new match with CONFIRMED status (auto-approve master rules)
-          await prisma.matchCandidate.create({
-            data: {
-              projectId,
-              storeItemId: storeItem.id,
-              targetType: 'SUPPLIER',
-              targetId: supplierItem.id,
-              method: MatchMethod.MASTER_RULE,
-              confidence: rule.confidence,
-              matchStage: 0, // Stage 0 = Master Rules
-              status: MatchStatus.CONFIRMED, // Auto-confirm learned rules
-              features: {
-                ruleId: rule.id,
-                ruleType: rule.ruleType,
-                learnedFrom: rule.projectId,
-                autoConfirmed: true,
-              }
-            }
-          });
-          
-          matchesCreated++;
-          
-          // Update rule usage statistics
-          await prisma.masterRule.update({
-            where: { id: rule.id },
-            data: {
-              appliedCount: { increment: 1 },
-              lastAppliedAt: new Date(),
-            }
-          });
-          
-          console.log(`[MASTER-RULES-MATCHER] ✅ Created match: ${storeItem.partNumber} → ${supplierItem.partNumber} (Rule: ${rule.id})`);
-        }
-      }
-    } catch (error) {
-      console.error(`[MASTER-RULES-MATCHER] Error applying rule ${rule.id}:`, error);
+
+      await Promise.all(
+        [...ruleHitCounts.entries()].map(([ruleId, count]) =>
+          prisma.masterRule.update({
+            where: { id: ruleId },
+            data: { appliedCount: { increment: count }, lastAppliedAt: new Date() },
+          })
+        )
+      );
     }
   }
-  
-  // Apply NEGATIVE_BLOCK rules (prevent matches)
-  for (const rule of negativeRules) {
-    try {
-       // Delete any existing matches that violate this rule
-      // First, find the supplier item ID
-      const supplierItem = await prisma.supplierItem.findFirst({
-        where: {
-          projectId,
-          partNumber: rule.supplierPartNumber!
-        },
-        select: { id: true }
-      });
-      
-      if (!supplierItem) {
-        console.log(`[MASTER-RULES-MATCHER] ⚠️ Supplier item not found for NEGATIVE_BLOCK: ${rule.supplierPartNumber}`);
-        continue;
-      }
-      
+
+  // -------------------------------------------------------------------------
+  // 3. NEGATIVE_BLOCK — batch delete
+  // -------------------------------------------------------------------------
+  let matchesBlocked = 0;
+
+  if (negativeRules.length > 0) {
+    const negativeSupplierPNs = [...new Set(negativeRules.map(r => r.supplierPartNumber).filter(Boolean) as string[])];
+
+    const blockSupplierItems = await prisma.supplierItem.findMany({
+      where: { projectId, partNumber: { in: negativeSupplierPNs } },
+      select: { id: true, partNumber: true },
+    });
+
+    const supplierIdByPN = new Map(blockSupplierItems.map(s => [s.partNumber, s.id]));
+
+    for (const rule of negativeRules) {
+      const supplierId = supplierIdByPN.get(rule.supplierPartNumber ?? '');
+      if (!supplierId) continue;
+
       const deleted = await prisma.matchCandidate.deleteMany({
         where: {
           projectId,
-          storeItem: {
-            partNumber: rule.storePartNumber
-          },
+          storeItem: { partNumber: rule.storePartNumber },
           targetType: 'SUPPLIER',
-          targetId: supplierItem.id
-        }
+          targetId: supplierId,
+        },
       });
-      
+
       if (deleted.count > 0) {
         matchesBlocked += deleted.count;
-        console.log(`[MASTER-RULES-MATCHER] 🚫 Blocked ${deleted.count} matches: ${rule.storePartNumber} ↛ ${rule.supplierPartNumber}`);
-        
-        // Update rule usage statistics
         await prisma.masterRule.update({
           where: { id: rule.id },
-          data: {
-            appliedCount: { increment: deleted.count },
-            lastAppliedAt: new Date(),
-          }
+          data: { appliedCount: { increment: deleted.count }, lastAppliedAt: new Date() },
         });
       }
-    } catch (error) {
-      console.error(`[MASTER-RULES-MATCHER] Error applying block rule ${rule.id}:`, error);
     }
   }
-  
-  console.log(`[MASTER-RULES-MATCHER] ========== STAGE 0 COMPLETE ==========`);
-  console.log(`[MASTER-RULES-MATCHER] Created: ${matchesCreated} matches`);
-  console.log(`[MASTER-RULES-MATCHER] Blocked: ${matchesBlocked} matches`);
-  
+
+  apiLogger.info({ matchesCreated, matchesBlocked }, '[MASTER-RULES] Stage 0 complete');
   return matchesCreated;
 }

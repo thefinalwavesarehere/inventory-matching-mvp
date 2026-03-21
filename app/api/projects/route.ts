@@ -20,7 +20,13 @@ export async function GET(req: NextRequest) {
     try {
     // Require authentication
 
+    // Tenant isolation: ADMINs see all projects; others see only their own
+    const ownerFilter = context.user.role === 'ADMIN'
+      ? {}
+      : { createdById: context.user.id };
+
     const projects = await prisma.project.findMany({
+      where: ownerFilter,
       orderBy: { createdAt: 'desc' },
       include: {
         _count: {
@@ -121,6 +127,7 @@ export async function POST(req: NextRequest) {
       data: {
         name,
         description: description ?? null,
+        createdById: context.user.id,  // Stamp owner for tenant isolation
       },
     });
 

@@ -3,58 +3,86 @@
  * GET    /api/projects/[id] - Get project details
  * PUT    /api/projects/[id] - Update project
  * DELETE /api/projects/[id] - Delete project
+ *
+ * Security: All mutations verify that the requesting user owns the project
+ * (createdById) or is an ADMIN. This prevents IDOR attacks.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-// Migrated to Supabase auth
 import prisma from '@/app/lib/db/prisma';
-
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
 import { UpdateProjectSchema, parseBody } from '@/app/lib/schemas';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Verify the authenticated user has access to the given project.
+ * ADMINs can access any project; others must own it (createdById match).
+ */
+async function assertProjectAccess(
+  projectId: string,
+  userId: string,
+  role: string
+): Promise<{ id: string; createdById: string | null } | null> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { id: true, createdById: true },
+  });
+
+  if (!project) return null;
+
+  // ADMINs can access any project
+  if (role === 'ADMIN') return project;
+
+  // Non-admins may only access projects they created
+  if (project.createdById !== userId) return null;
+
+  return project;
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   return withAuth(req, async (context) => {
     try {
-    // Require authentication
+      // Tenant isolation: verify access
+      const accessible = await assertProjectAccess(
+        params.id,
+        context.user.id,
+        context.user.role
+      );
 
-    const project = await prisma.project.findUnique({
-      where: { id: params.id },
-      include: {
-        _count: {
-          select: {
-            storeItems: true,
-            supplierItems: true,
-            interchanges: true,
-            matchCandidates: true,
+      if (!accessible) {
+        return NextResponse.json(
+          { success: false, error: 'Project not found' },
+          { status: 404 }
+        );
+      }
+
+      const project = await prisma.project.findUnique({
+        where: { id: params.id },
+        include: {
+          _count: {
+            select: {
+              storeItems: true,
+              supplierItems: true,
+              interchanges: true,
+              matchCandidates: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!project) {
+      return NextResponse.json({ success: true, project });
+    } catch (error: any) {
+      apiLogger.error({ error: error.message }, 'GET /api/projects/[id] error');
       return NextResponse.json(
-        { success: false, error: 'Project not found' },
-        { status: 404 }
+        { success: false, error: error.message },
+        { status: 500 }
       );
     }
-
-    return NextResponse.json({
-      success: true,
-      project,
-    });
-  
-  } catch (error: any) {
-    apiLogger.error({ error: error.message }, 'Handler error');
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
-  }
   });
 }
 
@@ -64,34 +92,42 @@ export async function PUT(
 ) {
   return withAuth(req, async (context) => {
     try {
-    // Require authentication
+      // Tenant isolation: only owner or ADMIN may update
+      const accessible = await assertProjectAccess(
+        params.id,
+        context.user.id,
+        context.user.role
+      );
 
-    const body = await req.json();
-    const parsed = parseBody(UpdateProjectSchema, body);
-    if (!parsed.success) return parsed.response;
-    const { name, description } = parsed.data;
+      if (!accessible) {
+        return NextResponse.json(
+          { success: false, error: 'Project not found' },
+          { status: 404 }
+        );
+      }
 
-    const project = await prisma.project.update({
-      where: { id: params.id },
-      data: {
-        name: name || undefined,
-        description: description !== undefined ? description : undefined,
-        updatedAt: new Date(),
-      },
-    });
+      const body = await req.json();
+      const parsed = parseBody(UpdateProjectSchema, body);
+      if (!parsed.success) return parsed.response;
+      const { name, description } = parsed.data;
 
-    return NextResponse.json({
-      success: true,
-      project,
-    });
-  
-  } catch (error: any) {
-    apiLogger.error({ error: error.message }, 'Handler error');
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
-  }
+      const project = await prisma.project.update({
+        where: { id: params.id },
+        data: {
+          name: name || undefined,
+          description: description !== undefined ? description : undefined,
+          updatedAt: new Date(),
+        },
+      });
+
+      return NextResponse.json({ success: true, project });
+    } catch (error: any) {
+      apiLogger.error({ error: error.message }, 'PUT /api/projects/[id] error');
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
   });
 }
 
@@ -101,28 +137,36 @@ export async function DELETE(
 ) {
   return withAuth(req, async (context) => {
     try {
-    // Require authentication
+      // Tenant isolation: only owner or ADMIN may delete
+      const accessible = await assertProjectAccess(
+        params.id,
+        context.user.id,
+        context.user.role
+      );
 
-    // Delete all related data first (cascade)
-    await prisma.$transaction([
-      prisma.matchCandidate.deleteMany({ where: { projectId: params.id } }),
-      prisma.interchange.deleteMany({ where: { projectId: params.id } }),
-      prisma.supplierItem.deleteMany({ where: { projectId: params.id } }),
-      prisma.storeItem.deleteMany({ where: { projectId: params.id } }),
-      prisma.project.delete({ where: { id: params.id } }),
-    ]);
+      if (!accessible) {
+        return NextResponse.json(
+          { success: false, error: 'Project not found' },
+          { status: 404 }
+        );
+      }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Project deleted successfully',
-    });
-  
-  } catch (error: any) {
-    apiLogger.error({ error: error.message }, 'Handler error');
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
-  }
+      // Delete all related data first (cascade)
+      await prisma.$transaction([
+        prisma.matchCandidate.deleteMany({ where: { projectId: params.id } }),
+        prisma.interchange.deleteMany({ where: { projectId: params.id } }),
+        prisma.supplierItem.deleteMany({ where: { projectId: params.id } }),
+        prisma.storeItem.deleteMany({ where: { projectId: params.id } }),
+        prisma.project.delete({ where: { id: params.id } }),
+      ]);
+
+      return NextResponse.json({ success: true, message: 'Project deleted successfully' });
+    } catch (error: any) {
+      apiLogger.error({ error: error.message }, 'DELETE /api/projects/[id] error');
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
   });
 }

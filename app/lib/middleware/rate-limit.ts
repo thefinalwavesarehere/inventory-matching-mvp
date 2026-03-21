@@ -1,20 +1,26 @@
 /**
  * Rate Limiting Middleware
- * 
- * Protects API endpoints from abuse using token bucket algorithm.
- * Implements sliding window rate limiting with Redis-like in-memory store.
+ *
+ * Sliding-window rate limiting backed by Upstash Redis (HTTP transport,
+ * serverless-safe). Falls back to an in-process Map when Redis is unavailable
+ * (local dev only — the fallback is NOT distributed and must not be relied on
+ * in production).
+ *
+ * Redis key schema:  rate_limit:<preset>:<clientKey>
+ * TTL is set to the window duration so keys auto-expire.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { redis, REDIS_AVAILABLE } from '@/app/lib/redis';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 interface RateLimitConfig {
-  /** Maximum number of requests allowed in the window */
   maxRequests: number;
-  /** Time window in milliseconds */
   windowMs: number;
-  /** Custom key generator (defaults to IP address) */
   keyGenerator?: (request: NextRequest) => string;
-  /** Custom error message */
   message?: string;
 }
 
@@ -23,70 +29,105 @@ interface RateLimitEntry {
   resetTime: number;
 }
 
-// In-memory store (replace with Redis in production)
-const rateLimitStore = new Map<string, RateLimitEntry>();
+// ---------------------------------------------------------------------------
+// In-memory fallback (dev only — not distributed)
+// ---------------------------------------------------------------------------
 
-// Cleanup expired entries every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of rateLimitStore.entries()) {
-    if (entry.resetTime < now) {
-      rateLimitStore.delete(key);
+const localStore = new Map<string, RateLimitEntry>();
+
+// Prune expired entries every 5 minutes
+if (typeof setInterval !== 'undefined') {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of localStore.entries()) {
+      if (entry.resetTime < now) localStore.delete(key);
     }
-  }
-}, 5 * 60 * 1000);
+  }, 5 * 60 * 1000);
+}
 
-/**
- * Default key generator - uses IP address
- */
+// ---------------------------------------------------------------------------
+// Key helpers
+// ---------------------------------------------------------------------------
+
 function defaultKeyGenerator(request: NextRequest): string {
-  // Try to get real IP from headers (for proxies/load balancers)
   const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0].trim();
   const realIp = request.headers.get('x-real-ip');
-  
-  if (forwarded) {
-    return forwarded.split(',')[0].trim();
-  }
-  
-  if (realIp) {
-    return realIp;
-  }
-
-  // Fallback to connection IP
+  if (realIp) return realIp;
   return request.ip || 'unknown';
 }
 
-/**
- * Rate limit middleware using sliding window algorithm
- */
+// ---------------------------------------------------------------------------
+// Redis-backed sliding window
+// ---------------------------------------------------------------------------
+
+async function checkRateLimitRedis(
+  key: string,
+  config: RateLimitConfig
+): Promise<{ allowed: boolean; count: number; resetTime: number }> {
+  const windowSec = Math.ceil(config.windowMs / 1000);
+  const now = Date.now();
+  const resetTime = now + config.windowMs;
+
+  // Atomic increment + set TTL (INCR then EXPIRE is safe for rate limiting)
+  const count = await redis!.incr(key);
+  if (count === 1) {
+    // First request in this window — set the TTL
+    await redis!.expire(key, windowSec);
+  }
+
+  return { allowed: count <= config.maxRequests, count, resetTime };
+}
+
+// ---------------------------------------------------------------------------
+// In-memory fallback
+// ---------------------------------------------------------------------------
+
+function checkRateLimitLocal(
+  key: string,
+  config: RateLimitConfig
+): { allowed: boolean; count: number; resetTime: number } {
+  const now = Date.now();
+  let entry = localStore.get(key);
+
+  if (!entry || entry.resetTime < now) {
+    entry = { count: 0, resetTime: now + config.windowMs };
+    localStore.set(key, entry);
+  }
+
+  entry.count++;
+  return { allowed: entry.count <= config.maxRequests, count: entry.count, resetTime: entry.resetTime };
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 export async function rateLimit(
   request: NextRequest,
   config: RateLimitConfig,
   handler: () => Promise<NextResponse>
 ): Promise<NextResponse> {
   const keyGenerator = config.keyGenerator || defaultKeyGenerator;
-  const key = `rate_limit:${keyGenerator(request)}`;
-  const now = Date.now();
+  const clientKey = keyGenerator(request);
+  const storeKey = `rate_limit:${clientKey}`;
 
-  // Get or create rate limit entry
-  let entry = rateLimitStore.get(key);
+  let allowed: boolean;
+  let count: number;
+  let resetTime: number;
 
-  if (!entry || entry.resetTime < now) {
-    // Create new window
-    entry = {
-      count: 0,
-      resetTime: now + config.windowMs,
-    };
-    rateLimitStore.set(key, entry);
+  if (REDIS_AVAILABLE) {
+    ({ allowed, count, resetTime } = await checkRateLimitRedis(storeKey, config));
+  } else {
+    // Dev fallback — warn once
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[RATE_LIMIT] Redis unavailable in production — rate limiting is non-functional!');
+    }
+    ({ allowed, count, resetTime } = checkRateLimitLocal(storeKey, config));
   }
 
-  // Increment request count
-  entry.count++;
-
-  // Check if limit exceeded
-  if (entry.count > config.maxRequests) {
-    const retryAfter = Math.ceil((entry.resetTime - now) / 1000);
-    
+  if (!allowed) {
+    const retryAfter = Math.ceil((resetTime - Date.now()) / 1000);
     return NextResponse.json(
       {
         error: config.message || 'Too many requests. Please try again later.',
@@ -99,63 +140,48 @@ export async function rateLimit(
           'Retry-After': retryAfter.toString(),
           'X-RateLimit-Limit': config.maxRequests.toString(),
           'X-RateLimit-Remaining': '0',
-          'X-RateLimit-Reset': entry.resetTime.toString(),
+          'X-RateLimit-Reset': resetTime.toString(),
         },
       }
     );
   }
 
-  // Execute handler with rate limit headers
   const response = await handler();
-
-  // Add rate limit headers to response
   response.headers.set('X-RateLimit-Limit', config.maxRequests.toString());
-  response.headers.set('X-RateLimit-Remaining', (config.maxRequests - entry.count).toString());
-  response.headers.set('X-RateLimit-Reset', entry.resetTime.toString());
-
+  response.headers.set('X-RateLimit-Remaining', Math.max(0, config.maxRequests - count).toString());
+  response.headers.set('X-RateLimit-Reset', resetTime.toString());
   return response;
 }
 
-/**
- * Preset rate limit configurations
- */
+// ---------------------------------------------------------------------------
+// Presets
+// ---------------------------------------------------------------------------
+
 export const rateLimitPresets = {
-  /** Strict limits for authentication endpoints */
   auth: {
     maxRequests: 5,
-    windowMs: 15 * 60 * 1000, // 15 minutes
+    windowMs: 15 * 60 * 1000,
     message: 'Too many authentication attempts. Please try again in 15 minutes.',
   },
-
-  /** Standard limits for API endpoints */
   api: {
     maxRequests: 100,
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
   },
-
-  /** Generous limits for read-only operations */
   readOnly: {
     maxRequests: 300,
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
   },
-
-  /** Strict limits for expensive operations (AI matching, web search) */
   expensive: {
     maxRequests: 10,
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
     message: 'Too many requests for this resource-intensive operation.',
   },
-
-  /** Very strict limits for admin operations */
   admin: {
     maxRequests: 50,
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
   },
-};
+} satisfies Record<string, RateLimitConfig>;
 
-/**
- * Convenience wrapper for common rate limiting patterns
- */
 export async function withRateLimit(
   request: NextRequest,
   preset: keyof typeof rateLimitPresets,

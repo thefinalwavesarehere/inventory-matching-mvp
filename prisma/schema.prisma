@@ -42,6 +42,7 @@ model Session {
 enum Role {
   ADMIN
   MANAGER
+  EDITOR   // Added to align with UserRole enum used by auth middleware
   REVIEWER
   UPLOADER
 }
@@ -73,6 +74,10 @@ model Project {
   enablePunctuationEquivalence Boolean @default(true)
   fuzzyHardRejectEnabled       Boolean @default(true)
 
+  // Ownership — used for tenant isolation (IDOR protection)
+  createdById  String?  @map("created_by_id")
+  createdBy    UserProfile? @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
   // P4: Budget tracking
   budgetLimit  Decimal? @db.Decimal(10, 2) // Maximum spend allowed (null = unlimited)
   currentSpend Decimal  @default(0) @db.Decimal(10, 2) // Current spend
@@ -80,6 +85,7 @@ model Project {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  @@index([createdById])
   @@map("projects")
 }
 
@@ -726,6 +732,7 @@ model UserProfile {
   activityLogs        ActivityLog[]
   auditLogs           AuditLog[]
   matchDecisions      MatchCandidate[] @relation("DecidedBy")
+  createdProjects     Project[]        @relation("ProjectCreatedBy")
   
   @@map("user_profiles")
   @@index([email])

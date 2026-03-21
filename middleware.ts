@@ -12,6 +12,21 @@ export async function middleware(req: NextRequest) {
   res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  // CSP: restrict sources; adjust script/style hashes as the app evolves
+  res.headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // unsafe-* needed for Next.js HMR; tighten in production
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data:",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.openai.com https://*.upstash.io",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; ')
+  );
 
   const supabase = createMiddlewareClient({ req, res });
 
@@ -27,13 +42,14 @@ export async function middleware(req: NextRequest) {
     '/auth/reset-password',
   ];
 
-  // Public API routes
+  // Public API routes (no session required)
+  // NOTE: /api/jobs and /api/progress are intentionally NOT listed here;
+  // they are protected by withAuth at the route handler level.
   const publicApiRoutes = [
     '/api/auth/create-profile',
     '/api/auth/callback',
     '/api/cron',
-    '/api/jobs',
-    '/api/progress',
+    '/api/health',
   ];
 
   // Static assets

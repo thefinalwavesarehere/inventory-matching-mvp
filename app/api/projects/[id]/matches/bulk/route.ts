@@ -53,12 +53,29 @@ export async function POST(
       );
     }
 
-    // Validate project exists
+    // Cap batch size to prevent OOM on large payloads
+    const MAX_BATCH = 500;
+    if (matchIds.length > MAX_BATCH) {
+      return NextResponse.json(
+        { error: `Batch size exceeds maximum of ${MAX_BATCH}. Split into smaller batches.` },
+        { status: 400 }
+      );
+    }
+
+    // Validate project exists + tenant isolation
     const project = await prisma.project.findUnique({
       where: { id: projectId },
+      select: { id: true, createdById: true },
     });
 
     if (!project) {
+      return NextResponse.json(
+        { error: 'Project not found' },
+        { status: 404 }
+      );
+    }
+
+    if (context.user.role !== 'ADMIN' && project.createdById !== context.user.id) {
       return NextResponse.json(
         { error: 'Project not found' },
         { status: 404 }
@@ -115,6 +132,7 @@ async function handleUpdateStatus(
       id: { in: matchIds },
       projectId,
     },
+    take: 500, // Guard against oversized payloads that bypass the API cap
     include: {
       storeItem: {
         select: {
