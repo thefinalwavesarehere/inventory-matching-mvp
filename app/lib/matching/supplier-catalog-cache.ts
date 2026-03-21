@@ -62,6 +62,8 @@ export async function getSupplierCatalog(projectId: string): Promise<SupplierIte
   const suppliers = await prisma.supplierItem.findMany({
     where: { projectId },
     select: { id: true, partNumber: true, lineCode: true, description: true, currentCost: true },
+    orderBy: { partNumber: 'asc' },
+    take: 500_000, // Safety cap — catalogs >500k items should be streamed, not cached
   });
 
   apiLogger.info(`[CACHE] Fetched ${suppliers.length} suppliers from DB`);

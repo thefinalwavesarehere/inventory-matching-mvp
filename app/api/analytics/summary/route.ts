@@ -29,56 +29,57 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Project not found' }, { status: 404 });
       }
 
-      // Get total store items
-      const totalStoreItems = await prisma.storeItem.count({ where: { projectId } });
+      // Collapse 5 serial queries into 2 parallel raw SQL queries
+      // Q1: store item count + match candidate aggregates in one pass
+      // Q2: per-method breakdown for active matches
+      const [aggregates, methodRows] = await Promise.all([
+        prisma.$queryRaw<Array<{
+          total_store: bigint;
+          unique_matched: bigint;
+          total_matches: bigint;
+          cnt_pending: bigint;
+          cnt_confirmed: bigint;
+          cnt_rejected: bigint;
+        }>>`
+          SELECT
+            (SELECT COUNT(*) FROM store_items WHERE "projectId" = ${projectId})           AS total_store,
+            COUNT(DISTINCT CASE WHEN mc.status IN ('PENDING','CONFIRMED') THEN mc."storeItemId" END) AS unique_matched,
+            COUNT(CASE WHEN mc.status IN ('PENDING','CONFIRMED') THEN 1 END)              AS total_matches,
+            COUNT(CASE WHEN mc.status = 'PENDING'   THEN 1 END)                          AS cnt_pending,
+            COUNT(CASE WHEN mc.status = 'CONFIRMED' THEN 1 END)                          AS cnt_confirmed,
+            COUNT(CASE WHEN mc.status = 'REJECTED'  THEN 1 END)                          AS cnt_rejected
+          FROM match_candidates mc
+          WHERE mc."projectId" = ${projectId}
+        `,
+        prisma.$queryRaw<Array<{ method: string; cnt: bigint }>>`
+          SELECT method, COUNT(*) AS cnt
+          FROM match_candidates
+          WHERE "projectId" = ${projectId}
+            AND status IN ('PENDING', 'CONFIRMED')
+          GROUP BY method
+        `,
+      ]);
 
-      // Get unique matched store items
-      const matchedStoreItems = await prisma.matchCandidate.findMany({
-        where: {
-          projectId,
-          status: { in: ['PENDING', 'CONFIRMED'] },
-        },
-        select: { storeItemId: true },
-        distinct: ['storeItemId'],
-      });
-
-      const uniqueMatchedCount = matchedStoreItems.length;
-
-      const totalMatches = await prisma.matchCandidate.count({
-        where: { projectId, status: { in: ['PENDING', 'CONFIRMED'] } },
-      });
-
-      const matchCounts = await prisma.matchCandidate.groupBy({
-        by: ['status'],
-        where: { projectId },
-        _count: true,
-      });
+      const agg = aggregates[0];
+      const totalStoreItems  = Number(agg.total_store);
+      const uniqueMatchedCount = Number(agg.unique_matched);
+      const totalMatches     = Number(agg.total_matches);
 
       const counts = {
-        pending: matchCounts.find(m => m.status === 'PENDING')?._count || 0,
-        confirmed: matchCounts.find(m => m.status === 'CONFIRMED')?._count || 0,
-        rejected: matchCounts.find(m => m.status === 'REJECTED')?._count || 0,
+        pending:   Number(agg.cnt_pending),
+        confirmed: Number(agg.cnt_confirmed),
+        rejected:  Number(agg.cnt_rejected),
       };
 
-      const matchesByMethod = await prisma.matchCandidate.groupBy({
-        by: ['method'],
-        where: { projectId, status: { in: ['PENDING', 'CONFIRMED'] } },
-        _count: true,
-      });
-
-      const exactCount = matchesByMethod
-        .filter(m => m.method === 'EXACT_NORM' || m.method === 'EXACT_NORMALIZED')
-        .reduce((sum, m) => sum + m._count, 0);
-      const fuzzyCount = matchesByMethod
-        .filter(m => m.method === 'FUZZY' || m.method === 'FUZZY_SUBSTRING')
-        .reduce((sum, m) => sum + m._count, 0);
+      const byMethod = (m: string) =>
+        methodRows.filter(r => r.method === m).reduce((s, r) => s + Number(r.cnt), 0);
 
       const sourceBreakdown = {
-        exact: exactCount,
-        interchange: matchesByMethod.find(m => m.method === 'INTERCHANGE')?._count || 0,
-        fuzzy: fuzzyCount,
-        ai: matchesByMethod.find(m => m.method === 'AI')?._count || 0,
-        web: matchesByMethod.find(m => m.method === 'WEB_SEARCH')?._count || 0,
+        exact:       byMethod('EXACT_NORM') + byMethod('EXACT_NORMALIZED'),
+        interchange: byMethod('INTERCHANGE'),
+        fuzzy:       byMethod('FUZZY') + byMethod('FUZZY_SUBSTRING'),
+        ai:          byMethod('AI'),
+        web:         byMethod('WEB_SEARCH'),
       };
 
       const matchRate = totalStoreItems > 0 ? uniqueMatchedCount / totalStoreItems : 0;

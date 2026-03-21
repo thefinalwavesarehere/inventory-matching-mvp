@@ -7,6 +7,7 @@
 import prisma from '@/app/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import OpenAI from 'openai';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -107,7 +108,7 @@ async function getCandidates(storeItem: StoreItem, projectId: string): Promise<S
     `;
     
     if (sameLineMatches.length > 0) {
-      console.log(`[AI_MATCHER] Strategy 1: Found ${sameLineMatches.length} same-line matches`);
+      apiLogger.info(`[AI_MATCHER] Strategy 1: Found ${sameLineMatches.length} same-line matches`);
       return sameLineMatches;
     }
   }
@@ -128,14 +129,14 @@ async function getCandidates(storeItem: StoreItem, projectId: string): Promise<S
   `;
   
   if (partMatches.length > 0) {
-    console.log(`[AI_MATCHER] Strategy 2: Found ${partMatches.length} part-number matches`);
+    apiLogger.info(`[AI_MATCHER] Strategy 2: Found ${partMatches.length} part-number matches`);
     return partMatches;
   }
   
   // Strategy 3: Description keyword overlap (last resort)
   const keywords = extractKeywords(storeItem.description);
   if (keywords.length === 0) {
-    console.log(`[AI_MATCHER] Strategy 3: No keywords, skipping item`);
+    apiLogger.info(`[AI_MATCHER] Strategy 3: No keywords, skipping item`);
     return [];
   }
   
@@ -152,7 +153,7 @@ async function getCandidates(storeItem: StoreItem, projectId: string): Promise<S
     LIMIT 50
   `;
   
-  console.log(`[AI_MATCHER] Strategy 3: Found ${descMatches.length} keyword matches`);
+  apiLogger.info(`[AI_MATCHER] Strategy 3: Found ${descMatches.length} keyword matches`);
   return descMatches;
 }
 
@@ -230,7 +231,7 @@ Respond with ONLY valid JSON (no markdown, no explanation outside JSON):
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
-      console.error('[AI_MATCHER] No response from OpenAI');
+      apiLogger.error('[AI_MATCHER] No response from OpenAI');
       return null;
     }
 
@@ -240,7 +241,7 @@ Respond with ONLY valid JSON (no markdown, no explanation outside JSON):
     const result = JSON.parse(cleanContent) as AIMatchResult;
     return result;
   } catch (error: any) {
-    console.error('[AI_MATCHER] OpenAI error:', error.message);
+    apiLogger.error('[AI_MATCHER] OpenAI error:', error.message);
     return null;
   }
 }
@@ -271,37 +272,37 @@ async function processItem(storeItem: StoreItem, projectId: string): Promise<any
       `;
       
       if (candidates.length > 0) {
-        console.log(`[AI_MATCHER] Fallback found ${candidates.length} candidates for ${storeItem.partNumber}`);
+        apiLogger.info(`[AI_MATCHER] Fallback found ${candidates.length} candidates for ${storeItem.partNumber}`);
       }
     }
   }
   
   if (candidates.length === 0) {
-    console.log(`[AI_MATCHER] No match for ${storeItem.partNumber}: NO_CANDIDATES_FOUND`);
+    apiLogger.info(`[AI_MATCHER] No match for ${storeItem.partNumber}: NO_CANDIDATES_FOUND`);
     return null;
   }
   
   // Evaluate with AI
   const result = await evaluateWithAI(storeItem, candidates);
   if (!result || !result.match_found || result.best_match_index === null) {
-    console.log(`[AI_MATCHER] No match for ${storeItem.partNumber}: AI_REJECTED_ALL_CANDIDATES (${candidates.length} evaluated)`);
+    apiLogger.info(`[AI_MATCHER] No match for ${storeItem.partNumber}: AI_REJECTED_ALL_CANDIDATES (${candidates.length} evaluated)`);
     return null;
   }
   
   // Check confidence threshold
   if (result.confidence < AI_CONFIG.MIN_CONFIDENCE) {
-    console.log(`[AI_MATCHER] Low confidence (${result.confidence}) for ${storeItem.partNumber}`);
+    apiLogger.info(`[AI_MATCHER] Low confidence (${result.confidence}) for ${storeItem.partNumber}`);
     return null;
   }
   
   const matchedCandidate = candidates[result.best_match_index - 1];
   if (!matchedCandidate) {
-    console.error('[AI_MATCHER] Invalid match index:', result.best_match_index);
+    apiLogger.error('[AI_MATCHER] Invalid match index:', result.best_match_index);
     return null;
   }
   
   const duration = Date.now() - startTime;
-  console.log(`[AI_MATCHER] ✓ Match: ${storeItem.partNumber} → ${matchedCandidate.partNumber} (${(result.confidence * 100).toFixed(0)}%) in ${duration}ms`);
+  apiLogger.info(`[AI_MATCHER] ✓ Match: ${storeItem.partNumber} → ${matchedCandidate.partNumber} (${(result.confidence * 100).toFixed(0)}%) in ${duration}ms`);
   
   return {
     storeItemId: storeItem.id,
@@ -354,7 +355,7 @@ export async function runAIMatching(
   batchSize: number = AI_CONFIG.BATCH_SIZE,
   offset: number = 0
 ): Promise<{ matchesFound: number; itemsProcessed: number; estimatedCost: number }> {
-  console.log(`[AI_MATCHER] Starting AI matching for project ${projectId}`);
+  apiLogger.info(`[AI_MATCHER] Starting AI matching for project ${projectId}`);
   
   // Get unmatched items (not matched by stages 1 or 2)
   const unmatchedItems = await prisma.storeItem.findMany({
@@ -379,7 +380,7 @@ export async function runAIMatching(
     orderBy: { id: 'asc' },
   });
   
-  console.log(`[AI_MATCHER] Found ${unmatchedItems.length} unmatched items`);
+  apiLogger.info(`[AI_MATCHER] Found ${unmatchedItems.length} unmatched items`);
   
   // Pre-filter: Only skip items with NO usable information
   const aiCandidates = unmatchedItems.filter(item => {
@@ -392,15 +393,15 @@ export async function runAIMatching(
     const isMatchable = hasPartNumber || hasDescription || hasLineCode;
     
     if (!isMatchable) {
-      console.log(`[AI_MATCHER] ⏭️ Skipping ${item.id}: No usable data`);
+      apiLogger.info(`[AI_MATCHER] ⏭️ Skipping ${item.id}: No usable data`);
     }
     
     return isMatchable;
   });
 
   const skippedCount = unmatchedItems.length - aiCandidates.length;
-  console.log(`[AI_MATCHER] Filtered ${skippedCount} items with insufficient data`);
-  console.log(`[AI_MATCHER] Processing ${aiCandidates.length} items with AI`);
+  apiLogger.info(`[AI_MATCHER] Filtered ${skippedCount} items with insufficient data`);
+  apiLogger.info(`[AI_MATCHER] Processing ${aiCandidates.length} items with AI`);
   
   if (aiCandidates.length === 0) {
     return { matchesFound: 0, itemsProcessed: unmatchedItems.length, estimatedCost: 0 };
@@ -417,12 +418,12 @@ export async function runAIMatching(
   for (let i = 0; i < aiCandidates.length; i += AI_CONFIG.CONCURRENT_CALLS) {
     const batch = aiCandidates.slice(i, i + AI_CONFIG.CONCURRENT_CALLS);
     
-    console.log(`[AI_MATCHER] Processing batch ${Math.floor(i / AI_CONFIG.CONCURRENT_CALLS) + 1} (${batch.length} items)`);
+    apiLogger.info(`[AI_MATCHER] Processing batch ${Math.floor(i / AI_CONFIG.CONCURRENT_CALLS) + 1} (${batch.length} items)`);
     
     const results = await Promise.all(
       batch.map(item => 
         processItem(item, projectId).catch(err => {
-          console.error(`[AI_MATCHER] Error for ${item.partNumber}:`, err.message);
+          apiLogger.error(`[AI_MATCHER] Error for ${item.partNumber}:`, err.message);
           return null;
         })
       )
@@ -434,11 +435,11 @@ export async function runAIMatching(
     
     // Update cost estimate
     totalCost += batch.length * AI_CONFIG.COST_PER_ITEM;
-    console.log(`[AI_MATCHER] Running cost: $${totalCost.toFixed(2)}/${AI_CONFIG.MAX_COST}`);
+    apiLogger.info(`[AI_MATCHER] Running cost: $${totalCost.toFixed(2)}/${AI_CONFIG.MAX_COST}`);
     
     // Cost check
     if (totalCost >= AI_CONFIG.MAX_COST) {
-      console.log('[AI_MATCHER] ⚠️ Cost limit reached, stopping');
+      apiLogger.info('[AI_MATCHER] ⚠️ Cost limit reached, stopping');
       break;
     }
     
@@ -469,7 +470,7 @@ export async function runAIMatching(
       skipDuplicates: true,
     });
     
-    console.log(`[AI_MATCHER] ✅ Saved ${matches.length} matches to database`);
+    apiLogger.info(`[AI_MATCHER] ✅ Saved ${matches.length} matches to database`);
   }
   
   return {

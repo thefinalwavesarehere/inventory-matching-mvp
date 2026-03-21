@@ -7,6 +7,7 @@
 
 import { prisma } from '@/app/lib/db/prisma';
 import { MasterRuleType, MasterRuleScope } from '@prisma/client';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 export interface ReviewDecision {
   matchCandidateId: string;
@@ -54,7 +55,7 @@ export async function learnFromDecision(
     targetSupplierPN = correctedSupplierPartNumber;
   } else {
     // Invalid decision or missing correction
-    console.warn(`[MASTER-RULES] Invalid decision or missing correction: ${action}`);
+    apiLogger.warn(`[MASTER-RULES] Invalid decision or missing correction: ${action}`);
     return null;
   }
   
@@ -69,7 +70,7 @@ export async function learnFromDecision(
   });
   
   if (existingRule) {
-    console.log(`[MASTER-RULES] Rule already exists: ${existingRule.id}`);
+    apiLogger.info(`[MASTER-RULES] Rule already exists: ${existingRule.id}`);
     return { ruleId: existingRule.id, ruleType: existingRule.ruleType };
   }
   
@@ -83,7 +84,7 @@ export async function learnFromDecision(
     if (projectExists) {
       validatedProjectId = projectId;
     } else {
-      console.warn(`[MASTER-RULES] Project ${projectId} does not exist, creating rule without project reference`);
+      apiLogger.warn(`[MASTER-RULES] Project ${projectId} does not exist, creating rule without project reference`);
     }
   }
   
@@ -104,10 +105,10 @@ export async function learnFromDecision(
     }
   });
   
-  console.log(`[MASTER-RULES] Created ${ruleType} rule: ${rule.id}`);
-  console.log(`[MASTER-RULES]   Store PN: ${storePartNumber}`);
-  console.log(`[MASTER-RULES]   Supplier PN: ${targetSupplierPN}`);
-  console.log(`[MASTER-RULES]   Source: Project ${projectId}, Match ${matchCandidateId}`);
+  apiLogger.info(`[MASTER-RULES] Created ${ruleType} rule: ${rule.id}`);
+  apiLogger.info(`[MASTER-RULES]   Store PN: ${storePartNumber}`);
+  apiLogger.info(`[MASTER-RULES]   Supplier PN: ${targetSupplierPN}`);
+  apiLogger.info(`[MASTER-RULES]   Source: Project ${projectId}, Match ${matchCandidateId}`);
   
   return { ruleId: rule.id, ruleType: rule.ruleType };
 }
@@ -122,7 +123,7 @@ export async function learnFromBulkDecisions(
   let skipped = 0;
   let errors = 0;
   
-  console.log(`[MASTER-RULES] Learning from ${decisions.length} bulk decisions...`);
+  apiLogger.info(`[MASTER-RULES] Learning from ${decisions.length} bulk decisions...`);
   
   for (const decision of decisions) {
     try {
@@ -133,12 +134,12 @@ export async function learnFromBulkDecisions(
         skipped++;
       }
     } catch (error) {
-      console.error(`[MASTER-RULES] Error learning from decision:`, error);
+      apiLogger.error(`[MASTER-RULES] Error learning from decision:`, error);
       errors++;
     }
   }
   
-  console.log(`[MASTER-RULES] Bulk learning complete: ${created} created, ${skipped} skipped, ${errors} errors`);
+  apiLogger.info(`[MASTER-RULES] Bulk learning complete: ${created} created, ${skipped} skipped, ${errors} errors`);
   
   return { created, skipped, errors };
 }
@@ -152,10 +153,10 @@ export async function disableRule(ruleId: string): Promise<boolean> {
       where: { id: ruleId },
       data: { enabled: false, updatedAt: new Date() }
     });
-    console.log(`[MASTER-RULES] Disabled rule: ${ruleId}`);
+    apiLogger.info(`[MASTER-RULES] Disabled rule: ${ruleId}`);
     return true;
   } catch (error) {
-    console.error(`[MASTER-RULES] Error disabling rule:`, error);
+    apiLogger.error(`[MASTER-RULES] Error disabling rule:`, error);
     return false;
   }
 }
@@ -169,10 +170,10 @@ export async function enableRule(ruleId: string): Promise<boolean> {
       where: { id: ruleId },
       data: { enabled: true, updatedAt: new Date() }
     });
-    console.log(`[MASTER-RULES] Enabled rule: ${ruleId}`);
+    apiLogger.info(`[MASTER-RULES] Enabled rule: ${ruleId}`);
     return true;
   } catch (error) {
-    console.error(`[MASTER-RULES] Error enabling rule:`, error);
+    apiLogger.error(`[MASTER-RULES] Error enabling rule:`, error);
     return false;
   }
 }
@@ -185,10 +186,10 @@ export async function deleteRule(ruleId: string): Promise<boolean> {
     await prisma.masterRule.delete({
       where: { id: ruleId }
     });
-    console.log(`[MASTER-RULES] Deleted rule: ${ruleId}`);
+    apiLogger.info(`[MASTER-RULES] Deleted rule: ${ruleId}`);
     return true;
   } catch (error) {
-    console.error(`[MASTER-RULES] Error deleting rule:`, error);
+    apiLogger.error(`[MASTER-RULES] Error deleting rule:`, error);
     return false;
   }
 }

@@ -1,3 +1,4 @@
+import { apiLogger } from '@/app/lib/structured-logger';
 /**
  * Client-side Job Manager
  * Handles background job creation, processing, and polling
@@ -129,7 +130,7 @@ export class JobManager {
           this.stopPolling();
         }
       } catch (error) {
-        console.error('Polling error:', error);
+        apiLogger.error('Polling error:', error);
       }
     }, intervalMs);
   }
@@ -170,11 +171,11 @@ export class JobManager {
  * 
  * // Start AI matching job
  * const job = await jobManager.startJob(projectId, 'ai', (job) => {
- *   console.log(`Progress: ${job.progressPercentage}%`);
- *   console.log(`Matches found: ${job.matchesFound}`);
+ *   apiLogger.info(`Progress: ${job.progressPercentage}%`);
+ *   apiLogger.info(`Matches found: ${job.matchesFound}`);
  * });
  * 
- * console.log('Job completed!', job);
+ * apiLogger.info('Job completed!', job);
  * 
  * // Clean up when component unmounts
  * jobManager.cleanup();

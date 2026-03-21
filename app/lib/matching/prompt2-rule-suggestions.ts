@@ -10,6 +10,7 @@
  */
 
 import prisma from '@/app/lib/db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 interface SuggestedRule {
   ruleType: string;
@@ -21,7 +22,7 @@ interface SuggestedRule {
  * D1: Detect repeated patterns (STUBBED)
  */
 export async function detectAndSuggestRules(projectId: string): Promise<number> {
-  console.log(`[PROMPT2-RULES] Rule detection stubbed - requires schema changes or batch queries`);
+  apiLogger.info(`[PROMPT2-RULES] Rule detection stubbed - requires schema changes or batch queries`);
   
   // TODO: Implement when MatchCandidate schema adds proper targetItem relation
   // or when detection logic uses efficient batch queries
@@ -57,7 +58,7 @@ export async function approveRule(ruleId: string, userId?: string): Promise<void
     },
   });
 
-  console.log(`[PROMPT2-RULES] Rule ${ruleId} approved by ${userId || 'system'}`);
+  apiLogger.info(`[PROMPT2-RULES] Rule ${ruleId} approved by ${userId || 'system'}`);
 }
 
 /**
@@ -71,5 +72,5 @@ export async function rejectRule(ruleId: string): Promise<void> {
     },
   });
 
-  console.log(`[PROMPT2-RULES] Rule ${ruleId} rejected`);
+  apiLogger.info(`[PROMPT2-RULES] Rule ${ruleId} rejected`);
 }

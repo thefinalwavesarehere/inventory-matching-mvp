@@ -17,6 +17,7 @@
  */
 
 import { prisma } from '@/app/lib/db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 export interface PostgresExactMatch {
   storeItemId: string;
@@ -124,7 +125,7 @@ export async function findPostgresExactMatches(
   try {
     const results = await prisma.$queryRawUnsafe<any[]>(sql, projectId);
     
-    console.log(`[POSTGRES_MATCHER_V2] Found ${results.length} matches using advanced SQL`);
+    apiLogger.info(`[POSTGRES_MATCHER_V2] Found ${results.length} matches using advanced SQL`);
     
     // Map results to typed interface with confidence scores
     return results.map(row => ({
@@ -140,7 +141,7 @@ export async function findPostgresExactMatches(
     }));
     
   } catch (error) {
-    console.error('[POSTGRES_MATCHER_V2] Error executing SQL:', error);
+    apiLogger.error('[POSTGRES_MATCHER_V2] Error executing SQL:', error);
     throw error;
   }
 }
@@ -302,7 +303,7 @@ export async function findCanonicalExactMatches(
     }));
     
   } catch (error) {
-    console.error('[CANONICAL_MATCHER_V2] Error executing SQL:', error);
+    apiLogger.error('[CANONICAL_MATCHER_V2] Error executing SQL:', error);
     throw error;
   }
 }
@@ -321,7 +322,7 @@ export async function findHybridExactMatches(
   
   // Always use REGEXP_REPLACE for maximum reliability in v2.0
   // The functional indexes will make it fast enough
-  console.log(`[HYBRID_MATCHER_V2] Using REGEXP_REPLACE with relaxed constraints`);
+  apiLogger.info(`[HYBRID_MATCHER_V2] Using REGEXP_REPLACE with relaxed constraints`);
   return findPostgresExactMatches(projectId);
 }
 
@@ -414,24 +415,24 @@ ON "supplier_items" (
 export async function applyFunctionalIndexes(): Promise<void> {
   const sqls = generateFunctionalIndexSQL();
   
-  console.log('[FUNCTIONAL_INDEXES] Creating functional indexes...');
-  console.log('[FUNCTIONAL_INDEXES] This may take several minutes on large databases.');
+  apiLogger.info('[FUNCTIONAL_INDEXES] Creating functional indexes...');
+  apiLogger.info('[FUNCTIONAL_INDEXES] This may take several minutes on large databases.');
   
   for (const sql of sqls) {
     try {
-      console.log(`[FUNCTIONAL_INDEXES] Executing: ${sql.split('\n')[0]}...`);
+      apiLogger.info(`[FUNCTIONAL_INDEXES] Executing: ${sql.split('\n')[0]}...`);
       await prisma.$executeRawUnsafe(sql);
-      console.log(`[FUNCTIONAL_INDEXES] ✅ Success`);
+      apiLogger.info(`[FUNCTIONAL_INDEXES] ✅ Success`);
     } catch (error: any) {
       // Ignore "already exists" errors
       if (error.message?.includes('already exists')) {
-        console.log(`[FUNCTIONAL_INDEXES] ⚠️  Index already exists, skipping`);
+        apiLogger.info(`[FUNCTIONAL_INDEXES] ⚠️  Index already exists, skipping`);
       } else {
-        console.error(`[FUNCTIONAL_INDEXES] ❌ Error:`, error);
+        apiLogger.error(`[FUNCTIONAL_INDEXES] ❌ Error:`, error);
         throw error;
       }
     }
   }
   
-  console.log('[FUNCTIONAL_INDEXES] ✅ All functional indexes created successfully');
+  apiLogger.info('[FUNCTIONAL_INDEXES] ✅ All functional indexes created successfully');
 }

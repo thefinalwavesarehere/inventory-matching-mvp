@@ -3,6 +3,7 @@ import { apiLogger } from '@/app/lib/structured-logger';
 import prisma from '@/app/lib/db/prisma';
 import { parse } from 'csv-parse/sync';
 import { VendorAction, MatchStatus, ReviewSource } from '@prisma/client';
+import { validateUploadedFile } from '@/app/lib/file-validation';
 
 /**
  * Epic A1.3 - Excel Import & Apply Endpoint
@@ -75,10 +76,15 @@ export async function POST(
       );
     }
 
-    apiLogger.info(`[IMPORT] Processing file: ${file.name}, size: ${file.size} bytes`);
-
+     apiLogger.info(`[IMPORT] Processing file: ${file.name}, size: ${file.size} bytes`);
+    // Validate file: extension, MIME magic bytes, and size
+    const rawBuffer = Buffer.from(await file.arrayBuffer());
+    const fileValidation = validateUploadedFile(file.name, rawBuffer.length, rawBuffer);
+    if (!fileValidation.valid) {
+      return NextResponse.json({ error: fileValidation.error }, { status: 400 });
+    }
     // Read file content
-    const fileContent = await file.text();
+    const fileContent = rawBuffer.toString('utf-8');
 
     // Parse CSV
     let records: any[];

@@ -8,6 +8,7 @@
  */
 
 import prisma from '@/app/lib/db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 /**
  * Canonical normalization (same as V4)
@@ -67,7 +68,7 @@ export function extractManufacturerPart(
  * @param projectId - Project to backfill
  */
 export async function backfillManufacturerParts(projectId: string): Promise<number> {
-  console.log(`[PROMPT2-BACKFILL] Starting manufacturer part backfill for project ${projectId}`);
+  apiLogger.info(`[PROMPT2-BACKFILL] Starting manufacturer part backfill for project ${projectId}`);
 
   // Get project config
   const project = await prisma.project.findUnique({
@@ -80,7 +81,7 @@ export async function backfillManufacturerParts(projectId: string): Promise<numb
   }
 
   if (!project.enableArnoldLineCodeSplit) {
-    console.log(`[PROMPT2-BACKFILL] Arnold line code split disabled for project ${projectId} - skipping`);
+    apiLogger.info(`[PROMPT2-BACKFILL] Arnold line code split disabled for project ${projectId} - skipping`);
     return 0;
   }
 
@@ -90,7 +91,7 @@ export async function backfillManufacturerParts(projectId: string): Promise<numb
     select: { id: true, partFull: true },
   });
 
-  console.log(`[PROMPT2-BACKFILL] Found ${storeItems.length} store items to process`);
+  apiLogger.info(`[PROMPT2-BACKFILL] Found ${storeItems.length} store items to process`);
 
   let updatedCount = 0;
 
@@ -111,7 +112,7 @@ export async function backfillManufacturerParts(projectId: string): Promise<numb
     }
   }
 
-  console.log(`[PROMPT2-BACKFILL] Updated ${updatedCount} store items with manufacturer part fields`);
+  apiLogger.info(`[PROMPT2-BACKFILL] Updated ${updatedCount} store items with manufacturer part fields`);
 
   return updatedCount;
 }

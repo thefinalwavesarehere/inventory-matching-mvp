@@ -12,6 +12,7 @@
  */
 
 import { prisma } from './db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 export interface PreprocessResult {
   originalLineCode: string;
@@ -183,7 +184,7 @@ export async function applyLineCodePreprocessing(projectId: string): Promise<{
   itemsMapped: number;
   mappingsApplied: number;
 }> {
-  console.log(`[LINE-CODE-PREPROCESSOR] Starting preprocessing for project ${projectId}`);
+  apiLogger.info(`[LINE-CODE-PREPROCESSOR] Starting preprocessing for project ${projectId}`);
 
   // Fetch all store items for this project
   const storeItems = await prisma.storeItem.findMany({
@@ -195,7 +196,7 @@ export async function applyLineCodePreprocessing(projectId: string): Promise<{
     },
   });
 
-  console.log(`[LINE-CODE-PREPROCESSOR] Found ${storeItems.length} store items`);
+  apiLogger.info(`[LINE-CODE-PREPROCESSOR] Found ${storeItems.length} store items`);
 
   if (storeItems.length === 0) {
     return {
@@ -257,7 +258,7 @@ export async function applyLineCodePreprocessing(projectId: string): Promise<{
     return result?.mappingFound;
   }).length;
 
-  console.log(`[LINE-CODE-PREPROCESSOR] Completed: ${itemsMapped}/${storeItems.length} items mapped, ${mappingsApplied} mappings applied`);
+  apiLogger.info(`[LINE-CODE-PREPROCESSOR] Completed: ${itemsMapped}/${storeItems.length} items mapped, ${mappingsApplied} mappings applied`);
 
   return {
     totalItems: storeItems.length,

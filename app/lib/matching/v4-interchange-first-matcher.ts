@@ -14,6 +14,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 const prisma = new PrismaClient();
 
@@ -42,7 +43,7 @@ export interface V4Match {
  * - Logs cleared count
  */
 export async function unmatchProject(projectId: string): Promise<number> {
-  console.log(`[V4-UNMATCH] Starting un-match for project: ${projectId}`);
+  apiLogger.info(`[V4-UNMATCH] Starting un-match for project: ${projectId}`);
   
   if (!projectId) {
     throw new Error('[V4-UNMATCH] SAFETY: projectId is required');
@@ -54,23 +55,23 @@ export async function unmatchProject(projectId: string): Promise<number> {
       where: { projectId },
     });
     
-    console.log(`[V4-UNMATCH] Found ${countBefore} existing matches to clear`);
+    apiLogger.info(`[V4-UNMATCH] Found ${countBefore} existing matches to clear`);
     
     // Safety warning for large deletes
     if (countBefore > 50000) {
-      console.warn(`[V4-UNMATCH] WARNING: Large delete operation (${countBefore} rows). Verify projectId is correct.`);
+      apiLogger.warn(`[V4-UNMATCH] WARNING: Large delete operation (${countBefore} rows). Verify projectId is correct.`);
     }
     
     const deleted = await prisma.matchCandidate.deleteMany({
       where: { projectId },
     });
     
-    console.log(`[V4-UNMATCH] Cleared ${deleted.count} existing matches for project ${projectId}`);
-    console.log(`[V4-UNMATCH] Store items are now eligible for rematching`);
+    apiLogger.info(`[V4-UNMATCH] Cleared ${deleted.count} existing matches for project ${projectId}`);
+    apiLogger.info(`[V4-UNMATCH] Store items are now eligible for rematching`);
     
     return deleted.count;
   } catch (error) {
-    console.error(`[V4-UNMATCH] Error clearing matches:`, error);
+    apiLogger.error(`[V4-UNMATCH] Error clearing matches:`, error);
     throw error;
   }
 }
@@ -91,17 +92,17 @@ export async function findInterchangeFirstMatches(
   projectId: string,
   storeIds?: string[]
 ): Promise<V4Match[]> {
-  console.log(`[V4-MATCHER] Starting Interchange-First matching for project: ${projectId}`);
+  apiLogger.info(`[V4-MATCHER] Starting Interchange-First matching for project: ${projectId}`);
   
   if (storeIds && storeIds.length > 0) {
-    console.log(`[V4-MATCHER] Matching ${storeIds.length} specific store items`);
+    apiLogger.info(`[V4-MATCHER] Matching ${storeIds.length} specific store items`);
   } else {
-    console.log(`[V4-MATCHER] Matching all unmatched store items`);
+    apiLogger.info(`[V4-MATCHER] Matching all unmatched store items`);
   }
   
   // Debug logging
-  console.log('[V4-DEBUG] projectId', projectId);
-  console.log('[V4-DEBUG] storeIds sample', storeIds?.slice(0, 5) || 'all');
+  apiLogger.info('[V4-DEBUG] projectId', projectId);
+  apiLogger.info('[V4-DEBUG] storeIds sample', storeIds?.slice(0, 5) || 'all');
   
   // Prepare parameterized storeIds (null if matching all)
   const storeIdsParam = storeIds?.length ? storeIds : null;
@@ -180,13 +181,13 @@ export async function findInterchangeFirstMatches(
     ORDER BY r.store_item_id;
   `;
   
-  console.log(`[V4-MATCHER] Executing interchange-first SQL query`);
+  apiLogger.info(`[V4-MATCHER] Executing interchange-first SQL query`);
   
   try {
     const results = await prisma.$queryRawUnsafe<any[]>(query, projectId, storeIdsParam);
     
-    console.log(`[V4-MATCHER] Found ${results.length} interchange matches`);
-    console.log(`[V4-MATCHER] Breakdown:`);
+    apiLogger.info(`[V4-MATCHER] Found ${results.length} interchange matches`);
+    apiLogger.info(`[V4-MATCHER] Breakdown:`);
     
     const withSupplier = results.filter(r => r.supplier_item_id).length;
     const withoutSupplier = results.length - withSupplier;
@@ -194,11 +195,11 @@ export async function findInterchangeFirstMatches(
     const merrillMatches = results.filter(r => r.matched_on === 'MERRILL').length;
     const vendorMatches = results.filter(r => r.matched_on === 'VENDOR').length;
     
-    console.log(`[V4-MATCHER]   - With supplier enrichment: ${withSupplier}`);
-    console.log(`[V4-MATCHER]   - Without supplier (interchange-only): ${withoutSupplier}`);
-    console.log(`[V4-MATCHER]   - With vendor metadata: ${withVendor}`);
-    console.log(`[V4-MATCHER]   - Matched on MERRILL side: ${merrillMatches}`);
-    console.log(`[V4-MATCHER]   - Matched on VENDOR side: ${vendorMatches}`);
+    apiLogger.info(`[V4-MATCHER]   - With supplier enrichment: ${withSupplier}`);
+    apiLogger.info(`[V4-MATCHER]   - Without supplier (interchange-only): ${withoutSupplier}`);
+    apiLogger.info(`[V4-MATCHER]   - With vendor metadata: ${withVendor}`);
+    apiLogger.info(`[V4-MATCHER]   - Matched on MERRILL side: ${merrillMatches}`);
+    apiLogger.info(`[V4-MATCHER]   - Matched on VENDOR side: ${vendorMatches}`);
     
     // Convert to V4Match format
     const matches: V4Match[] = results.map(row => ({
@@ -216,7 +217,7 @@ export async function findInterchangeFirstMatches(
     
     return matches;
   } catch (error) {
-    console.error(`[V4-MATCHER] Error executing query:`, error);
+    apiLogger.error(`[V4-MATCHER] Error executing query:`, error);
     throw error;
   }
 }
@@ -234,10 +235,10 @@ export async function persistV4Matches(
   projectId: string,
   matches: V4Match[]
 ): Promise<number> {
-  console.log(`[V4-PERSIST] Persisting ${matches.length} V4 matches`);
+  apiLogger.info(`[V4-PERSIST] Persisting ${matches.length} V4 matches`);
   
   if (matches.length === 0) {
-    console.log(`[V4-PERSIST] No matches to persist`);
+    apiLogger.info(`[V4-PERSIST] No matches to persist`);
     return 0;
   }
   
@@ -266,11 +267,11 @@ export async function persistV4Matches(
       skipDuplicates: true,
     });
     
-    console.log(`[V4-PERSIST] Created ${created.count} match candidates`);
+    apiLogger.info(`[V4-PERSIST] Created ${created.count} match candidates`);
     
     return created.count;
   } catch (error) {
-    console.error(`[V4-PERSIST] Error persisting matches:`, error);
+    apiLogger.error(`[V4-PERSIST] Error persisting matches:`, error);
     throw error;
   }
 }
@@ -285,10 +286,10 @@ export async function goldenThreadTrace(
   projectId: string,
   partNumber: string
 ): Promise<void> {
-  console.log(`\n========== GOLDEN THREAD TRACE ==========`);
-  console.log(`Part Number: ${partNumber}`);
-  console.log(`Project: ${projectId}`);
-  console.log(`=========================================\n`);
+  apiLogger.info(`\n========== GOLDEN THREAD TRACE ==========`);
+  apiLogger.info(`Part Number: ${partNumber}`);
+  apiLogger.info(`Project: ${projectId}`);
+  apiLogger.info(`=========================================\n`);
   
   // Find store item
   const storeItem = await prisma.storeItem.findFirst({
@@ -302,15 +303,15 @@ export async function goldenThreadTrace(
   });
   
   if (!storeItem) {
-    console.log(`[TRACE] ❌ Store item not found`);
+    apiLogger.info(`[TRACE] ❌ Store item not found`);
     return;
   }
   
-  console.log(`[TRACE] ✅ Store Item Found:`);
-  console.log(`[TRACE]    ID: ${storeItem.id}`);
-  console.log(`[TRACE]    Part Number (raw): ${storeItem.partNumber}`);
-  console.log(`[TRACE]    Part Number (norm): ${storeItem.partNumberNorm}`);
-  console.log(`[TRACE]    Description: ${storeItem.description}`);
+  apiLogger.info(`[TRACE] ✅ Store Item Found:`);
+  apiLogger.info(`[TRACE]    ID: ${storeItem.id}`);
+  apiLogger.info(`[TRACE]    Part Number (raw): ${storeItem.partNumber}`);
+  apiLogger.info(`[TRACE]    Part Number (norm): ${storeItem.partNumberNorm}`);
+  apiLogger.info(`[TRACE]    Description: ${storeItem.description}`);
   
   // Find interchange matches
   const interchanges = await prisma.interchange.findMany({
@@ -323,22 +324,22 @@ export async function goldenThreadTrace(
     },
   });
   
-  console.log(`\n[TRACE] Interchange Candidates: ${interchanges.length}`);
+  apiLogger.info(`\n[TRACE] Interchange Candidates: ${interchanges.length}`);
   
   for (const interchange of interchanges) {
-    console.log(`\n[TRACE] Interchange Row:`);
-    console.log(`[TRACE]    ID: ${interchange.id}`);
-    console.log(`[TRACE]    Merrill Part (raw): ${interchange.merrillPartNumber}`);
-    console.log(`[TRACE]    Merrill Part (norm): ${interchange.merrillPartNumberNorm}`);
-    console.log(`[TRACE]    Vendor Part (raw): ${interchange.vendorPartNumber}`);
-    console.log(`[TRACE]    Vendor Part (norm): ${interchange.vendorPartNumberNorm}`);
-    console.log(`[TRACE]    Vendor: ${interchange.vendor || '(null)'}`);
-    console.log(`[TRACE]    Sub Category: ${interchange.subCategory || '(null)'}`);
+    apiLogger.info(`\n[TRACE] Interchange Row:`);
+    apiLogger.info(`[TRACE]    ID: ${interchange.id}`);
+    apiLogger.info(`[TRACE]    Merrill Part (raw): ${interchange.merrillPartNumber}`);
+    apiLogger.info(`[TRACE]    Merrill Part (norm): ${interchange.merrillPartNumberNorm}`);
+    apiLogger.info(`[TRACE]    Vendor Part (raw): ${interchange.vendorPartNumber}`);
+    apiLogger.info(`[TRACE]    Vendor Part (norm): ${interchange.vendorPartNumberNorm}`);
+    apiLogger.info(`[TRACE]    Vendor: ${interchange.vendor || '(null)'}`);
+    apiLogger.info(`[TRACE]    Sub Category: ${interchange.subCategory || '(null)'}`);
     
     const matchedOn = storeItem.partNumberNorm === interchange.merrillPartNumberNorm
       ? 'MERRILL'
       : 'VENDOR';
-    console.log(`[TRACE]    Matched On: ${matchedOn}`);
+    apiLogger.info(`[TRACE]    Matched On: ${matchedOn}`);
   }
   
   // Find existing match
@@ -349,17 +350,17 @@ export async function goldenThreadTrace(
   });
   
   if (match) {
-    console.log(`\n[TRACE] ✅ Match Found:`);
-    console.log(`[TRACE]    ID: ${match.id}`);
-    console.log(`[TRACE]    Method: ${match.method}`);
-    console.log(`[TRACE]    Vendor: ${match.vendor || '(null)'}`);
-    console.log(`[TRACE]    Matched On: ${match.matchedOn || '(null)'}`);
-    console.log(`[TRACE]    Interchange ID: ${match.interchangeId || '(null)'}`);
-    console.log(`[TRACE]    Target ID: ${match.targetId}`);
-    console.log(`[TRACE]    Confidence: ${match.confidence}`);
+    apiLogger.info(`\n[TRACE] ✅ Match Found:`);
+    apiLogger.info(`[TRACE]    ID: ${match.id}`);
+    apiLogger.info(`[TRACE]    Method: ${match.method}`);
+    apiLogger.info(`[TRACE]    Vendor: ${match.vendor || '(null)'}`);
+    apiLogger.info(`[TRACE]    Matched On: ${match.matchedOn || '(null)'}`);
+    apiLogger.info(`[TRACE]    Interchange ID: ${match.interchangeId || '(null)'}`);
+    apiLogger.info(`[TRACE]    Target ID: ${match.targetId}`);
+    apiLogger.info(`[TRACE]    Confidence: ${match.confidence}`);
   } else {
-    console.log(`\n[TRACE] ❌ No match found`);
+    apiLogger.info(`\n[TRACE] ❌ No match found`);
   }
   
-  console.log(`\n=========================================\n`);
+  apiLogger.info(`\n=========================================\n`);
 }

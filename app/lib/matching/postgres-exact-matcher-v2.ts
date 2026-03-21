@@ -17,6 +17,7 @@
  */
 
 import { prisma } from '@/app/lib/db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 export interface PostgresExactMatch {
   storeItemId: string;
@@ -59,9 +60,9 @@ export async function findPostgresExactMatches(
   projectId: string
 ): Promise<PostgresExactMatch[]> {
   
-  console.log('[POSTGRES_MATCHER_V3.0] === STARTING MATCH WITH DESCRIPTION VALIDATION ===');
-  console.log('[POSTGRES_MATCHER_V3.0] Description threshold:', DESCRIPTION_SIMILARITY_THRESHOLD);
-  console.log('[POSTGRES_MATCHER_V3.0] Description filtering:', USE_DESCRIPTION_FILTER ? 'ENABLED' : 'DISABLED');
+  apiLogger.info('[POSTGRES_MATCHER_V3.0] === STARTING MATCH WITH DESCRIPTION VALIDATION ===');
+  apiLogger.info('[POSTGRES_MATCHER_V3.0] Description threshold:', DESCRIPTION_SIMILARITY_THRESHOLD);
+  apiLogger.info('[POSTGRES_MATCHER_V3.0] Description filtering:', USE_DESCRIPTION_FILTER ? 'ENABLED' : 'DISABLED');
   
   // Build normalization expressions
   const normalizeStore = NORMALIZE_PART_SQL.replace(/{field}/g, 's."partNumber"');
@@ -146,11 +147,11 @@ export async function findPostgresExactMatches(
   try {
     const params = [projectId];
     
-    console.log('[POSTGRES_MATCHER_V3.0] Executing SQL with description validation...');
+    apiLogger.info('[POSTGRES_MATCHER_V3.0] Executing SQL with description validation...');
     
     const results = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
     
-    console.log(`[POSTGRES_MATCHER_V3.0] Found ${results.length} matches with description validation`);
+    apiLogger.info(`[POSTGRES_MATCHER_V3.0] Found ${results.length} matches with description validation`);
     
     // Calculate confidence distribution
     const confidenceDistribution = {
@@ -161,7 +162,7 @@ export async function findPostgresExactMatches(
       questionable: results.filter(r => r.descriptionSimilarity < 0.50).length,
     };
     
-    console.log('[POSTGRES_MATCHER_V3.0] Confidence distribution:', JSON.stringify(confidenceDistribution, null, 2));
+    apiLogger.info('[POSTGRES_MATCHER_V3.0] Confidence distribution:', JSON.stringify(confidenceDistribution, null, 2));
     
     // Map results to typed interface with confidence scores
     return results.map(row => ({
@@ -182,13 +183,13 @@ export async function findPostgresExactMatches(
   } catch (error: any) {
     // Check for pg_trgm extension error
     if (error.message?.includes('similarity') || error.message?.includes('pg_trgm')) {
-      console.error('[POSTGRES_MATCHER_V3.0] ❌ pg_trgm extension not enabled!');
-      console.error('[POSTGRES_MATCHER_V3.0] Run this in Supabase SQL editor:');
-      console.error('[POSTGRES_MATCHER_V3.0] CREATE EXTENSION IF NOT EXISTS pg_trgm;');
+      apiLogger.error('[POSTGRES_MATCHER_V3.0] ❌ pg_trgm extension not enabled!');
+      apiLogger.error('[POSTGRES_MATCHER_V3.0] Run this in Supabase SQL editor:');
+      apiLogger.error('[POSTGRES_MATCHER_V3.0] CREATE EXTENSION IF NOT EXISTS pg_trgm;');
       throw new Error('pg_trgm extension required. Run: CREATE EXTENSION IF NOT EXISTS pg_trgm;');
     }
     
-    console.error('[POSTGRES_MATCHER_V3.0] Error executing SQL:', error);
+    apiLogger.error('[POSTGRES_MATCHER_V3.0] Error executing SQL:', error);
     throw error;
   }
 }
@@ -275,7 +276,7 @@ export async function findInterchangeMatches(
   projectId: string
 ): Promise<PostgresExactMatch[]> {
   
-  console.log('[INTERCHANGE_MATCHER_V3.0] === STARTING INTERCHANGE MATCHING ===');
+  apiLogger.info('[INTERCHANGE_MATCHER_V3.0] === STARTING INTERCHANGE MATCHING ===');
   
   const normalizeStore = NORMALIZE_PART_SQL.replace(/{field}/g, 's."partNumber"');
   const normalizeSupplier = NORMALIZE_PART_SQL.replace(/{field}/g, 'sup."partNumber"');
@@ -321,7 +322,7 @@ export async function findInterchangeMatches(
     const params = [projectId];
     const results = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
     
-    console.log(`[INTERCHANGE_MATCHER_V3.0] Found ${results.length} interchange matches`);
+    apiLogger.info(`[INTERCHANGE_MATCHER_V3.0] Found ${results.length} interchange matches`);
     
     return results.map(row => ({
       storeItemId: row.storeItemId,
@@ -339,7 +340,7 @@ export async function findInterchangeMatches(
     }));
     
   } catch (error) {
-    console.error('[INTERCHANGE_MATCHER_V3.0] Error executing SQL:', error);
+    apiLogger.error('[INTERCHANGE_MATCHER_V3.0] Error executing SQL:', error);
     throw error;
   }
 }
@@ -350,7 +351,7 @@ export async function findInterchangeMatches(
 export async function findHybridExactMatches(
   projectId: string
 ): Promise<PostgresExactMatch[]> {
-  console.log('[HYBRID_MATCHER_V3.0] Using description-validated matching');
+  apiLogger.info('[HYBRID_MATCHER_V3.0] Using description-validated matching');
   return findPostgresExactMatches(projectId);
 }
 
@@ -413,22 +414,22 @@ ON "supplier_items" (
 export async function applySetup(): Promise<void> {
   const sqls = generateSetupSQL();
   
-  console.log('[POSTGRES_MATCHER_V3.0] Setting up pg_trgm extension and indexes...');
+  apiLogger.info('[POSTGRES_MATCHER_V3.0] Setting up pg_trgm extension and indexes...');
   
   for (const sql of sqls) {
     try {
-      console.log(`[POSTGRES_MATCHER_V3.0] Executing: ${sql.split('\n')[0]}...`);
+      apiLogger.info(`[POSTGRES_MATCHER_V3.0] Executing: ${sql.split('\n')[0]}...`);
       await prisma.$executeRawUnsafe(sql);
-      console.log(`[POSTGRES_MATCHER_V3.0] ✅ Success`);
+      apiLogger.info(`[POSTGRES_MATCHER_V3.0] ✅ Success`);
     } catch (error: any) {
       if (error.message?.includes('already exists')) {
-        console.log(`[POSTGRES_MATCHER_V3.0] ⚠️ Already exists, skipping`);
+        apiLogger.info(`[POSTGRES_MATCHER_V3.0] ⚠️ Already exists, skipping`);
       } else {
-        console.error(`[POSTGRES_MATCHER_V3.0] ❌ Error:`, error);
+        apiLogger.error(`[POSTGRES_MATCHER_V3.0] ❌ Error:`, error);
         throw error;
       }
     }
   }
   
-  console.log('[POSTGRES_MATCHER_V3.0] ✅ Setup complete');
+  apiLogger.info('[POSTGRES_MATCHER_V3.0] ✅ Setup complete');
 }

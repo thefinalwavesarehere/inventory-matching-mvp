@@ -13,6 +13,7 @@ import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
 import { TavilyClient } from 'tavily';
 import { getSupplierCatalog } from './supplier-catalog-cache';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -93,7 +94,7 @@ Only return valid JSON.`;
     const result = JSON.parse(content);
 
     if (result.superseded && result.confidence >= SUPERSESSION_CONFIG.AI_CONFIDENCE_THRESHOLD) {
-      console.log(`[SUPERSESSION] AI found replacement: ${item.partNumber} → ${result.replacementPart}`);
+      apiLogger.info(`[SUPERSESSION] AI found replacement: ${item.partNumber} → ${result.replacementPart}`);
       return {
         originalPart: item.partNumber,
         replacementPart: result.replacementPart,
@@ -106,7 +107,7 @@ Only return valid JSON.`;
 
     return null;
   } catch (error: any) {
-    console.error('[SUPERSESSION] AI query error:', error.message);
+    apiLogger.error('[SUPERSESSION] AI query error:', error.message);
     return null;
   }
 }
@@ -167,7 +168,7 @@ Return JSON:
     const result = JSON.parse(content);
 
     if (result.superseded && result.confidence >= SUPERSESSION_CONFIG.WEB_CONFIDENCE_THRESHOLD) {
-      console.log(`[SUPERSESSION] Web found replacement: ${item.partNumber} → ${result.replacementPart}`);
+      apiLogger.info(`[SUPERSESSION] Web found replacement: ${item.partNumber} → ${result.replacementPart}`);
       return {
         originalPart: item.partNumber,
         replacementPart: result.replacementPart,
@@ -180,7 +181,7 @@ Return JSON:
 
     return null;
   } catch (error: any) {
-    console.error('[SUPERSESSION] Web search error:', error.message);
+    apiLogger.error('[SUPERSESSION] Web search error:', error.message);
     return null;
   }
 }
@@ -226,7 +227,7 @@ function matchViaSupersession(
       SUPERSESSION_CONFIG.MAX_CONFIDENCE
     );
 
-    console.log(`[SUPERSESSION] ✓ Matched: ${storeItem.partNumber} → ${supersession.replacementPart} → ${replacementMatch.partNumber}`);
+    apiLogger.info(`[SUPERSESSION] ✓ Matched: ${storeItem.partNumber} → ${supersession.replacementPart} → ${replacementMatch.partNumber}`);
 
     return {
       storeItemId: storeItem.id,
@@ -251,7 +252,7 @@ async function processItem(
   const supersession = await findSupersession(storeItem);
   
   if (!supersession) {
-    console.log(`[SUPERSESSION] No supersession found for ${storeItem.partNumber}`);
+    apiLogger.info(`[SUPERSESSION] No supersession found for ${storeItem.partNumber}`);
     return null;
   }
 
@@ -268,7 +269,7 @@ export async function runSupersessionMatching(
   projectId: string,
   batchSize: number = SUPERSESSION_CONFIG.BATCH_SIZE
 ): Promise<{ matchesFound: number; itemsProcessed: number; estimatedCost: number }> {
-  console.log(`[SUPERSESSION] Starting supersession matching for project ${projectId}`);
+  apiLogger.info(`[SUPERSESSION] Starting supersession matching for project ${projectId}`);
 
   // Get unmatched items (not matched by stages 1, 2, or 3A)
   const unmatchedItems = await prisma.storeItem.findMany({
@@ -291,7 +292,7 @@ export async function runSupersessionMatching(
     orderBy: { id: 'asc' },
   });
 
-  console.log(`[SUPERSESSION] Found ${unmatchedItems.length} unmatched items`);
+  apiLogger.info(`[SUPERSESSION] Found ${unmatchedItems.length} unmatched items`);
 
   if (unmatchedItems.length === 0) {
     return { matchesFound: 0, itemsProcessed: 0, estimatedCost: 0 };
@@ -299,7 +300,7 @@ export async function runSupersessionMatching(
 
   // Get supplier catalog (cached)
   const supplierCatalog = await getSupplierCatalog(projectId);
-  console.log(`[SUPERSESSION] Loaded ${supplierCatalog.length} supplier items from cache`);
+  apiLogger.info(`[SUPERSESSION] Loaded ${supplierCatalog.length} supplier items from cache`);
 
   const matches: any[] = [];
   let totalCost = 0;
@@ -309,7 +310,7 @@ export async function runSupersessionMatching(
     const item = unmatchedItems[i];
 
     if (totalCost >= SUPERSESSION_CONFIG.MAX_COST) {
-      console.log(`[SUPERSESSION] ⚠️ Cost limit reached at $${totalCost.toFixed(2)}`);
+      apiLogger.info(`[SUPERSESSION] ⚠️ Cost limit reached at $${totalCost.toFixed(2)}`);
       break;
     }
 
@@ -331,7 +332,7 @@ export async function runSupersessionMatching(
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     } catch (error: any) {
-      console.error(`[SUPERSESSION] Error processing ${item.partNumber}:`, error.message);
+      apiLogger.error(`[SUPERSESSION] Error processing ${item.partNumber}:`, error.message);
     }
   }
 
@@ -358,13 +359,13 @@ export async function runSupersessionMatching(
       skipDuplicates: true,
     });
 
-    console.log(`[SUPERSESSION] ✅ Saved ${matches.length} matches to database`);
+    apiLogger.info(`[SUPERSESSION] ✅ Saved ${matches.length} matches to database`);
   }
 
   const matchRate = (matches.length / unmatchedItems.length) * 100;
-  console.log(`[SUPERSESSION] === COMPLETE ===`);
-  console.log(`[SUPERSESSION] Matches: ${matches.length}/${unmatchedItems.length} (${matchRate.toFixed(1)}%)`);
-  console.log(`[SUPERSESSION] Cost: $${totalCost.toFixed(2)}`);
+  apiLogger.info(`[SUPERSESSION] === COMPLETE ===`);
+  apiLogger.info(`[SUPERSESSION] Matches: ${matches.length}/${unmatchedItems.length} (${matchRate.toFixed(1)}%)`);
+  apiLogger.info(`[SUPERSESSION] Cost: $${totalCost.toFixed(2)}`);
 
   return {
     matchesFound: matches.length,

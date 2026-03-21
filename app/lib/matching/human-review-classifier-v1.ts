@@ -10,6 +10,7 @@
 
 import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -101,7 +102,7 @@ Return JSON:
     const result = JSON.parse(content) as UnmatchableClassification;
     return result;
   } catch (error: any) {
-    console.error('[CLASSIFIER] Error classifying item:', error.message);
+    apiLogger.error('[CLASSIFIER] Error classifying item:', error.message);
     return null;
   }
 }
@@ -146,11 +147,11 @@ async function processItem(
   const classification = await classifyUnmatchableItem(storeItem, attemptHistory);
 
   if (!classification) {
-    console.log(`[CLASSIFIER] Failed to classify ${storeItem.partNumber}`);
+    apiLogger.info(`[CLASSIFIER] Failed to classify ${storeItem.partNumber}`);
     return null;
   }
 
-  console.log(
+  apiLogger.info(
     `[CLASSIFIER] ${storeItem.partNumber} → ${classification.category} (${classification.recommendation})`
   );
 
@@ -167,7 +168,7 @@ export async function runHumanReviewClassification(
   projectId: string,
   batchSize: number = CLASSIFIER_CONFIG.BATCH_SIZE
 ): Promise<{ itemsClassified: number; itemsProcessed: number; estimatedCost: number }> {
-  console.log(`[CLASSIFIER] Starting human review classification for project ${projectId}`);
+  apiLogger.info(`[CLASSIFIER] Starting human review classification for project ${projectId}`);
 
   // Get items with no matches from any stage
   const unmatchedItems = await prisma.storeItem.findMany({
@@ -190,7 +191,7 @@ export async function runHumanReviewClassification(
     orderBy: { id: 'asc' },
   });
 
-  console.log(`[CLASSIFIER] Found ${unmatchedItems.length} unmatched items`);
+  apiLogger.info(`[CLASSIFIER] Found ${unmatchedItems.length} unmatched items`);
 
   if (unmatchedItems.length === 0) {
     return { itemsClassified: 0, itemsProcessed: 0, estimatedCost: 0 };
@@ -204,7 +205,7 @@ export async function runHumanReviewClassification(
     const item = unmatchedItems[i];
 
     if (totalCost >= CLASSIFIER_CONFIG.MAX_COST) {
-      console.log(`[CLASSIFIER] ⚠️ Cost limit reached at $${totalCost.toFixed(2)}`);
+      apiLogger.info(`[CLASSIFIER] ⚠️ Cost limit reached at $${totalCost.toFixed(2)}`);
       break;
     }
 
@@ -222,7 +223,7 @@ export async function runHumanReviewClassification(
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     } catch (error: any) {
-      console.error(`[CLASSIFIER] Error processing ${item.partNumber}:`, error.message);
+      apiLogger.error(`[CLASSIFIER] Error processing ${item.partNumber}:`, error.message);
     }
   }
 
@@ -249,15 +250,15 @@ export async function runHumanReviewClassification(
       skipDuplicates: true,
     });
 
-    console.log(`[CLASSIFIER] ✅ Saved ${classifications.length} classifications to database`);
+    apiLogger.info(`[CLASSIFIER] ✅ Saved ${classifications.length} classifications to database`);
   }
 
   const classificationRate = (classifications.length / unmatchedItems.length) * 100;
-  console.log(`[CLASSIFIER] === COMPLETE ===`);
-  console.log(
+  apiLogger.info(`[CLASSIFIER] === COMPLETE ===`);
+  apiLogger.info(
     `[CLASSIFIER] Classified: ${classifications.length}/${unmatchedItems.length} (${classificationRate.toFixed(1)}%)`
   );
-  console.log(`[CLASSIFIER] Cost: $${totalCost.toFixed(2)}`);
+  apiLogger.info(`[CLASSIFIER] Cost: $${totalCost.toFixed(2)}`);
 
   return {
     itemsClassified: classifications.length,

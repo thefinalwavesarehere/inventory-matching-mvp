@@ -15,6 +15,7 @@
  */
 
 import { prisma } from '@/app/lib/db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 /**
  * Hardcoded brand aliases (fallback if database is empty)
@@ -102,7 +103,7 @@ export async function loadBrandAliases(projectId?: string): Promise<Map<string, 
       return aliasCache;
     }
     
-    console.log('[BRAND_ALIAS] Loading brand aliases from database...');
+    apiLogger.info('[BRAND_ALIAS] Loading brand aliases from database...');
     
     // Load from database
     const interchanges = await prisma.lineCodeInterchange.findMany({
@@ -141,7 +142,7 @@ export async function loadBrandAliases(projectId?: string): Promise<Map<string, 
       }
     }
     
-    console.log(`[BRAND_ALIAS] Loaded ${aliasMap.size} brand aliases (${interchanges.length} from DB, ${Object.keys(HARDCODED_ALIASES).length} hardcoded)`);
+    apiLogger.info(`[BRAND_ALIAS] Loaded ${aliasMap.size} brand aliases (${interchanges.length} from DB, ${Object.keys(HARDCODED_ALIASES).length} hardcoded)`);
     
     // Update cache
     aliasCache = aliasMap;
@@ -150,7 +151,7 @@ export async function loadBrandAliases(projectId?: string): Promise<Map<string, 
     return aliasMap;
     
   } catch (error) {
-    console.error('[BRAND_ALIAS] Error loading aliases from database:', error);
+    apiLogger.error('[BRAND_ALIAS] Error loading aliases from database:', error);
     
     // Fallback to hardcoded aliases only
     const fallbackMap = new Map<string, string>();
@@ -158,7 +159,7 @@ export async function loadBrandAliases(projectId?: string): Promise<Map<string, 
       fallbackMap.set(normalizeLineCode(source), normalizeLineCode(target));
     }
     
-    console.log(`[BRAND_ALIAS] Using ${fallbackMap.size} hardcoded aliases (database unavailable)`);
+    apiLogger.info(`[BRAND_ALIAS] Using ${fallbackMap.size} hardcoded aliases (database unavailable)`);
     return fallbackMap;
   }
 }
@@ -201,7 +202,7 @@ export async function resolveLineCode(lineCode: string | null, projectId?: strin
   // Check if it's an alias
   if (aliasMap.has(normalized)) {
     const canonical = aliasMap.get(normalized)!;
-    console.log(`[BRAND_ALIAS] Resolved: ${lineCode} → ${canonical}`);
+    apiLogger.info(`[BRAND_ALIAS] Resolved: ${lineCode} → ${canonical}`);
     return canonical;
   }
   
@@ -278,7 +279,7 @@ export async function getAllBrandAliases(projectId?: string): Promise<Record<str
 export function clearAliasCache(): void {
   aliasCache = null;
   cacheTimestamp = 0;
-  console.log('[BRAND_ALIAS] Cache cleared');
+  apiLogger.info('[BRAND_ALIAS] Cache cleared');
 }
 
 /**

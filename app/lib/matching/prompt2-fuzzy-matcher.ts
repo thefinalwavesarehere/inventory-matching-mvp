@@ -10,6 +10,7 @@
  */
 
 import prisma from '@/app/lib/db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 interface FuzzyCandidate {
   storeItemId: string;
@@ -274,7 +275,7 @@ export async function findFuzzyCandidates(
   projectId: string,
   storeIds?: string[]
 ): Promise<FuzzyCandidate[]> {
-  console.log(`[PROMPT2-FUZZY] Starting fuzzy matching for project ${projectId}`);
+  apiLogger.info(`[PROMPT2-FUZZY] Starting fuzzy matching for project ${projectId}`);
 
   // Get project config
   const project = await prisma.project.findUnique({
@@ -304,7 +305,7 @@ export async function findFuzzyCandidates(
     },
   });
 
-  console.log(`[PROMPT2-FUZZY] Config: ${JSON.stringify(config)}, Approved rules: ${approvedRules.length}`);
+  apiLogger.info(`[PROMPT2-FUZZY] Config: ${JSON.stringify(config)}, Approved rules: ${approvedRules.length}`);
 
   // Get store items (skip those with exact matches)
   const storeItems = await prisma.storeItem.findMany({
@@ -320,11 +321,11 @@ export async function findFuzzyCandidates(
     },
   });
 
-  console.log(`[PROMPT2-FUZZY] Found ${storeItems.length} store items`);
+  apiLogger.info(`[PROMPT2-FUZZY] Found ${storeItems.length} store items`);
 
   // Filter out items with exact matches
   const itemsNeedingFuzzy = storeItems.filter(item => item.matchCandidates.length === 0);
-  console.log(`[PROMPT2-FUZZY] ${itemsNeedingFuzzy.length} items need fuzzy matching (${storeItems.length - itemsNeedingFuzzy.length} already have exact matches)`);
+  apiLogger.info(`[PROMPT2-FUZZY] ${itemsNeedingFuzzy.length} items need fuzzy matching (${storeItems.length - itemsNeedingFuzzy.length} already have exact matches)`);
 
   const candidates: FuzzyCandidate[] = [];
 
@@ -344,7 +345,7 @@ export async function findFuzzyCandidates(
       // Apply hard rejects
       const rejectReason = await applyHardRejects(storeItem, supplierItem, config);
       if (rejectReason) {
-        console.log(`[PROMPT2-FUZZY] REJECT: ${storeItem.partNumber} → ${supplierItem.partNumber}: ${rejectReason}`);
+        apiLogger.info(`[PROMPT2-FUZZY] REJECT: ${storeItem.partNumber} → ${supplierItem.partNumber}: ${rejectReason}`);
         continue;
       }
 
@@ -357,7 +358,7 @@ export async function findFuzzyCandidates(
       if (isAmbiguous && !hasDisambiguator) {
         // Cap confidence for ambiguous matches
         const cappedConfidence = Math.min(confidence, 0.6);
-        console.log(`[PROMPT2-FUZZY] COLLISION: ${storeItem.partNumber} → ${supplierItem.partNumber}: confidence capped ${confidence.toFixed(2)} → ${cappedConfidence.toFixed(2)}`);
+        apiLogger.info(`[PROMPT2-FUZZY] COLLISION: ${storeItem.partNumber} → ${supplierItem.partNumber}: confidence capped ${confidence.toFixed(2)} → ${cappedConfidence.toFixed(2)}`);
         
         candidates.push({
           storeItemId: storeItem.id,
@@ -381,7 +382,7 @@ export async function findFuzzyCandidates(
     }
   }
 
-  console.log(`[PROMPT2-FUZZY] Generated ${candidates.length} fuzzy candidates`);
+  apiLogger.info(`[PROMPT2-FUZZY] Generated ${candidates.length} fuzzy candidates`);
 
   return candidates;
 }

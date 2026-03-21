@@ -1,4 +1,5 @@
 import { findDirectMatches } from './postgres-direct-matcher-v8';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 export interface PostgresExactMatch {
   storeItemId: string;
@@ -22,16 +23,16 @@ export interface PostgresExactMatch {
  * for fuzzy or AI stages.
  */
 export async function findMatches(projectId: string, storeIds?: string[]): Promise<PostgresExactMatch[]> {
-  console.log(`[MATCHER_V9.0_CLEAN] Starting Clean Velocity Matching (Direct Index Only)`);
-  console.log(`[MATCHER_V9.0_CLEAN] Project: ${projectId}, Items: ${storeIds?.length || 'all'}`);
+  apiLogger.info(`[MATCHER_V9.0_CLEAN] Starting Clean Velocity Matching (Direct Index Only)`);
+  apiLogger.info(`[MATCHER_V9.0_CLEAN] Project: ${projectId}, Items: ${storeIds?.length || 'all'}`);
   
   // V9.0: ONLY use V8.0 direct index matching
   // No fallback, no suffix logic, no interchange hop
   // Pure database index speed
   const matches = await findDirectMatches(projectId, storeIds);
   
-  console.log(`[MATCHER_V9.0_CLEAN] Found ${matches.length} direct matches`);
-  console.log(`[MATCHER_V9.0_CLEAN] Performance: Direct index lookup only (no fallback)`);
+  apiLogger.info(`[MATCHER_V9.0_CLEAN] Found ${matches.length} direct matches`);
+  apiLogger.info(`[MATCHER_V9.0_CLEAN] Performance: Direct index lookup only (no fallback)`);
   
   return matches;
 }

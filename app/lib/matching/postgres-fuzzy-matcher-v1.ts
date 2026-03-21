@@ -13,6 +13,7 @@
  */
 
 import { prisma } from '@/app/lib/db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 export interface PostgresFuzzyMatch {
   storeItemId: string;
@@ -50,8 +51,8 @@ export async function findPostgresFuzzyMatches(
   jobId?: string // Optional for cancellation checks
 ): Promise<PostgresFuzzyMatch[]> {
   
-  console.log('[POSTGRES_FUZZY_V1.0] === STARTING FUZZY MATCHING ===');
-  console.log(`[POSTGRES_FUZZY_V1.0] Starting from offset: ${offset}`);
+  apiLogger.info('[POSTGRES_FUZZY_V1.0] === STARTING FUZZY MATCHING ===');
+  apiLogger.info(`[POSTGRES_FUZZY_V1.0] Starting from offset: ${offset}`);
   
   // Pre-flight check
   try {
@@ -67,19 +68,19 @@ export async function findPostgresFuzzyMatches(
       throw new Error(`Fuzzy matching requires trigram indexes. Found ${indexCount}/2.`);
     }
     
-    console.log('[POSTGRES_FUZZY_V1.0] ✅ Required indexes verified (2/2 present)');
+    apiLogger.info('[POSTGRES_FUZZY_V1.0] ✅ Required indexes verified (2/2 present)');
   } catch (error: any) {
     if (error.message?.includes('Fuzzy matching requires')) {
       throw error;
     }
-    console.warn('[POSTGRES_FUZZY_V1.0] ⚠️  Could not verify indexes');
+    apiLogger.warn('[POSTGRES_FUZZY_V1.0] ⚠️  Could not verify indexes');
   }
   
-  console.log('[POSTGRES_FUZZY_V1.0] Part number threshold:', PART_NUMBER_SIMILARITY_THRESHOLD);
-  console.log('[POSTGRES_FUZZY_V1.0] Description threshold:', DESCRIPTION_SIMILARITY_THRESHOLD);
+  apiLogger.info('[POSTGRES_FUZZY_V1.0] Part number threshold:', PART_NUMBER_SIMILARITY_THRESHOLD);
+  apiLogger.info('[POSTGRES_FUZZY_V1.0] Description threshold:', DESCRIPTION_SIMILARITY_THRESHOLD);
   
   // STEP 1: Get unmatched store items (fast, uses index)
-  console.log('[POSTGRES_FUZZY_V1.0] Step 1: Fetching unmatched store items...');
+  apiLogger.info('[POSTGRES_FUZZY_V1.0] Step 1: Fetching unmatched store items...');
   
   const unmatchedItems = await prisma.storeItem.findMany({
     where: {
@@ -107,15 +108,15 @@ export async function findPostgresFuzzyMatches(
   // Filter out items with null part numbers
   const validItems = unmatchedItems.filter(item => item.partNumber && item.partNumber.length >= MIN_PART_NUMBER_LENGTH);
   
-  console.log(`[POSTGRES_FUZZY_V1.0] Found ${validItems.length} unmatched items to process (${unmatchedItems.length} total, ${unmatchedItems.length - validItems.length} filtered)`);
+  apiLogger.info(`[POSTGRES_FUZZY_V1.0] Found ${validItems.length} unmatched items to process (${unmatchedItems.length} total, ${unmatchedItems.length - validItems.length} filtered)`);
   
   if (validItems.length === 0) {
-    console.log('[POSTGRES_FUZZY_V1.0] No valid unmatched items - returning empty');
+    apiLogger.info('[POSTGRES_FUZZY_V1.0] No valid unmatched items - returning empty');
     return [];
   }
   
   // STEP 2: Process in micro-batches of 50 items
-  console.log('[POSTGRES_FUZZY_V1.0] Step 2: Finding fuzzy matches...');
+  apiLogger.info('[POSTGRES_FUZZY_V1.0] Step 2: Finding fuzzy matches...');
   
   const allMatches: PostgresFuzzyMatch[] = [];
   
@@ -124,7 +125,7 @@ export async function findPostgresFuzzyMatches(
     if (jobId) {
       const { isJobCancelled } = await import('@/app/lib/job-queue-manager');
       if (await isJobCancelled(jobId)) {
-        console.log(`[POSTGRES_FUZZY_V1.0] Job ${jobId} cancelled during micro-batch processing`);
+        apiLogger.info(`[POSTGRES_FUZZY_V1.0] Job ${jobId} cancelled during micro-batch processing`);
         throw new Error('Job cancelled by user');
       }
     }
@@ -132,7 +133,7 @@ export async function findPostgresFuzzyMatches(
     const batch = validItems.slice(i, i + 150);
     const batchIds = batch.map(item => item.id);
     
-    console.log(`[POSTGRES_FUZZY_V1.0] Processing micro-batch ${Math.floor(i/150) + 1}/${Math.ceil(validItems.length/150)} (${batch.length} items)...`);
+    apiLogger.info(`[POSTGRES_FUZZY_V1.0] Processing micro-batch ${Math.floor(i/150) + 1}/${Math.ceil(validItems.length/150)} (${batch.length} items)...`);
     
     const sql = `
       WITH target_items AS (
@@ -213,21 +214,21 @@ export async function findPostgresFuzzyMatches(
       });
       
       allMatches.push(...mappedMatches);
-      console.log(`[POSTGRES_FUZZY_V1.0] Micro-batch ${Math.floor(i/150) + 1}: Found ${mappedMatches.length} matches in ${queryDuration}ms`);
+      apiLogger.info(`[POSTGRES_FUZZY_V1.0] Micro-batch ${Math.floor(i/150) + 1}: Found ${mappedMatches.length} matches in ${queryDuration}ms`);
       
     } catch (error: any) {
-      console.error(`[POSTGRES_FUZZY_V1.0] ❌ MICRO-BATCH ${Math.floor(i/150) + 1} FAILED`);
-      console.error(`[POSTGRES_FUZZY_V1.0] Error name: ${error?.name || 'Unknown'}`);
-      console.error(`[POSTGRES_FUZZY_V1.0] Error message: ${error?.message || 'No message'}`);
-      console.error(`[POSTGRES_FUZZY_V1.0] Error code: ${error?.code || 'No code'}`);
+      apiLogger.error(`[POSTGRES_FUZZY_V1.0] ❌ MICRO-BATCH ${Math.floor(i/150) + 1} FAILED`);
+      apiLogger.error(`[POSTGRES_FUZZY_V1.0] Error name: ${error?.name || 'Unknown'}`);
+      apiLogger.error(`[POSTGRES_FUZZY_V1.0] Error message: ${error?.message || 'No message'}`);
+      apiLogger.error(`[POSTGRES_FUZZY_V1.0] Error code: ${error?.code || 'No code'}`);
       if (error?.stack) {
-        console.error(`[POSTGRES_FUZZY_V1.0] Error stack: ${error.stack}`);
+        apiLogger.error(`[POSTGRES_FUZZY_V1.0] Error stack: ${error.stack}`);
       }
       // Continue with next batch instead of failing entirely
     }
   }
   
-  console.log(`[POSTGRES_FUZZY_V1.0] ✅ Total fuzzy matches found: ${allMatches.length}`);
+  apiLogger.info(`[POSTGRES_FUZZY_V1.0] ✅ Total fuzzy matches found: ${allMatches.length}`);
   
   // Calculate confidence distribution
   const confidenceDistribution = {
@@ -238,7 +239,7 @@ export async function findPostgresFuzzyMatches(
     questionable: allMatches.filter(m => m.confidence < 0.60).length,
   };
   
-  console.log('[POSTGRES_FUZZY_V1.0] Confidence distribution:', JSON.stringify(confidenceDistribution, null, 2));
+  apiLogger.info('[POSTGRES_FUZZY_V1.0] Confidence distribution:', JSON.stringify(confidenceDistribution, null, 2));
   
   return allMatches;
 }

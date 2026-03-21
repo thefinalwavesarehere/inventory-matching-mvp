@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 import { withAuth } from '@/app/lib/middleware/auth';
 import { apiLogger } from '@/app/lib/structured-logger';
 import { withRateLimit } from '@/app/lib/middleware/rate-limit';
+import { validateUploadedFile } from '@/app/lib/file-validation';
 
 export const dynamic = 'force-dynamic';
 // V9.5: Set maximum duration for large file uploads
@@ -117,8 +118,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Parse Excel file
-    const buffer = Buffer.from(await file.arrayBuffer());
+    // Validate file: MIME magic bytes, extension, and size
+    const rawBuffer = Buffer.from(await file.arrayBuffer());
+    const fileValidation = validateUploadedFile(file.name, rawBuffer.length, rawBuffer);
+    if (!fileValidation.valid) {
+      return NextResponse.json(
+        { success: false, error: fileValidation.error },
+        { status: 400 }
+      );
+    }
+    const buffer = rawBuffer;
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];

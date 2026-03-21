@@ -7,6 +7,7 @@
 
 import { prisma } from '@/app/lib/db/prisma';
 import { MasterRuleType, MasterRuleScope } from '@prisma/client';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 export interface ConversionResult {
   created: number;
@@ -33,7 +34,7 @@ export async function convertInterchangeToMasterRules(
     details: [],
   };
 
-  console.log(`[INTERCHANGE-CONVERTER] Converting Interchange entries to MasterRules...`);
+  apiLogger.info(`[INTERCHANGE-CONVERTER] Converting Interchange entries to MasterRules...`);
 
   try {
     // Fetch interchange entries
@@ -49,7 +50,7 @@ export async function convertInterchangeToMasterRules(
       },
     });
 
-    console.log(`[INTERCHANGE-CONVERTER] Found ${interchanges.length} interchange entries`);
+    apiLogger.info(`[INTERCHANGE-CONVERTER] Found ${interchanges.length} interchange entries`);
 
     for (const interchange of interchanges) {
       // Skip if missing normalized part numbers
@@ -108,15 +109,15 @@ export async function convertInterchangeToMasterRules(
         );
       } catch (error) {
         result.errors++;
-        console.error(`[INTERCHANGE-CONVERTER] Error converting interchange ${interchange.id}:`, error);
+        apiLogger.error(`[INTERCHANGE-CONVERTER] Error converting interchange ${interchange.id}:`, error);
       }
     }
   } catch (error) {
-    console.error('[INTERCHANGE-CONVERTER] Fatal error:', error);
+    apiLogger.error('[INTERCHANGE-CONVERTER] Fatal error:', error);
     throw error;
   }
 
-  console.log(
+  apiLogger.info(
     `[INTERCHANGE-CONVERTER] Conversion complete: ${result.created} created, ${result.skipped} skipped, ${result.errors} errors`
   );
 
@@ -140,7 +141,7 @@ export async function convertPartNumberInterchangeToMasterRules(
     details: [],
   };
 
-  console.log(`[INTERCHANGE-CONVERTER] Converting PartNumberInterchange entries to MasterRules...`);
+  apiLogger.info(`[INTERCHANGE-CONVERTER] Converting PartNumberInterchange entries to MasterRules...`);
 
   try {
     const where = projectId ? { projectId, active: true } : { active: true };
@@ -157,7 +158,7 @@ export async function convertPartNumberInterchangeToMasterRules(
       },
     });
 
-    console.log(`[INTERCHANGE-CONVERTER] Found ${interchanges.length} part number interchange entries`);
+    apiLogger.info(`[INTERCHANGE-CONVERTER] Found ${interchanges.length} part number interchange entries`);
 
     for (const interchange of interchanges) {
       try {
@@ -211,15 +212,15 @@ export async function convertPartNumberInterchangeToMasterRules(
         );
       } catch (error) {
         result.errors++;
-        console.error(`[INTERCHANGE-CONVERTER] Error converting part number interchange ${interchange.id}:`, error);
+        apiLogger.error(`[INTERCHANGE-CONVERTER] Error converting part number interchange ${interchange.id}:`, error);
       }
     }
   } catch (error) {
-    console.error('[INTERCHANGE-CONVERTER] Fatal error:', error);
+    apiLogger.error('[INTERCHANGE-CONVERTER] Fatal error:', error);
     throw error;
   }
 
-  console.log(
+  apiLogger.info(
     `[INTERCHANGE-CONVERTER] Conversion complete: ${result.created} created, ${result.skipped} skipped, ${result.errors} errors`
   );
 
@@ -243,7 +244,7 @@ export async function convertInterchangeMappingToMasterRules(
     details: [],
   };
 
-  console.log(`[INTERCHANGE-CONVERTER] Converting InterchangeMapping entries to MasterRules...`);
+  apiLogger.info(`[INTERCHANGE-CONVERTER] Converting InterchangeMapping entries to MasterRules...`);
 
   try {
     const mappings = await prisma.interchangeMapping.findMany({
@@ -256,7 +257,7 @@ export async function convertInterchangeMappingToMasterRules(
       },
     });
 
-    console.log(`[INTERCHANGE-CONVERTER] Found ${mappings.length} interchange mapping entries`);
+    apiLogger.info(`[INTERCHANGE-CONVERTER] Found ${mappings.length} interchange mapping entries`);
 
     for (const mapping of mappings) {
       // Skip if missing part numbers
@@ -304,15 +305,15 @@ export async function convertInterchangeMappingToMasterRules(
         );
       } catch (error) {
         result.errors++;
-        console.error(`[INTERCHANGE-CONVERTER] Error converting interchange mapping ${mapping.id}:`, error);
+        apiLogger.error(`[INTERCHANGE-CONVERTER] Error converting interchange mapping ${mapping.id}:`, error);
       }
     }
   } catch (error) {
-    console.error('[INTERCHANGE-CONVERTER] Fatal error:', error);
+    apiLogger.error('[INTERCHANGE-CONVERTER] Fatal error:', error);
     throw error;
   }
 
-  console.log(
+  apiLogger.info(
     `[INTERCHANGE-CONVERTER] Conversion complete: ${result.created} created, ${result.skipped} skipped, ${result.errors} errors`
   );
 
@@ -326,7 +327,7 @@ export async function convertAllInterchangesToMasterRules(
   projectId?: string,
   userId: string = 'system'
 ): Promise<ConversionResult> {
-  console.log(`[INTERCHANGE-CONVERTER] Starting full interchange conversion...`);
+  apiLogger.info(`[INTERCHANGE-CONVERTER] Starting full interchange conversion...`);
 
   const results: ConversionResult[] = [];
 
@@ -349,7 +350,7 @@ export async function convertAllInterchangesToMasterRules(
     details: results.flatMap((r) => r.details),
   };
 
-  console.log(
+  apiLogger.info(
     `[INTERCHANGE-CONVERTER] Full conversion complete: ${aggregated.created} created, ${aggregated.skipped} skipped, ${aggregated.errors} errors`
   );
 

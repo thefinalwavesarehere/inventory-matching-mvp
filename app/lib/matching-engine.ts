@@ -12,6 +12,7 @@
  */
 
 import { compareCosts, computeTransformationSignature } from './normalization';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 export interface MatchCandidate {
   storeItemId: string;
@@ -181,9 +182,9 @@ export class MatchingIndexes {
 
     // Debug: Show first few raw interchange records
     if (interchanges.length > 0) {
-      console.log(`[INTERCHANGE-RAW] First 3 interchange records:`);
+      apiLogger.info(`[INTERCHANGE-RAW] First 3 interchange records:`);
       for (let i = 0; i < Math.min(3, interchanges.length); i++) {
-        console.log(`  [${i}] competitor='${interchanges[i].competitorFullSku}' arnold='${interchanges[i].arnoldFullSku}'`);
+        apiLogger.info(`  [${i}] competitor='${interchanges[i].competitorFullSku}' arnold='${interchanges[i].arnoldFullSku}'`);
       }
     }
     
@@ -197,10 +198,10 @@ export class MatchingIndexes {
     }
     
     // Debug logging
-    console.log(`[INTERCHANGE-INDEX] Built reverse index with ${this.reverseInterchangeIndex.size} Arnold parts`);
+    apiLogger.info(`[INTERCHANGE-INDEX] Built reverse index with ${this.reverseInterchangeIndex.size} Arnold parts`);
     if (this.reverseInterchangeIndex.size > 0) {
       const firstFive = Array.from(this.reverseInterchangeIndex.entries()).slice(0, 5);
-      console.log(`[INTERCHANGE-INDEX] Sample entries:`, firstFive.map(([k, v]) => `${k} -> [${v.slice(0, 2).join(', ')}]`));
+      apiLogger.info(`[INTERCHANGE-INDEX] Sample entries:`, firstFive.map(([k, v]) => `${k} -> [${v.slice(0, 2).join(', ')}]`));
     }
 
     // Build rules index
@@ -405,9 +406,9 @@ export function stage1DeterministicMatching(
     
     // Debug logging for first few items
     if (matches.length < 5 && indexes.reverseInterchangeIndex.size > 0) {
-      console.log(`[INTERCHANGE-DEBUG] Store part: ${storePartUpper}, Found ${competitorSkus.length} competitor SKUs`);
+      apiLogger.info(`[INTERCHANGE-DEBUG] Store part: ${storePartUpper}, Found ${competitorSkus.length} competitor SKUs`);
       if (competitorSkus.length > 0) {
-        console.log(`[INTERCHANGE-DEBUG] Competitor SKUs:`, competitorSkus.slice(0, 3));
+        apiLogger.info(`[INTERCHANGE-DEBUG] Competitor SKUs:`, competitorSkus.slice(0, 3));
       }
     }
     
@@ -918,26 +919,26 @@ export async function runMultiStageMatching(
   const allMetrics: StageMetrics[] = [];
 
   // Stage 0: Build indexes
-  console.log('[MATCHING] Stage 0: Building indexes...');
+  apiLogger.info('[MATCHING] Stage 0: Building indexes...');
   const indexes = new MatchingIndexes(supplierItems, interchanges, rules);
 
   // Stage 1: Deterministic matching
   if (options.stage1Enabled !== false) {
-    console.log('[MATCHING] Stage 1: Deterministic matching...');
+    apiLogger.info('[MATCHING] Stage 1: Deterministic matching...');
     const stage1 = stage1DeterministicMatching(storeItems, indexes, options);
     allMatches.push(...stage1.matches);
     allMetrics.push(stage1.metrics);
-    console.log(`[MATCHING] Stage 1 complete: ${stage1.matches.length} matches (${(stage1.metrics.matchRate * 100).toFixed(1)}%)`);
+    apiLogger.info(`[MATCHING] Stage 1 complete: ${stage1.matches.length} matches (${(stage1.metrics.matchRate * 100).toFixed(1)}%)`);
   }
 
   // Stage 2: Fuzzy matching
   if (options.stage2Enabled !== false) {
-    console.log('[MATCHING] Stage 2: Fuzzy matching...');
+    apiLogger.info('[MATCHING] Stage 2: Fuzzy matching...');
     const matchedStoreIds = new Set(allMatches.map(m => m.storeItemId));
     const stage2 = stage2FuzzyMatching(storeItems, supplierItems, matchedStoreIds, options);
     allMatches.push(...stage2.matches);
     allMetrics.push(stage2.metrics);
-    console.log(`[MATCHING] Stage 2 complete: ${stage2.matches.length} matches (${(stage2.metrics.matchRate * 100).toFixed(1)}%)`);
+    apiLogger.info(`[MATCHING] Stage 2 complete: ${stage2.matches.length} matches (${(stage2.metrics.matchRate * 100).toFixed(1)}%)`);
   }
 
   // Compute summary
@@ -952,7 +953,7 @@ export async function runMultiStageMatching(
     stage2Matches,
   };
 
-  console.log(`[MATCHING] Complete: ${allMatches.length}/${storeItems.length} matched (${(summary.overallMatchRate * 100).toFixed(1)}%)`);
+  apiLogger.info(`[MATCHING] Complete: ${allMatches.length}/${storeItems.length} matched (${(summary.overallMatchRate * 100).toFixed(1)}%)`);
 
   return {
     matches: allMatches,

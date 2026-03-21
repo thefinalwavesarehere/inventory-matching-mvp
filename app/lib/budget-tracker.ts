@@ -6,6 +6,7 @@
  */
 
 import { prisma } from './db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 export interface CostEstimate {
   estimatedCost: number;
@@ -169,7 +170,7 @@ export async function recordCost(
     },
   });
 
-  console.log(`[BUDGET] Recorded ${operation} cost: $${actualCost.toFixed(4)} for ${itemsProcessed} items`);
+  apiLogger.info(`[BUDGET] Recorded ${operation} cost: $${actualCost.toFixed(4)} for ${itemsProcessed} items`);
 }
 
 /**

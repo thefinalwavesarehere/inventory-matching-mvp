@@ -8,6 +8,7 @@
 
 import { VendorAction } from '@prisma/client';
 import { prisma } from '@/app/lib/db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 
 /**
@@ -176,7 +177,7 @@ export async function resolveVendorAction(match: MatchData, projectId?: string |
     return matchingRules[0].action;
 
   } catch (error) {
-    console.error('[VENDOR_ACTION_RESOLVER] Error resolving vendor action:', error);
+    apiLogger.error('[VENDOR_ACTION_RESOLVER] Error resolving vendor action:', error);
     // On error, default to NONE to avoid blocking match creation
     return 'NONE';
   }
@@ -259,7 +260,7 @@ export async function resolveVendorActionsBatch(matches: MatchData[], projectId?
     });
 
   } catch (error) {
-    console.error('[VENDOR_ACTION_RESOLVER] Error in batch resolution:', error);
+    apiLogger.error('[VENDOR_ACTION_RESOLVER] Error in batch resolution:', error);
     // On error, default all to NONE
     return matches.map(() => 'NONE');
   }
@@ -277,10 +278,10 @@ export async function testVendorActionResolver() {
     { supplierLineCode: 'UNKNOWN_BRAND', category: 'parts', subcategory: 'misc' },
   ];
 
-  console.log('[VENDOR_ACTION_RESOLVER] Running test cases...');
+  apiLogger.info('[VENDOR_ACTION_RESOLVER] Running test cases...');
   
   for (const testCase of testCases) {
     const action = await resolveVendorAction(testCase);
-    console.log(`  ${testCase.supplierLineCode} / ${testCase.category} / ${testCase.subcategory} → ${action}`);
+    apiLogger.info(`  ${testCase.supplierLineCode} / ${testCase.category} / ${testCase.subcategory} → ${action}`);
   }
 }

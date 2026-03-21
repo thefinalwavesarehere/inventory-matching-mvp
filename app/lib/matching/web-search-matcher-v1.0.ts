@@ -14,6 +14,7 @@ import { Prisma } from '@prisma/client';
 import OpenAI from 'openai';
 import { TavilyClient } from 'tavily';
 import { getSupplierCatalog } from './supplier-catalog-cache';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -260,7 +261,7 @@ Return JSON object with "matches" array:
     
     const content = response.choices[0].message.content;
     if (!content) {
-      console.error('[WEB_SEARCH] Empty GPT response');
+      apiLogger.error('[WEB_SEARCH] Empty GPT response');
       return [];
     }
     
@@ -270,7 +271,7 @@ Return JSON object with "matches" array:
       const parsed = JSON.parse(content);
       evaluations = parsed.matches || parsed.results || [];
     } catch (parseError) {
-      console.error('[WEB_SEARCH] Failed to parse GPT response:', parseError);
+      apiLogger.error('[WEB_SEARCH] Failed to parse GPT response:', parseError);
       return [];
     }
     
@@ -280,7 +281,7 @@ Return JSON object with "matches" array:
       .map(e => {
         const result = searchResults[e.itemIndex];
         if (!result) {
-          console.warn(`[WEB_SEARCH] Invalid itemIndex ${e.itemIndex}`);
+          apiLogger.warn(`[WEB_SEARCH] Invalid itemIndex ${e.itemIndex}`);
           return null;
         }
         
@@ -307,24 +308,24 @@ Return JSON object with "matches" array:
       const confidence = Math.round(m!.confidence * 100);
       
       if (m!.confidence >= 0.75) {
-        console.log(`[WEB_SEARCH] 🟢 HIGH (${confidence}%): ${item?.partNumber}`);
+        apiLogger.info(`[WEB_SEARCH] 🟢 HIGH (${confidence}%): ${item?.partNumber}`);
       } else if (m!.confidence >= 0.65) {
-        console.log(`[WEB_SEARCH] 🟡 MEDIUM (${confidence}%): ${item?.partNumber}`);
+        apiLogger.info(`[WEB_SEARCH] 🟡 MEDIUM (${confidence}%): ${item?.partNumber}`);
       } else {
-        console.log(`[WEB_SEARCH] 🟠 LOW (${confidence}%): ${item?.partNumber}`);
+        apiLogger.info(`[WEB_SEARCH] 🟠 LOW (${confidence}%): ${item?.partNumber}`);
       }
     });
     
     // Log non-matches
     evaluations.filter(e => !e.matched).forEach(e => {
       const item = searchResults[e.itemIndex]?.item;
-      console.log(`[WEB_SEARCH] ❌ No match: ${item?.partNumber}`);
+      apiLogger.info(`[WEB_SEARCH] ❌ No match: ${item?.partNumber}`);
     });
     
     return matchCandidates.filter(Boolean);
     
   } catch (error: any) {
-    console.error('[WEB_SEARCH] GPT evaluation failed:', error.message);
+    apiLogger.error('[WEB_SEARCH] GPT evaluation failed:', error.message);
     return [];
   }
 }
@@ -337,11 +338,11 @@ export async function runWebSearchMatching(
   batchSize: number = WEB_SEARCH_CONFIG.BATCH_SIZE
 ): Promise<{ matchesFound: number; itemsProcessed: number; estimatedCost: number }> {
   
-  console.log(`[WEB_SEARCH] Starting web search matching for project ${projectId}`);
+  apiLogger.info(`[WEB_SEARCH] Starting web search matching for project ${projectId}`);
   
   // Get supplier catalog (cached)
   const supplierCatalog = await getSupplierCatalog(projectId);
-  console.log(`[WEB_SEARCH] Loaded ${supplierCatalog.length} suppliers from cache`);
+  apiLogger.info(`[WEB_SEARCH] Loaded ${supplierCatalog.length} suppliers from cache`);
   
   // Get unmatched items
   const unmatchedItems = await prisma.storeItem.findMany({
@@ -365,7 +366,7 @@ export async function runWebSearchMatching(
     orderBy: { id: 'asc' },
   });
   
-  console.log(`[WEB_SEARCH] Found ${unmatchedItems.length} unmatched items`);
+  apiLogger.info(`[WEB_SEARCH] Found ${unmatchedItems.length} unmatched items`);
   
   if (unmatchedItems.length === 0) {
     return { matchesFound: 0, itemsProcessed: 0, estimatedCost: 0 };
@@ -376,14 +377,14 @@ export async function runWebSearchMatching(
   const filteredCount = unmatchedItems.length - matchableItems.length;
   
   if (filteredCount > 0) {
-    console.log(`[WEB_SEARCH] Pre-filtered ${filteredCount} unmatchable items`);
+    apiLogger.info(`[WEB_SEARCH] Pre-filtered ${filteredCount} unmatchable items`);
   }
   
   if (matchableItems.length === 0) {
     return { matchesFound: 0, itemsProcessed: unmatchedItems.length, estimatedCost: 0 };
   }
   
-  console.log(`[WEB_SEARCH] Processing ${matchableItems.length} matchable items`);
+  apiLogger.info(`[WEB_SEARCH] Processing ${matchableItems.length} matchable items`);
   
   const allMatches: any[] = [];
   let totalCost = 0;
@@ -392,14 +393,14 @@ export async function runWebSearchMatching(
   for (let i = 0; i < matchableItems.length; i += WEB_SEARCH_CONFIG.MICRO_BATCH_SIZE) {
     const microBatch = matchableItems.slice(i, i + WEB_SEARCH_CONFIG.MICRO_BATCH_SIZE);
     
-    console.log(`[WEB_SEARCH] === Micro-batch ${Math.floor(i / WEB_SEARCH_CONFIG.MICRO_BATCH_SIZE) + 1} ===`);
-    console.log(`[WEB_SEARCH] 🔄 Processing ${microBatch.length} items...`);
+    apiLogger.info(`[WEB_SEARCH] === Micro-batch ${Math.floor(i / WEB_SEARCH_CONFIG.MICRO_BATCH_SIZE) + 1} ===`);
+    apiLogger.info(`[WEB_SEARCH] 🔄 Processing ${microBatch.length} items...`);
     
     // STEP 1: Parallel Tavily searches
     const searchPromises = microBatch.map(async (item) => {
       try {
         const query = constructTavilyQuery(item);
-        console.log(`[WEB_SEARCH] 🔍 Searching: ${item.partNumber}`);
+        apiLogger.info(`[WEB_SEARCH] 🔍 Searching: ${item.partNumber}`);
         
         const results = await tavilyClient.search({
           query,
@@ -414,7 +415,7 @@ export async function runWebSearchMatching(
           answer: results.answer || null
         };
       } catch (error: any) {
-        console.error(`[WEB_SEARCH] ❌ Search failed for ${item.partNumber}:`, error.message);
+        apiLogger.error(`[WEB_SEARCH] ❌ Search failed for ${item.partNumber}:`, error.message);
         return { item, results: [], answer: null };
       }
     });
@@ -423,10 +424,10 @@ export async function runWebSearchMatching(
     
     // Filter valid results
     const validResults = searchResults.filter(sr => sr.results.length >= WEB_SEARCH_CONFIG.MIN_SEARCH_RESULTS);
-    console.log(`[WEB_SEARCH] ✅ ${validResults.length}/${microBatch.length} items have valid search results`);
+    apiLogger.info(`[WEB_SEARCH] ✅ ${validResults.length}/${microBatch.length} items have valid search results`);
     
     if (validResults.length === 0) {
-      console.log(`[WEB_SEARCH] ⚠️ No valid search results in micro-batch, skipping`);
+      apiLogger.info(`[WEB_SEARCH] ⚠️ No valid search results in micro-batch, skipping`);
       continue;
     }
     
@@ -444,12 +445,12 @@ export async function runWebSearchMatching(
     const gptCost = WEB_SEARCH_CONFIG.COST_PER_GPT_EVAL;
     totalCost += tavilyCost + gptCost;
     
-    console.log(`[WEB_SEARCH] 💰 Batch: ${batchMatches.length} matches, Cost: $${(tavilyCost + gptCost).toFixed(3)}`);
-    console.log(`[WEB_SEARCH] Progress: ${i + microBatch.length}/${matchableItems.length}, Total Matches: ${allMatches.length}, Cost: $${totalCost.toFixed(2)}/${WEB_SEARCH_CONFIG.MAX_COST}`);
+    apiLogger.info(`[WEB_SEARCH] 💰 Batch: ${batchMatches.length} matches, Cost: $${(tavilyCost + gptCost).toFixed(3)}`);
+    apiLogger.info(`[WEB_SEARCH] Progress: ${i + microBatch.length}/${matchableItems.length}, Total Matches: ${allMatches.length}, Cost: $${totalCost.toFixed(2)}/${WEB_SEARCH_CONFIG.MAX_COST}`);
     
     // STEP 4: Check cost limit
     if (totalCost >= WEB_SEARCH_CONFIG.MAX_COST) {
-      console.log(`[WEB_SEARCH] 🛑 Cost limit reached ($${totalCost.toFixed(2)})`);
+      apiLogger.info(`[WEB_SEARCH] 🛑 Cost limit reached ($${totalCost.toFixed(2)})`);
       break;
     }
     
@@ -466,13 +467,13 @@ export async function runWebSearchMatching(
       skipDuplicates: true,
     });
     
-    console.log(`[WEB_SEARCH] ✅ Saved ${allMatches.length} matches to database`);
+    apiLogger.info(`[WEB_SEARCH] ✅ Saved ${allMatches.length} matches to database`);
   }
   
   const matchRate = (allMatches.length / unmatchedItems.length) * 100;
-  console.log(`[WEB_SEARCH] === COMPLETE ===`);
-  console.log(`[WEB_SEARCH] Matches: ${allMatches.length}/${unmatchedItems.length} (${matchRate.toFixed(1)}%)`);
-  console.log(`[WEB_SEARCH] Cost: $${totalCost.toFixed(2)}`);
+  apiLogger.info(`[WEB_SEARCH] === COMPLETE ===`);
+  apiLogger.info(`[WEB_SEARCH] Matches: ${allMatches.length}/${unmatchedItems.length} (${matchRate.toFixed(1)}%)`);
+  apiLogger.info(`[WEB_SEARCH] Cost: $${totalCost.toFixed(2)}`);
   
   return {
     matchesFound: allMatches.length,

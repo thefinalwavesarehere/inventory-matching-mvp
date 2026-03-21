@@ -11,6 +11,7 @@
 import prisma from '@/app/lib/db/prisma';
 import OpenAI from 'openai';
 import { getSupplierCatalog } from './supplier-catalog-cache';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -82,7 +83,7 @@ Return ONLY a JSON object with a "variations" array of 5-10 most likely variatio
 
     return variations;
   } catch (error: any) {
-    console.error('[AI_FUZZY] Error generating variations:', error.message);
+    apiLogger.error('[AI_FUZZY] Error generating variations:', error.message);
     return [item.partNumber];
   }
 }
@@ -107,7 +108,7 @@ function findVariationMatch(
     });
     
     if (exactMatch) {
-      console.log(`[AI_FUZZY] Variation match: ${storeItem.partNumber} → ${variant} → ${exactMatch.partNumber}`);
+      apiLogger.info(`[AI_FUZZY] Variation match: ${storeItem.partNumber} → ${variant} → ${exactMatch.partNumber}`);
       return exactMatch;
     }
   }
@@ -125,13 +126,13 @@ async function processItem(
   
   // Generate variations
   const variations = await generatePartNumberVariations(storeItem);
-  console.log(`[AI_FUZZY] Generated ${variations.length} variations for ${storeItem.partNumber}`);
+  apiLogger.info(`[AI_FUZZY] Generated ${variations.length} variations for ${storeItem.partNumber}`);
   
   // Search for match
   const match = findVariationMatch(variations, supplierCatalog, storeItem);
   
   if (!match) {
-    console.log(`[AI_FUZZY] No match for ${storeItem.partNumber}`);
+    apiLogger.info(`[AI_FUZZY] No match for ${storeItem.partNumber}`);
     return null;
   }
   
@@ -168,7 +169,7 @@ export async function runAIEnhancedFuzzyMatching(
   projectId: string,
   batchSize: number = AI_FUZZY_CONFIG.BATCH_SIZE
 ): Promise<{ matchesFound: number; itemsProcessed: number; estimatedCost: number }> {
-  console.log(`[AI_FUZZY] Starting AI-enhanced fuzzy matching for project ${projectId}`);
+  apiLogger.info(`[AI_FUZZY] Starting AI-enhanced fuzzy matching for project ${projectId}`);
   
   // Get unmatched items (not matched by stages 1 or 2)
   const unmatchedItems = await prisma.storeItem.findMany({
@@ -191,7 +192,7 @@ export async function runAIEnhancedFuzzyMatching(
     orderBy: { id: 'asc' },
   });
   
-  console.log(`[AI_FUZZY] Found ${unmatchedItems.length} unmatched items`);
+  apiLogger.info(`[AI_FUZZY] Found ${unmatchedItems.length} unmatched items`);
   
   if (unmatchedItems.length === 0) {
     return { matchesFound: 0, itemsProcessed: 0, estimatedCost: 0 };
@@ -199,7 +200,7 @@ export async function runAIEnhancedFuzzyMatching(
   
   // Get supplier catalog (cached)
   const supplierCatalog = await getSupplierCatalog(projectId);
-  console.log(`[AI_FUZZY] Loaded ${supplierCatalog.length} supplier items from cache`);
+  apiLogger.info(`[AI_FUZZY] Loaded ${supplierCatalog.length} supplier items from cache`);
   
   const matches: any[] = [];
   let totalCost = 0;
@@ -209,7 +210,7 @@ export async function runAIEnhancedFuzzyMatching(
     const item = unmatchedItems[i];
     
     if (totalCost >= AI_FUZZY_CONFIG.MAX_COST) {
-      console.log(`[AI_FUZZY] ⚠️ Cost limit reached at $${totalCost.toFixed(2)}`);
+      apiLogger.info(`[AI_FUZZY] ⚠️ Cost limit reached at $${totalCost.toFixed(2)}`);
       break;
     }
     
@@ -227,7 +228,7 @@ export async function runAIEnhancedFuzzyMatching(
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     } catch (error: any) {
-      console.error(`[AI_FUZZY] Error processing ${item.partNumber}:`, error.message);
+      apiLogger.error(`[AI_FUZZY] Error processing ${item.partNumber}:`, error.message);
     }
   }
   
@@ -251,13 +252,13 @@ export async function runAIEnhancedFuzzyMatching(
       skipDuplicates: true,
     });
     
-    console.log(`[AI_FUZZY] ✅ Saved ${matches.length} matches to database`);
+    apiLogger.info(`[AI_FUZZY] ✅ Saved ${matches.length} matches to database`);
   }
   
   const matchRate = (matches.length / unmatchedItems.length) * 100;
-  console.log(`[AI_FUZZY] === COMPLETE ===`);
-  console.log(`[AI_FUZZY] Matches: ${matches.length}/${unmatchedItems.length} (${matchRate.toFixed(1)}%)`);
-  console.log(`[AI_FUZZY] Cost: $${totalCost.toFixed(2)}`);
+  apiLogger.info(`[AI_FUZZY] === COMPLETE ===`);
+  apiLogger.info(`[AI_FUZZY] Matches: ${matches.length}/${unmatchedItems.length} (${matchRate.toFixed(1)}%)`);
+  apiLogger.info(`[AI_FUZZY] Cost: $${totalCost.toFixed(2)}`);
   
   return {
     matchesFound: matches.length,

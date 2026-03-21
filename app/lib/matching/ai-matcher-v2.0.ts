@@ -15,6 +15,7 @@ import prisma from '@/app/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import OpenAI from 'openai';
 import { getSupplierCatalog } from './supplier-catalog-cache';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -118,11 +119,11 @@ async function evaluateExactPartStrategy(storeItem: StoreItem, candidates: Suppl
     const result = JSON.parse(content);
     if (result.matches && result.bestMatch) {
       const match = exactMatches[result.bestMatch - 1];
-      console.log(`[AI_V2] Exact match: ${storeItem.partNumber} → ${match.partNumber}`);
+      apiLogger.info(`[AI_V2] Exact match: ${storeItem.partNumber} → ${match.partNumber}`);
       return { storeItemId: storeItem.id, supplierId: match.id, confidence: Math.min(result.confidence * 0.95, AI_CONFIG_V2.MAX_CONFIDENCE), strategy: 'exact_part' };
     }
   } catch (error: any) {
-    console.error('[AI_V2] Exact strategy error:', error.message);
+    apiLogger.error('[AI_V2] Exact strategy error:', error.message);
   }
   return null;
 }
@@ -143,11 +144,11 @@ async function evaluateCrossReferenceStrategy(storeItem: StoreItem, candidates: 
     const result = JSON.parse(content);
     if (result.hasMatch && result.confidence >= 0.6) {
       const match = topCandidates[result.matchIndex - 1];
-      console.log(`[AI_V2] Cross-ref match: ${storeItem.partNumber} → ${match.partNumber} (${result.matchType})`);
+      apiLogger.info(`[AI_V2] Cross-ref match: ${storeItem.partNumber} → ${match.partNumber} (${result.matchType})`);
       return { storeItemId: storeItem.id, supplierId: match.id, confidence: result.confidence * 0.85, strategy: 'cross_reference', matchType: result.matchType, reasoning: result.reasoning };
     }
   } catch (error: any) {
-    console.error('[AI_V2] Cross-ref strategy error:', error.message);
+    apiLogger.error('[AI_V2] Cross-ref strategy error:', error.message);
   }
   return null;
 }
@@ -176,11 +177,11 @@ async function evaluateDescriptiveMatchStrategy(storeItem: StoreItem, candidates
     const result = JSON.parse(content);
     if (result.hasMatch && result.confidence >= 0.5) {
       const match = descriptiveCandidates[result.matchIndex - 1];
-      console.log(`[AI_V2] Descriptive match: ${storeItem.partNumber} → ${match.partNumber}`);
+      apiLogger.info(`[AI_V2] Descriptive match: ${storeItem.partNumber} → ${match.partNumber}`);
       return { storeItemId: storeItem.id, supplierId: match.id, confidence: Math.min(result.confidence, 0.7), strategy: 'descriptive', reasoning: result.reasoning };
     }
   } catch (error: any) {
-    console.error('[AI_V2] Descriptive strategy error:', error.message);
+    apiLogger.error('[AI_V2] Descriptive strategy error:', error.message);
   }
   return null;
 }
@@ -204,11 +205,11 @@ async function evaluateUniversalPartStrategy(storeItem: StoreItem, candidates: S
     const result = JSON.parse(content);
     if (result.hasMatch && result.confidence >= 0.5) {
       const match = topCandidates[result.matchIndex - 1];
-      console.log(`[AI_V2] Universal match: ${storeItem.partNumber} → ${match.partNumber}`);
+      apiLogger.info(`[AI_V2] Universal match: ${storeItem.partNumber} → ${match.partNumber}`);
       return { storeItemId: storeItem.id, supplierId: match.id, confidence: Math.min(result.confidence, 0.65), strategy: 'universal' };
     }
   } catch (error: any) {
-    console.error('[AI_V2] Universal strategy error:', error.message);
+    apiLogger.error('[AI_V2] Universal strategy error:', error.message);
   }
   return null;
 }
@@ -216,37 +217,37 @@ async function evaluateUniversalPartStrategy(storeItem: StoreItem, candidates: S
 async function processItem(storeItem: StoreItem, supplierCatalog: SupplierItem[]): Promise<any | null> {
   const candidates = selectBestCandidates(storeItem, supplierCatalog, AI_CONFIG_V2.CANDIDATE_LIMIT);
   if (candidates.length === 0) {
-    console.log(`[AI_V2] No viable candidates for ${storeItem.partNumber}`);
+    apiLogger.info(`[AI_V2] No viable candidates for ${storeItem.partNumber}`);
     return null;
   }
-  console.log(`[AI_V2] Selected ${candidates.length} candidates for ${storeItem.partNumber}`);
+  apiLogger.info(`[AI_V2] Selected ${candidates.length} candidates for ${storeItem.partNumber}`);
   const strategies = [evaluateExactPartStrategy, evaluateCrossReferenceStrategy, evaluateDescriptiveMatchStrategy, evaluateUniversalPartStrategy];
   for (const strategy of strategies) {
     const match = await strategy(storeItem, candidates);
     if (match && match.confidence >= AI_CONFIG_V2.MIN_CONFIDENCE) return match;
   }
-  console.log(`[AI_V2] No match for ${storeItem.partNumber}`);
+  apiLogger.info(`[AI_V2] No match for ${storeItem.partNumber}`);
   return null;
 }
 
 export async function runEnhancedAIMatching(projectId: string, batchSize: number = AI_CONFIG_V2.BATCH_SIZE): Promise<{ matchesFound: number; itemsProcessed: number; estimatedCost: number }> {
-  console.log(`[AI_V2] Starting enhanced AI matching for project ${projectId}`);
+  apiLogger.info(`[AI_V2] Starting enhanced AI matching for project ${projectId}`);
   const unmatchedItems = await prisma.storeItem.findMany({
     where: { projectId: projectId, matchCandidates: { none: { projectId: projectId, matchStage: { in: [1, 2, 3] } } } },
     select: { id: true, partNumber: true, lineCode: true, description: true, currentCost: true },
     take: batchSize,
     orderBy: { id: 'asc' },
   });
-  console.log(`[AI_V2] Found ${unmatchedItems.length} unmatched items`);
+  apiLogger.info(`[AI_V2] Found ${unmatchedItems.length} unmatched items`);
   if (unmatchedItems.length === 0) return { matchesFound: 0, itemsProcessed: 0, estimatedCost: 0 };
   const supplierCatalog = await getSupplierCatalog(projectId);
-  console.log(`[AI_V2] Loaded ${supplierCatalog.length} supplier items from cache`);
+  apiLogger.info(`[AI_V2] Loaded ${supplierCatalog.length} supplier items from cache`);
   const matches: any[] = [];
   let totalCost = 0;
   for (let i = 0; i < unmatchedItems.length; i++) {
     const item = unmatchedItems[i];
     if (totalCost >= AI_CONFIG_V2.MAX_COST) {
-      console.log(`[AI_V2] ⚠️ Cost limit reached at $${totalCost.toFixed(2)}`);
+      apiLogger.info(`[AI_V2] ⚠️ Cost limit reached at $${totalCost.toFixed(2)}`);
       break;
     }
     try {
@@ -255,7 +256,7 @@ export async function runEnhancedAIMatching(projectId: string, batchSize: number
       totalCost += AI_CONFIG_V2.COST_PER_ITEM;
       if (i < unmatchedItems.length - 1) await new Promise(resolve => setTimeout(resolve, 500));
     } catch (error: any) {
-      console.error(`[AI_V2] Error processing ${item.partNumber}:`, error.message);
+      apiLogger.error(`[AI_V2] Error processing ${item.partNumber}:`, error.message);
     }
   }
   if (matches.length > 0) {
@@ -273,11 +274,11 @@ export async function runEnhancedAIMatching(projectId: string, batchSize: number
       })),
       skipDuplicates: true,
     });
-    console.log(`[AI_V2] ✅ Saved ${matches.length} matches to database`);
+    apiLogger.info(`[AI_V2] ✅ Saved ${matches.length} matches to database`);
   }
   const matchRate = (matches.length / unmatchedItems.length) * 100;
-  console.log(`[AI_V2] === COMPLETE ===`);
-  console.log(`[AI_V2] Matches: ${matches.length}/${unmatchedItems.length} (${matchRate.toFixed(1)}%)`);
-  console.log(`[AI_V2] Cost: $${totalCost.toFixed(2)}`);
+  apiLogger.info(`[AI_V2] === COMPLETE ===`);
+  apiLogger.info(`[AI_V2] Matches: ${matches.length}/${unmatchedItems.length} (${matchRate.toFixed(1)}%)`);
+  apiLogger.info(`[AI_V2] Cost: $${totalCost.toFixed(2)}`);
   return { matchesFound: matches.length, itemsProcessed: unmatchedItems.length, estimatedCost: totalCost };
 }

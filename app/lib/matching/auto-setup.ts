@@ -12,6 +12,7 @@
  */
 
 import { prisma } from '@/app/lib/db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 /**
  * Index definition with metadata
@@ -261,7 +262,7 @@ export async function getSetupStatus(): Promise<SetupStatus> {
     };
     
   } catch (error) {
-    console.error('[SETUP_STATUS] Error checking status:', error);
+    apiLogger.error('[SETUP_STATUS] Error checking status:', error);
     
     return {
       isComplete: false,
@@ -282,16 +283,16 @@ export async function getSetupStatus(): Promise<SetupStatus> {
  * Enable required PostgreSQL extensions
  */
 async function enableExtensions(): Promise<void> {
-  console.log('[MATCHING_SETUP] Enabling PostgreSQL extensions...');
+  apiLogger.info('[MATCHING_SETUP] Enabling PostgreSQL extensions...');
   
   try {
     await prisma.$executeRaw`CREATE EXTENSION IF NOT EXISTS pg_trgm;`;
-    console.log('[MATCHING_SETUP] ✅ pg_trgm extension enabled');
+    apiLogger.info('[MATCHING_SETUP] ✅ pg_trgm extension enabled');
   } catch (error: any) {
     if (error.message?.includes('already exists')) {
-      console.log('[MATCHING_SETUP] ✅ pg_trgm already enabled');
+      apiLogger.info('[MATCHING_SETUP] ✅ pg_trgm already enabled');
     } else {
-      console.error('[MATCHING_SETUP] ❌ Failed to enable pg_trgm:', error.message);
+      apiLogger.error('[MATCHING_SETUP] ❌ Failed to enable pg_trgm:', error.message);
       throw error;
     }
   }
@@ -301,38 +302,38 @@ async function enableExtensions(): Promise<void> {
  * Create all necessary indexes for matching performance
  */
 async function createIndexes(): Promise<void> {
-  console.log('[MATCHING_SETUP] Creating performance indexes...');
-  console.log('[MATCHING_SETUP] This will take ~5-10 minutes for large datasets');
-  console.log('[MATCHING_SETUP] Indexes build in background - you can continue using the app');
+  apiLogger.info('[MATCHING_SETUP] Creating performance indexes...');
+  apiLogger.info('[MATCHING_SETUP] This will take ~5-10 minutes for large datasets');
+  apiLogger.info('[MATCHING_SETUP] Indexes build in background - you can continue using the app');
   
   for (const indexDef of INDEXES) {
     try {
-      console.log(`[MATCHING_SETUP] Creating: ${indexDef.displayName}...`);
-      console.log(`[MATCHING_SETUP] Estimated time: ${indexDef.estimatedTimeMins} min`);
-      console.log(`[MATCHING_SETUP] Critical: ${indexDef.critical ? 'YES' : 'NO'}`);
+      apiLogger.info(`[MATCHING_SETUP] Creating: ${indexDef.displayName}...`);
+      apiLogger.info(`[MATCHING_SETUP] Estimated time: ${indexDef.estimatedTimeMins} min`);
+      apiLogger.info(`[MATCHING_SETUP] Critical: ${indexDef.critical ? 'YES' : 'NO'}`);
       
       await prisma.$executeRawUnsafe(indexDef.sql);
       
-      console.log(`[MATCHING_SETUP] ✅ ${indexDef.displayName} - Creation initiated`);
-      console.log(`[MATCHING_SETUP] Estimated build time: ${indexDef.estimatedTimeMins} minutes`);
+      apiLogger.info(`[MATCHING_SETUP] ✅ ${indexDef.displayName} - Creation initiated`);
+      apiLogger.info(`[MATCHING_SETUP] Estimated build time: ${indexDef.estimatedTimeMins} minutes`);
     } catch (error: any) {
       if (error.message?.includes('already exists')) {
-        console.log(`[MATCHING_SETUP] ✅ ${indexDef.displayName} - Already exists`);
+        apiLogger.info(`[MATCHING_SETUP] ✅ ${indexDef.displayName} - Already exists`);
       } else if (error.message?.includes('being built')) {
-        console.log(`[MATCHING_SETUP] ⏳ ${indexDef.displayName} - Already building`);
+        apiLogger.info(`[MATCHING_SETUP] ⏳ ${indexDef.displayName} - Already building`);
       } else {
-        console.error(`[MATCHING_SETUP] ❌ ${indexDef.displayName} - Failed:`, error.message);
+        apiLogger.error(`[MATCHING_SETUP] ❌ ${indexDef.displayName} - Failed:`, error.message);
         
         if (indexDef.critical) {
-          console.error(`[MATCHING_SETUP] ⚠️  WARNING: Critical index failed - matching may not work properly`);
+          apiLogger.error(`[MATCHING_SETUP] ⚠️  WARNING: Critical index failed - matching may not work properly`);
         }
       }
     }
   }
   
-  console.log('[MATCHING_SETUP] ✅ All index creation commands issued');
-  console.log('[MATCHING_SETUP] ⏳ Indexes are building in background');
-  console.log('[MATCHING_SETUP] Check status with getSetupStatus() or /api/admin/setup-status');
+  apiLogger.info('[MATCHING_SETUP] ✅ All index creation commands issued');
+  apiLogger.info('[MATCHING_SETUP] ⏳ Indexes are building in background');
+  apiLogger.info('[MATCHING_SETUP] Check status with getSetupStatus() or /api/admin/setup-status');
 }
 
 /**
@@ -343,23 +344,23 @@ async function createIndexes(): Promise<void> {
  */
 export async function ensureMatchingSetup(): Promise<SetupStatus> {
   try {
-    console.log('[MATCHING_SETUP] ========== CHECKING MATCHING SYSTEM SETUP ==========');
+    apiLogger.info('[MATCHING_SETUP] ========== CHECKING MATCHING SYSTEM SETUP ==========');
     
     // Get current status
     const status = await getSetupStatus();
     
     if (status.isComplete) {
-      console.log('[MATCHING_SETUP] ✅ System fully configured - all indexes ready');
+      apiLogger.info('[MATCHING_SETUP] ✅ System fully configured - all indexes ready');
       return status;
     }
     
     if (status.isReady) {
-      console.log('[MATCHING_SETUP] ✅ System operational - critical indexes ready');
-      console.log(`[MATCHING_SETUP] ℹ️  ${status.buildingIndexes} non-critical indexes still building`);
+      apiLogger.info('[MATCHING_SETUP] ✅ System operational - critical indexes ready');
+      apiLogger.info(`[MATCHING_SETUP] ℹ️  ${status.buildingIndexes} non-critical indexes still building`);
       return status;
     }
     
-    console.log('[MATCHING_SETUP] 🔧 Setup needed - configuring database...');
+    apiLogger.info('[MATCHING_SETUP] 🔧 Setup needed - configuring database...');
     
     // Enable extensions if needed
     if (!status.extensionEnabled) {
@@ -374,21 +375,21 @@ export async function ensureMatchingSetup(): Promise<SetupStatus> {
     // Get updated status
     const updatedStatus = await getSetupStatus();
     
-    console.log('[MATCHING_SETUP] ========== SETUP COMMANDS ISSUED ==========');
-    console.log(`[MATCHING_SETUP] Status: ${updatedStatus.message}`);
-    console.log(`[MATCHING_SETUP] Progress: ${updatedStatus.readyIndexes}/${updatedStatus.totalIndexes} indexes ready`);
+    apiLogger.info('[MATCHING_SETUP] ========== SETUP COMMANDS ISSUED ==========');
+    apiLogger.info(`[MATCHING_SETUP] Status: ${updatedStatus.message}`);
+    apiLogger.info(`[MATCHING_SETUP] Progress: ${updatedStatus.readyIndexes}/${updatedStatus.totalIndexes} indexes ready`);
     
     if (updatedStatus.buildingIndexes > 0) {
-      console.log(`[MATCHING_SETUP] ⏳ ${updatedStatus.buildingIndexes} indexes building (~${updatedStatus.estimatedWaitMins} min)`);
-      console.log('[MATCHING_SETUP] 💡 TIP: You can start matching now - it will use adaptive batch sizes');
+      apiLogger.info(`[MATCHING_SETUP] ⏳ ${updatedStatus.buildingIndexes} indexes building (~${updatedStatus.estimatedWaitMins} min)`);
+      apiLogger.info('[MATCHING_SETUP] 💡 TIP: You can start matching now - it will use adaptive batch sizes');
     }
     
     return updatedStatus;
     
   } catch (error) {
-    console.error('[MATCHING_SETUP] ========== SETUP FAILED ==========');
-    console.error('[MATCHING_SETUP] Error:', error);
-    console.error('[MATCHING_SETUP] System will continue but performance may be degraded');
+    apiLogger.error('[MATCHING_SETUP] ========== SETUP FAILED ==========');
+    apiLogger.error('[MATCHING_SETUP] Error:', error);
+    apiLogger.error('[MATCHING_SETUP] System will continue but performance may be degraded');
     
     // Return error status but don't throw
     return {

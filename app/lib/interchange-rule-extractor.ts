@@ -1,3 +1,4 @@
+import { apiLogger } from '@/app/lib/structured-logger';
 /**
  * Extract matching rules from interchange file data
  * Creates rules that map supplier parts to store parts
@@ -93,7 +94,7 @@ export function extractRulesFromInterchange(
     }
   }
 
-  console.log(`[RULE EXTRACTION] Generated ${rules.length} rules from ${interchangeMappings.length} interchange mappings`);
+  apiLogger.info(`[RULE EXTRACTION] Generated ${rules.length} rules from ${interchangeMappings.length} interchange mappings`);
   return rules;
 }
 

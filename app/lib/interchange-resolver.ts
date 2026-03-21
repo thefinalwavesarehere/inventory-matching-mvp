@@ -13,6 +13,7 @@
  */
 
 import { prisma } from '@/app/lib/db/prisma';
+import { apiLogger } from '@/app/lib/structured-logger';
 
 
 /**
@@ -71,7 +72,7 @@ export async function resolveInterchange(
       if (lineCodeInterchange) {
         effectiveLineCode = lineCodeInterchange.targetLineCode;
         translatedLineCode = lineCodeInterchange.targetLineCode;
-        console.log(
+        apiLogger.info(
           `[INTERCHANGE] Line code translated: ${storePart.lineCode} → ${effectiveLineCode}`
         );
       }
@@ -101,7 +102,7 @@ export async function resolveInterchange(
         });
 
         if (supplierItem) {
-          console.log(
+          apiLogger.info(
             `[INTERCHANGE] Part match found: ${storePart.partNumber} (${effectiveLineCode}) → ${partInterchange.targetPartNumber} (${partInterchange.targetSupplierLineCode})`
           );
 
@@ -121,7 +122,7 @@ export async function resolveInterchange(
     return null;
 
   } catch (error) {
-    console.error('[INTERCHANGE_RESOLVER] Error:', error);
+    apiLogger.error('[INTERCHANGE_RESOLVER] Error:', error);
     return null; // On error, return null and let fuzzy/AI matching handle it
   }
 }
@@ -259,14 +260,14 @@ export async function resolveInterchangesBatch(
     });
 
     const matchCount = results.filter(r => r !== null).length;
-    console.log(
+    apiLogger.info(
       `[INTERCHANGE_BATCH] Resolved ${matchCount}/${storeParts.length} matches via interchange`
     );
 
     return results;
 
   } catch (error) {
-    console.error('[INTERCHANGE_BATCH] Error:', error);
+    apiLogger.error('[INTERCHANGE_BATCH] Error:', error);
     // On error, return all nulls and let fuzzy/AI matching handle it
     return storeParts.map(() => null);
   }
