@@ -13,6 +13,7 @@
 import { prisma } from './db/prisma';
 import { MatchingJob } from '@prisma/client';
 import { enqueueJobDispatch } from './qstash';
+import { enqueueMatchJob } from './pg-boss-client';
 
 // Concurrency limits
 const LIMITS = {
@@ -222,8 +223,12 @@ export async function tryStartNextQueuedJob(): Promise<MatchingJob | null> {
         },
       });
 
-      // Immediately dispatch via QStash (eliminates up-to-60s cron polling delay)
-      await enqueueJobDispatch(startedJob.id);
+      // Dual dispatch: pg-boss (durable, deduplicated) + QStash (low-latency)
+      // pg-boss is the source of truth; QStash is the fast-path trigger.
+      await Promise.allSettled([
+        enqueueMatchJob({ jobId: startedJob.id, projectId: startedJob.projectId }),
+        enqueueJobDispatch(startedJob.id),
+      ]);
 
       return startedJob;
     }

@@ -339,7 +339,12 @@ model MatchCandidate {
   @@index([confidence])
   @@index([matchStage])
   @@index([transformationSignature])
-  @@index([projectId, status, confidence]) // Composite index for Review page filtering
+  // Composite indexes for hot query patterns
+  @@index([projectId, status, confidence])              // Review page: filter + sort
+  @@index([projectId, status])                          // Analytics groupBy status
+  @@index([projectId, method])                          // Analytics groupBy method
+  @@index([storeItemId, targetType, targetId])          // Dedup check in master-rules-matcher
+  @@index([projectId, storeItemId, status])             // Per-item match lookup
 }
 
 enum TargetType {
@@ -859,6 +864,9 @@ model MasterRule {
   @@index([enabled])
   @@index([ruleType])
   @@index([projectId])
+  // Composite: batch lookup in applyMasterRules (enabled + scope + ruleType)
+  @@index([enabled, scope, ruleType])                   // Stage-0 rule fetch
+  @@index([enabled, scope, storePartNumber])            // Positive rule lookup by store PN
 }
 
 enum MasterRuleType {
