@@ -226,13 +226,21 @@ export async function runAIMatchingV3(
   );
   apiLogger.info(`[AI_V3] ${matchable.length}/${unmatchedItems.length} items matchable`);
 
-  // Pre-fetch candidates for all items concurrently
-  const withCandidates = await Promise.all(
-    matchable.map(async store => ({
-      store,
-      candidates: await getCandidates(store, projectId),
-    })),
-  );
+  // Pre-fetch candidates in sequential micro-batches to avoid exhausting the
+  // Prisma connection pool (limit=10). Running all 100 concurrently causes
+  // P2024 (connection pool timeout) within 10 seconds.
+  const CANDIDATE_CONCURRENCY = 5; // max simultaneous DB connections
+  const withCandidates: Array<{ store: StoreItem; candidates: SupplierCandidate[] }> = [];
+  for (let i = 0; i < matchable.length; i += CANDIDATE_CONCURRENCY) {
+    const slice = matchable.slice(i, i + CANDIDATE_CONCURRENCY);
+    const sliceResults = await Promise.all(
+      slice.map(async store => ({
+        store,
+        candidates: await getCandidates(store, projectId),
+      }))
+    );
+    withCandidates.push(...sliceResults);
+  }
 
   // Drop items with no candidates
   const actionable = withCandidates.filter(({ candidates }) => candidates.length > 0);

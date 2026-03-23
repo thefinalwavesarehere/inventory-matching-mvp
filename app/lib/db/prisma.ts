@@ -74,13 +74,22 @@ function createPrismaClient(): PrismaClient {
 }
 
 /**
- * Append ?connection_limit=N to a Postgres URL (idempotent).
- * Skips if the URL already contains connection_limit or is empty.
+ * Append pool tuning params to a Postgres URL (idempotent).
+ * connection_limit: max connections Prisma holds open per serverless instance
+ * pool_timeout: seconds to wait for a free connection before throwing P2024
+ *   (default is 10s — too short when 100 concurrent queries hit the pool)
  */
 function appendPoolSize(url: string, size: number): string {
-  if (!url || url.includes('connection_limit')) return url;
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}connection_limit=${size}`;
+  if (!url) return url;
+  let result = url;
+  if (!result.includes('connection_limit')) {
+    const sep = result.includes('?') ? '&' : '?';
+    result = `${result}${sep}connection_limit=${size}`;
+  }
+  if (!result.includes('pool_timeout')) {
+    result = `${result}&pool_timeout=30`;
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
