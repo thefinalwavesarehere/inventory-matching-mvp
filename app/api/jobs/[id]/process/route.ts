@@ -70,19 +70,14 @@ function triggerNextBatch(req: NextRequest, jobId: string): void {
   });
 }
 
-export async function POST(
+async function processHandler(
   req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  return withAuth(req, async (context) => {
-    try {
-    // Allow internal calls from cron
+  params: { id: string }
+): Promise<NextResponse> {
+  try {
+    // Allow internal calls from cron/dispatcher — checked BEFORE withAuth
     const internalCall = req.headers.get('x-internal-call');
     const isInternalCall = internalCall === process.env.CRON_SECRET;
-    
-    if (!isInternalCall) {
-      // Require authentication
-    }
 
     const jobId = params.id;
 
@@ -674,7 +669,19 @@ export async function POST(
       { status: 500 }
     );
   }
-  });
+}
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  // Internal calls (from cron/dispatcher) bypass session auth — validated by x-internal-call secret
+  const internalCall = req.headers.get('x-internal-call');
+  if (internalCall === process.env.CRON_SECRET) {
+    return processHandler(req, params);
+  }
+  // Browser-initiated calls require a valid session
+  return withAuth(req, async (_context) => processHandler(req, params));
 }
 
 // processExactMatching now imported from processExactMatching-v2.ts

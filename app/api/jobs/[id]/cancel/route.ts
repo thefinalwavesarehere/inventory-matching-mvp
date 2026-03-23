@@ -82,10 +82,10 @@ export async function POST(
 
     apiLogger.info(`[JOB-CANCEL] User ${context.user.id} requested ${type} cancellation for job ${jobId}`);
 
-    // If job is queued (not started), cancel it immediately
-    if (job.status === 'queued') {
+    // If job is queued or pending (not mid-processing), cancel it immediately
+    if (job.status === 'queued' || job.status === 'pending') {
       await markJobCancelled(jobId, `Cancelled by user before processing started`);
-      apiLogger.info(`[JOB-CANCEL] Queued job ${jobId} cancelled immediately`);
+      apiLogger.info(`[JOB-CANCEL] ${job.status} job ${jobId} cancelled immediately`);
     } else {
       apiLogger.info(`[JOB-CANCEL] Processing job ${jobId} will be cancelled ${type === 'GRACEFUL' ? 'after current stage' : 'immediately'}`);
     }

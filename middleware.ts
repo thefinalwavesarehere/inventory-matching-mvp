@@ -42,14 +42,17 @@ export async function middleware(req: NextRequest) {
     '/auth/reset-password',
   ];
 
-  // Public API routes (no session required)
-  // NOTE: /api/jobs and /api/progress are intentionally NOT listed here;
-  // they are protected by withAuth at the route handler level.
+  // Public API routes (no session required at middleware level)
+  // Auth is enforced inside each handler:
+  //   /api/queue/dispatch  → QStash signature verification
+  //   /api/jobs/*/process  → x-internal-call secret
   const publicApiRoutes = [
     '/api/auth/create-profile',
     '/api/auth/callback',
     '/api/cron',
     '/api/health',
+    '/api/queue/dispatch',  // QStash webhook — no browser session
+    '/api/jobs/',           // Internal process calls from dispatcher
   ];
 
   // Static assets
