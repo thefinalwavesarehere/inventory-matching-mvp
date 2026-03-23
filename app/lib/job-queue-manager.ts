@@ -214,23 +214,15 @@ export async function tryStartNextQueuedJob(): Promise<MatchingJob | null> {
     const checkResult = await canJobStart(job.projectId, job.userId || undefined);
 
     if (checkResult.canStart) {
-      // Mark job as processing
-      const startedJob = await prisma.matchingJob.update({
-        where: { id: job.id },
-        data: {
-          status: JobStatus.PROCESSING,
-          startedAt: new Date(),
-        },
-      });
-
-      // Dual dispatch: pg-boss (durable, deduplicated) + QStash (low-latency)
-      // pg-boss is the source of truth; QStash is the fast-path trigger.
-      await Promise.allSettled([
-        enqueueMatchJob({ jobId: startedJob.id, projectId: startedJob.projectId }),
-        enqueueJobDispatch(startedJob.id),
-      ]);
-
-      return startedJob;
+      // Do NOT pre-transition to PROCESSING here.
+      // The process endpoint owns the status transition via its atomic lock
+      // (updateMany WHERE status IN ['queued','pending'] OR stale 'processing').
+      // Pre-transitioning to PROCESSING causes the lock to see a fresh
+      // 'processing' record and bail with "already processing" — job never runs.
+      //
+      // Simply return the queued job so the caller knows dispatch is allowed.
+      // The cron will pick it up on the next tick (status = 'queued').
+      return job;
     }
   }
 
