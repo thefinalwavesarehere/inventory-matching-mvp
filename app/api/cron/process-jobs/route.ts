@@ -1,16 +1,17 @@
 /**
  * Vercel Cron — Background Job Processor
  *
- * Architecture decision (simplified from pg-boss dual-dispatch):
+ * Architecture: FIRE-AND-FORGET
  *
- * The cron directly calls /api/jobs/[id]/process for each active job.
- * This is more reliable than the pg-boss → QStash → dispatch chain because:
+ * The cron finds active jobs and fires POST /api/jobs/[id]/process for each,
+ * but does NOT await the response. The process endpoint:
+ *   - Has its own atomic lock (updateMany WHERE status IN queued|pending)
+ *   - Is idempotent — safe to call multiple times
+ *   - Self-chains via triggerNextBatch() for multi-batch jobs
+ *   - Takes up to 90s per AI batch — far exceeding the cron's 60s limit
  *
- *  1. Fewer moving parts — no QStash signature verification, no pg-boss fetch race
- *  2. Direct HTTP with x-internal-call secret — same auth as before our refactor
- *  3. The process route is idempotent and has its own atomic lock (updateMany WHERE status)
- *  4. Stale job recovery resets stuck 'processing' jobs back to 'queued'
- *  5. 'pending' status (used by fuzzy/AI matchers for multi-batch jobs) is also picked up
+ * By not awaiting, the cron returns 200 in <500ms and never hits the 60s timeout.
+ * The process function runs to completion in its own serverless invocation.
  *
  * Cron schedule: every 1 minute (vercel.json)
  */
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest) {
         cancellationRequested: false,
       },
       orderBy: [{ priority: 'desc' }, { queuedAt: 'asc' }],
-      take: 10, // Safety cap per tick — each job may take up to 60s
+      take: 10,
       select: { id: true, projectId: true, status: true },
     });
 
@@ -92,55 +93,46 @@ export async function GET(req: NextRequest) {
     }
 
     // ------------------------------------------------------------------
-    // 3. Directly trigger /api/jobs/[id]/process for each active job
-    //    Uses x-internal-call secret — bypasses session auth in the handler
+    // 3. FIRE-AND-FORGET: trigger /api/jobs/[id]/process for each job
+    //
+    //    CRITICAL: Do NOT await the fetch. AI batches take ~76s which
+    //    exceeds Vercel's 60s cron limit and causes a 504 that kills the
+    //    cron before it can return. The process endpoint is idempotent
+    //    with its own atomic lock — safe to trigger without waiting.
     // ------------------------------------------------------------------
     const baseUrl = process.env.NEXT_PUBLIC_URL ||
       `https://${req.headers.get('host')}`;
     const cronSecret = process.env.CRON_SECRET || '';
 
-    const results = await Promise.allSettled(
-      activeJobs.map(async (job) => {
-        const url = `${baseUrl}/api/jobs/${job.id}/process`;
-        apiLogger.info({ jobId: job.id, status: job.status, url }, '[CRON] Triggering process');
+    const triggered: string[] = [];
 
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-internal-call': cronSecret,
-          },
-        });
+    for (const job of activeJobs) {
+      const url = `${baseUrl}/api/jobs/${job.id}/process`;
+      apiLogger.info({ jobId: job.id, status: job.status, url }, '[CRON] Triggering process (fire-and-forget)');
 
-        if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-        }
+      // Fire-and-forget — intentionally no await
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-call': cronSecret,
+        },
+      }).catch((err: Error) => {
+        apiLogger.error({ jobId: job.id, error: err.message }, '[CRON] Fire-and-forget fetch error');
+      });
 
-        const data = await res.json();
-        apiLogger.info({ jobId: job.id, status: data?.job?.status }, '[CRON] Process response');
-        return { jobId: job.id, triggered: true, status: data?.job?.status };
-      })
-    );
-
-    const summary = results.map((r, i) => {
-      if (r.status === 'fulfilled') return r.value;
-      apiLogger.error(
-        { jobId: activeJobs[i].id, error: r.reason?.message },
-        '[CRON] Process trigger failed'
-      );
-      return { jobId: activeJobs[i].id, triggered: false, error: r.reason?.message };
-    });
+      triggered.push(job.id);
+    }
 
     const elapsed = Date.now() - startedAt;
-    apiLogger.info({ elapsed, summary }, '[CRON] Complete');
+    apiLogger.info({ elapsed, triggered }, '[CRON] Complete — all jobs triggered');
 
     return NextResponse.json({
       success: true,
       elapsed,
       staleRecovered: staleJobs.length,
-      triggered: summary.filter(r => r.triggered).length,
-      results: summary,
+      triggered: triggered.length,
+      results: triggered.map(id => ({ jobId: id, triggered: true })),
     });
   } catch (error: any) {
     apiLogger.error({ error: error.message }, '[CRON] Fatal error');

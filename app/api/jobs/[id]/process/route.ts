@@ -438,7 +438,8 @@ async function processHandler(
       });
       
       if (updatedJob?.status === 'pending') {
-        apiLogger.info(`[JOB-PROCESS-V1.2] More items to process - job stays pending for next cron`);
+        apiLogger.info(`[JOB-PROCESS-V1.2] More items to process - self-chaining next batch`);
+        triggerNextBatch(req, jobId);
         return NextResponse.json({
           success: true,
           complete: false,
@@ -476,7 +477,11 @@ async function processHandler(
       });
       
       if (updatedJob?.status === 'pending') {
-        apiLogger.info(`[JOB-PROCESS-AI] More items to process - job stays pending`);
+        apiLogger.info(`[JOB-PROCESS-AI] More items to process - self-chaining next batch`);
+        // Self-chain immediately — do NOT wait for cron (AI batches take ~76s,
+        // exceeding the 60s cron timeout). The next invocation acquires the
+        // lock via the atomic updateMany WHERE status='pending' check.
+        triggerNextBatch(req, jobId);
         return NextResponse.json({
           success: true,
           complete: false,
@@ -514,7 +519,8 @@ async function processHandler(
       });
       
       if (updatedJob?.status === 'pending') {
-        apiLogger.info(`[JOB-PROCESS-WEB] More items to process - job stays pending`);
+        apiLogger.info(`[JOB-PROCESS-WEB] More items to process - self-chaining next batch`);
+        triggerNextBatch(req, jobId);
         return NextResponse.json({
           success: true,
           complete: false,
@@ -548,6 +554,7 @@ async function processHandler(
       
       const updatedJob = await prisma.matchingJob.findUnique({ where: { id: jobId } });
       if (updatedJob?.status === 'pending') {
+        triggerNextBatch(req, jobId);
         return NextResponse.json({ success: true, complete: false, job: updatedJob });
       } else if (updatedJob?.status === 'complete') {
         return NextResponse.json({ success: true, complete: true, job: updatedJob });
